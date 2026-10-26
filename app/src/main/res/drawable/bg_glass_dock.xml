@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Drop Shadow Layer -->
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="#33000000" />
+            <corners android:radius="30dp" />
+        </shape>
+    </item>
+    <!-- Liquid Glass Translucent Base Fill -->
+    <item android:top="1dp" android:bottom="1dp" android:left="1dp" android:right="1dp">
+        <shape android:shape="rectangle">
+            <gradient
+                android:startColor="#F00E172E"
+                android:centerColor="#EA0A1020"
+                android:endColor="#F2060914"
+                android:angle="270" />
+            <corners android:radius="29dp" />
+        </shape>
+    </item>
+    <!-- Specular Top Rim Reflection -->
+    <item android:top="1dp" android:left="2dp" android:right="2dp" android:bottom="20dp">
+        <shape android:shape="rectangle">
+            <gradient
+                android:startColor="#33FFFFFF"
+                android:endColor="#00FFFFFF"
+                android:angle="270" />
+            <corners android:radius="28dp" />
+        </shape>
+    </item>
+    <!-- Crisp Outer Glass Border -->
+    <item>
+        <shape android:shape="rectangle">
+            <corners android:radius="30dp" />
+            <stroke
+                android:width="1.2dp"
+                android:color="#3AFFFFFF" />
+        </shape>
+    </item>
+</layer-list>

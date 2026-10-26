@@ -1,0 +1,201 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/gemini_window_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@drawable/bg_gemini_window"
+    android:elevation="18dp"
+    android:clipChildren="false"
+    android:clipToPadding="false"
+    android:clipToOutline="true">
+
+    <!-- Top Drag & Control Header with Live Synced Answer Badge -->
+    <LinearLayout
+        android:id="@+id/header_drag_area"
+        android:layout_width="match_parent"
+        android:layout_height="46dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="@drawable/bg_gemini_header"
+        android:paddingStart="10dp"
+        android:paddingEnd="8dp">
+
+        <ImageView
+            android:layout_width="20dp"
+            android:layout_height="20dp"
+            android:src="@drawable/ic_virus_avatar"
+            android:layout_marginEnd="6dp"
+            android:contentDescription="@null" />
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Study AI"
+            android:textColor="#020617"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:ellipsize="end"
+            android:singleLine="true" />
+
+        <!-- Live Synced Answer Pill inside Floating Window -->
+        <TextView
+            android:id="@+id/tv_window_answer_badge"
+            android:layout_width="wrap_content"
+            android:minWidth="30dp"
+            android:layout_height="28dp"
+            android:background="@drawable/bg_answer_box"
+            android:gravity="center"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp"
+            android:text="?"
+            android:textColor="#047857"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            android:layout_marginEnd="5dp" />
+
+        <!-- Solve Button -->
+        <TextView
+            android:id="@+id/btn_window_scan"
+            android:layout_width="wrap_content"
+            android:layout_height="30dp"
+            android:background="@drawable/bg_chip_action"
+            android:gravity="center"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp"
+            android:text="Solve"
+            android:textColor="#0369A1"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            android:clickable="true"
+            android:focusable="true"
+            android:layout_marginEnd="4dp" />
+
+        <!-- New Chat Button -->
+        <TextView
+            android:id="@+id/btn_window_new_chat"
+            android:layout_width="wrap_content"
+            android:layout_height="30dp"
+            android:background="@drawable/bg_chip_action"
+            android:gravity="center"
+            android:paddingStart="7dp"
+            android:paddingEnd="7dp"
+            android:text="Reset"
+            android:textColor="#B45309"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            android:clickable="true"
+            android:focusable="true"
+            android:layout_marginEnd="4dp" />
+
+        <!-- Size Preset Toggle (S / M / L) -->
+        <TextView
+            android:id="@+id/btn_window_size"
+            android:layout_width="wrap_content"
+            android:layout_height="30dp"
+            android:background="@drawable/bg_chip_action"
+            android:gravity="center"
+            android:paddingStart="7dp"
+            android:paddingEnd="7dp"
+            android:text="S"
+            android:textColor="#047857"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            android:clickable="true"
+            android:focusable="true"
+            android:layout_marginEnd="4dp" />
+
+        <!-- Opacity Toggle -->
+        <TextView
+            android:id="@+id/btn_window_opacity"
+            android:layout_width="wrap_content"
+            android:layout_height="30dp"
+            android:background="@drawable/bg_chip_action"
+            android:gravity="center"
+            android:paddingStart="7dp"
+            android:paddingEnd="7dp"
+            android:text="100%"
+            android:textColor="#0F172A"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            android:clickable="true"
+            android:focusable="true"
+            android:layout_marginEnd="4dp" />
+
+        <!-- Minimize Button -->
+        <ImageView
+            android:id="@+id/btn_window_minimize"
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:padding="4dp"
+            android:src="@android:drawable/ic_menu_revert"
+            android:tint="#0F172A"
+            android:clickable="true"
+            android:focusable="true"
+            android:layout_marginEnd="2dp"
+            android:contentDescription="Minimize Window" />
+
+        <!-- Close Button -->
+        <ImageView
+            android:id="@+id/btn_window_close"
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:padding="4dp"
+            android:src="@android:drawable/ic_menu_close_clear_cancel"
+            android:tint="#BE123C"
+            android:clickable="true"
+            android:focusable="true"
+            android:contentDescription="Close Window" />
+
+    </LinearLayout>
+
+    <!-- Page Load Progress Bar -->
+    <ProgressBar
+        android:id="@+id/web_progress_bar"
+        style="?android:attr/progressBarStyleHorizontal"
+        android:layout_width="match_parent"
+        android:layout_height="2dp"
+        android:indeterminate="false"
+        android:max="100"
+        android:progressDrawable="@android:drawable/progress_horizontal"
+        android:visibility="gone" />
+
+    <!-- Main Gemini Web Content + Corner Resize Handle -->
+    <RelativeLayout
+        android:id="@+id/webview_host_container"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:clipChildren="false"
+        android:clipToPadding="false">
+
+        <WebView
+            android:id="@+id/gemini_webview"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+
+        <!-- Bottom-Right Resize Handle Grip -->
+        <FrameLayout
+            android:id="@+id/btn_resize_grip"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:layout_alignParentEnd="true"
+            android:layout_alignParentBottom="true"
+            android:background="#E6F1F5F9"
+            android:clickable="true"
+            android:focusable="true"
+            android:contentDescription="Drag to resize window">
+
+            <ImageView
+                android:layout_width="16dp"
+                android:layout_height="16dp"
+                android:layout_gravity="center"
+                android:src="@android:drawable/ic_menu_rotate"
+                android:tint="#0369A1"
+                android:contentDescription="@null" />
+        </FrameLayout>
+
+    </RelativeLayout>
+
+</LinearLayout>

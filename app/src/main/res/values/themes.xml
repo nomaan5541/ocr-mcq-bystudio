@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- ═══ Daylight White Liquid Glass Theme (Default) ═══════════════════════ -->
+    <style name="Theme.OmniSolveOverlay" parent="Theme.MaterialComponents.Light.NoActionBar">
+        <item name="colorPrimary">#0284C7</item>
+        <item name="colorPrimaryDark">#F4F8FD</item>
+        <item name="colorSecondary">#059669</item>
+        <item name="colorAccent">#0284C7</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowBackground">@color/light_bg_canvas</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
+        <item name="android:forceDarkAllowed">false</item>
+    </style>
+</resources>

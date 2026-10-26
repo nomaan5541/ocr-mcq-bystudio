@@ -1,0 +1,6 @@
+{
+  "name": "OCR MCQ Solver",
+  "description": "Autonomous AI Study & MCQ Assistant with Liquid Glass Dynamic Island overlay, Accessibility hierarchy scraper, and on-device ML Kit OCR.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

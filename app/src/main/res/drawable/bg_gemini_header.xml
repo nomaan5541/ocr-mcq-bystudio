@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Daylight White Gemini Header Bar -->
+    <item>
+        <shape android:shape="rectangle">
+            <gradient
+                android:startColor="#FAF8FAFC"
+                android:endColor="#F5EFF6FF"
+                android:angle="270" />
+            <corners
+                android:topLeftRadius="22dp"
+                android:topRightRadius="22dp" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="rectangle">
+            <corners
+                android:topLeftRadius="22dp"
+                android:topRightRadius="22dp" />
+            <stroke
+                android:width="1dp"
+                android:color="#40CBD5E1" />
+        </shape>
+    </item>
+</layer-list>

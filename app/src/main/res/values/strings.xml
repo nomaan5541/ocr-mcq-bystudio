@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">OCR MCQ Solver</string>
+    <string name="accessibility_service_description">OCR MCQ Solver Assistant: Reads quiz questions on screen and optionally taps selected options when enabled by you.</string>
+
+    <!-- Header & Navigation -->
+    <string name="header_subtitle">Smart Study &amp; Quiz Assistant</string>
+    <string name="header_badge_white_glass">WHITE GLASS</string>
+    <string name="nav_home">Home</string>
+    <string name="nav_practice">Practice</string>
+    <string name="nav_controls">Controls</string>
+    <string name="nav_account">AI &amp; History</string>
+
+    <!-- Home Screen -->
+    <string name="hero_status_active">Floating Solver Active</string>
+    <string name="hero_status_ready">Ready to Start</string>
+    <string name="hero_headline">Read &amp; Solve Questions Right on Your Screen</string>
+    <string name="hero_description">Open any quiz, study guide, or PDF. Tap the floating pill anytime to read the question and see the best answer instantly.</string>
+    <string name="cta_start_solver">Start Floating Solver</string>
+    <string name="cta_stop_solver">Stop Floating Solver</string>
+
+    <string name="stat_solved_label">Solved</string>
+    <string name="stat_speed_label">Avg Speed</string>
+    <string name="stat_reader_label">Reader</string>
+    <string name="stat_ai_label">AI Status</string>
+
+    <string name="setup_card_title">Quick 3-Step Setup</string>
+    <string name="setup_card_subtitle">Grant permissions once so the floating answer pill can work smoothly.</string>
+    <string name="perm_overlay_title">1. Floating Display</string>
+    <string name="perm_overlay_desc">Lets the compact answer pill stay visible over your quiz app.</string>
+    <string name="perm_a11y_title">2. Screen Text Helper</string>
+    <string name="perm_a11y_desc">Reads screen text instantly without screenshots and enables optional auto-tap.</string>
+    <string name="perm_capture_title">3. Screen Capture Backup</string>
+    <string name="perm_capture_desc">Requested automatically when you tap Start so image-based questions also work.</string>
+    <string name="btn_grant">Allow</string>
+    <string name="btn_enabled">Ready</string>
+    <string name="btn_open_settings">Enable</string>
+
+    <string name="presets_title">One-Tap Study Modes</string>
+    <string name="presets_subtitle">Pick how you want the floating helper to behave.</string>
+    <string name="preset_study_title">Study</string>
+    <string name="preset_study_desc">Balanced speed &amp; clear pill</string>
+    <string name="preset_fast_title">Fast</string>
+    <string name="preset_fast_desc">Quickest 1-second checks</string>
+    <string name="preset_quiet_title">Subtle</string>
+    <string name="preset_quiet_desc">Battery look &amp; gentle buzz</string>
+
+    <string name="reader_mode_title">How Questions Are Read</string>
+    <string name="reader_mode_subtitle">Choose the best way to read text from your screen.</string>
+    <string name="reader_instant_title">Instant Screen Reader</string>
+    <string name="reader_instant_desc">Fastest — reads text directly from apps with zero screenshots.</string>
+    <string name="reader_ocr_title">Camera Text Scan (OCR)</string>
+    <string name="reader_ocr_desc">Captures the screen image — best for scanned PDFs, photos, and locked pages.</string>
+    <string name="reader_fallback_title">Use OCR Backup Automatically</string>
+    <string name="reader_fallback_desc">If Instant Screen Reader finds no text, automatically scan the screen image instead.</string>
+
+    <!-- Practice Screen -->
+    <string name="practice_title">Interactive Practice Quiz</string>
+    <string name="practice_subtitle">Test how the solver reads a multiple-choice question and highlights the right option before using the floating bar.</string>
+    <string name="btn_solve_sample">Solve This Question</string>
+    <string name="btn_next_sample">Try Another Sample</string>
+    <string name="practice_custom_hint">Or type / paste your own multiple-choice question...</string>
+    <string name="scan_timing_title">Screen Check Timing</string>
+    <string name="scan_timing_subtitle">Control how quickly new questions are detected when hands-free mode is on.</string>
+    <string name="instant_detect_title">Detect New Questions Right Away</string>
+    <string name="instant_detect_desc">Notices as soon as you move to a new question and checks within a second.</string>
+    <string name="clipboard_copy_title">Copy Question Text to Clipboard</string>
+    <string name="clipboard_copy_desc">Copies each scanned question so you can paste it elsewhere. Keep off to avoid system clipboard popups.</string>
+
+    <!-- Controls Screen -->
+    <string name="controls_style_title">Floating Bar Appearance</string>
+    <string name="controls_style_subtitle">Customize how the answer helper looks on top of other apps.</string>
+    <string name="style_island_title">Top Pill (Dynamic Island)</string>
+    <string name="style_island_desc">Neat frosted white pill centered near the top of your screen.</string>
+    <string name="style_bubble_title">Draggable Side Bubble</string>
+    <string name="style_bubble_desc">Compact floating circle you can drag anywhere along the screen edge.</string>
+    <string name="opacity_label">Floating Pill Brightness / Opacity</string>
+    <string name="window_mode_title">Answer View Mode</string>
+    <string name="window_compact_title">Compact Answer Letter Only</string>
+    <string name="window_compact_desc">Shows only A, B, C, or D inside the small pill.</string>
+    <string name="window_full_title">Floating AI Chat Window</string>
+    <string name="window_full_desc">Opens a resizable white glass window showing the full Gemini conversation.</string>
+
+    <string name="autotap_title">Hands-Free Auto-Tap</string>
+    <string name="autotap_subtitle">Optional helper that taps the solved option for you (requires Screen Text Helper).</string>
+    <string name="autotap_answer_title">Auto-Tap Correct Option</string>
+    <string name="autotap_answer_desc">Automatically taps option A, B, C, or D on screen once solved.</string>
+    <string name="autotap_next_title">Auto-Move to Next Question</string>
+    <string name="autotap_next_desc">Finds and taps Next or Continue after selecting the answer (never taps Finish Exam).</string>
+    <string name="autotap_natural_title">Natural Human Tap Timing</string>
+    <string name="autotap_natural_desc">Adds a realistic 0.4s reading pause and natural finger touch position.</string>
+
+    <string name="quiet_alerts_title">Quiet Vibration &amp; Disguise</string>
+    <string name="quiet_alerts_subtitle">Feel the answer without looking or blend the pill into a battery badge.</string>
+    <string name="haptic_title">Vibration Answer Signals</string>
+    <string name="haptic_desc">1 short buzz = A  •  2 buzzes = B  •  3 buzzes = C  •  4 buzzes = D</string>
+    <string name="btn_test_vibration">Test 2 Buzzes (Option B)</string>
+    <string name="camo_title">Battery Percentage Look</string>
+    <string name="camo_desc">Displays answers as battery levels: 91% = A, 92% = B, 93% = C, 94% = D.</string>
+
+    <string name="companion_title">Computer Wi-Fi Sync</string>
+    <string name="companion_subtitle">Receive live answer vibrations from your laptop browser extension over Wi-Fi.</string>
+    <string name="companion_toggle_title">Connect to Computer Helper</string>
+
+    <!-- AI & History Screen -->
+    <string name="ai_web_title">Free Google Gemini Sign-In</string>
+    <string name="ai_web_subtitle">Sign in once with your Google account to solve questions using Gemini Web with no API key needed.</string>
+    <string name="ai_api_title">Direct Gemini API Key (Fastest)</string>
+    <string name="ai_api_subtitle">Use an API key from AI Studio Secrets or paste one below for instant sub-second answers.</string>
+    <string name="ai_model_title">AI Thinking Model</string>
+    <string name="model_flash_title">Gemini 3.5 Flash (Recommended)</string>
+    <string name="model_flash_desc">Fastest everyday model — great for standard quizzes and study questions.</string>
+    <string name="model_pro_title">Gemini 3.1 Pro</string>
+    <string name="model_pro_desc">Deeper step-by-step reasoning for complex math, physics, and coding.</string>
+    <string name="model_lite_title">Gemini 3.1 Flash-Lite</string>
+    <string name="model_lite_desc">Ultra-lightweight and data-saving for rapid text questions.</string>
+    <string name="history_title">Recent Solved Questions</string>
+    <string name="history_empty">Questions you solve in Practice or on screen will appear here.</string>
+    <string name="btn_clear_history">Clear All</string>
+
+    <!-- Login Activity -->
+    <string name="login_header_title">Sign in to Google Gemini</string>
+    <string name="login_done_button">Done</string>
+</resources>

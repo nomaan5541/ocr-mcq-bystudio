@@ -17,8 +17,8 @@ class LoginActivity : AppCompatActivity() {
 
     companion object {
         const val CHROME_USER_AGENT =
-            "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36"
-        const val LOGIN_URL = "https://gemini.google.com/"
+            "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36"
+        const val LOGIN_URL = "https://gemini.google.com/app"
     }
 
     private lateinit var webView: WebView
@@ -51,10 +51,12 @@ class LoginActivity : AppCompatActivity() {
             cookieManager.setAcceptThirdPartyCookies(webView, true)
         }
 
+        // Software layer avoids GPU DRM rendernode errors on virtualized/cloud emulators
+        webView.setLayerType(View.LAYER_TYPE_SOFTWARE, null)
+
         webView.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
-            databaseEnabled = true
             useWideViewPort = true
             loadWithOverviewMode = true
             userAgentString = CHROME_USER_AGENT

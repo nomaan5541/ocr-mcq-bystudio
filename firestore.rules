@@ -1,0 +1,152 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Default-Deny Catch-All
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string &&
+             id.size() >= 1 &&
+             id.size() <= 128 &&
+             id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidSolvedQuestion(data) {
+      return data.userId is string &&
+             data.userId.size() >= 1 &&
+             data.userId.size() <= 128 &&
+             data.userId == request.auth.uid &&
+             data.questionText is string &&
+             data.questionText.size() >= 1 &&
+             data.questionText.size() <= 4000 &&
+             data.answerBadge is string &&
+             data.answerBadge.size() >= 1 &&
+             data.answerBadge.size() <= 40 &&
+             data.shortAnswer is string &&
+             data.shortAnswer.size() <= 300 &&
+             data.explanation is string &&
+             data.explanation.size() <= 2000 &&
+             data.questionType is string &&
+             data.questionType in ['MCQ', 'MULTI_SELECT', 'TRUE_FALSE', 'FILL_BLANK', 'MATCHING'] &&
+             data.subject is string &&
+             data.subject in ['GENERAL', 'MATH', 'SCIENCE', 'CODING', 'MEDICAL', 'LAW'] &&
+             data.confidence is int &&
+             data.confidence >= 0 &&
+             data.confidence <= 100 &&
+             data.language is string &&
+             data.language.size() >= 1 &&
+             data.language.size() <= 40 &&
+             (!('translatedQuestion' in data) ||
+              data.translatedQuestion == null ||
+              (data.translatedQuestion is string && data.translatedQuestion.size() <= 4000)) &&
+             data.bookmarked is bool &&
+             data.mistakeDeck is bool &&
+             data.createdAt is timestamp &&
+             data.createdAt <= request.time &&
+             data.updatedAt is timestamp &&
+             data.updatedAt <= request.time;
+    }
+
+    match /users/{userId}/solvedQuestions/{questionId} {
+      allow get: if isSignedIn() &&
+                    resource != null &&
+                    request.auth.uid == userId &&
+                    isValidId(userId) &&
+                    isValidId(questionId) &&
+                    existing().userId == request.auth.uid;
+
+      allow list: if isSignedIn() &&
+                     request.auth.uid == userId &&
+                     existing().userId == request.auth.uid;
+
+      allow create: if isSignedIn() &&
+                       request.auth.uid == userId &&
+                       isValidId(userId) &&
+                       isValidId(questionId) &&
+                       incoming().keys().hasAll([
+                         'userId',
+                         'questionText',
+                         'answerBadge',
+                         'shortAnswer',
+                         'explanation',
+                         'questionType',
+                         'subject',
+                         'confidence',
+                         'language',
+                         'bookmarked',
+                         'mistakeDeck',
+                         'createdAt',
+                         'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'userId',
+                         'questionText',
+                         'answerBadge',
+                         'shortAnswer',
+                         'explanation',
+                         'questionType',
+                         'subject',
+                         'confidence',
+                         'language',
+                         'translatedQuestion',
+                         'bookmarked',
+                         'mistakeDeck',
+                         'createdAt',
+                         'updatedAt'
+                       ]) &&
+                       isValidSolvedQuestion(incoming());
+
+      allow update: if isSignedIn() &&
+                       resource != null &&
+                       isValidSolvedQuestion(incoming()) &&
+                       request.auth.uid == userId &&
+                       isValidId(userId) &&
+                       isValidId(questionId) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt && (
+                         incoming().diff(existing()).affectedKeys().hasOnly([
+                           'bookmarked',
+                           'mistakeDeck',
+                           'updatedAt'
+                         ]) ||
+                         incoming().diff(existing()).affectedKeys().hasOnly([
+                           'questionText',
+                           'answerBadge',
+                           'shortAnswer',
+                           'explanation',
+                           'questionType',
+                           'subject',
+                           'confidence',
+                           'language',
+                           'translatedQuestion',
+                           'bookmarked',
+                           'mistakeDeck',
+                           'updatedAt'
+                         ])
+                       );
+
+      allow delete: if isSignedIn() &&
+                       resource != null &&
+                       request.auth.uid == userId &&
+                       isValidId(userId) &&
+                       isValidId(questionId) &&
+                       existing().userId == request.auth.uid;
+    }
+  }
+}

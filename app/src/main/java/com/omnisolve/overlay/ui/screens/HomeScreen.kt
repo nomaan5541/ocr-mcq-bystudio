@@ -1,7 +1,5 @@
 package com.omnisolve.overlay.ui.screens
 
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -22,51 +20,38 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.MenuBook
-import androidx.compose.material.icons.filled.AccessibilityNew
-import androidx.compose.material.icons.filled.Bolt
-import androidx.compose.material.icons.filled.CameraAlt
-import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.BatteryChargingFull
+import androidx.compose.material.icons.filled.CloudDone
+import androidx.compose.material.icons.filled.DocumentScanner
+import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Layers
+import androidx.compose.material.icons.filled.OpenInFull
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.ScreenshotMonitor
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.derivedStateOf
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.omnisolve.overlay.MainActivity
 import com.omnisolve.overlay.R
+import com.omnisolve.overlay.model.SolverMethod
 import com.omnisolve.overlay.ui.MainUiState
-import com.omnisolve.overlay.ui.components.AnimatedMetricTile
 import com.omnisolve.overlay.ui.components.LivingOptionChoiceCard
 import com.omnisolve.overlay.ui.components.LivingPrimaryButton
 import com.omnisolve.overlay.ui.components.LivingSecondaryButton
-import com.omnisolve.overlay.ui.components.LivingSwitchRow
 import com.omnisolve.overlay.ui.physics.GlassMaterialStrength
-import com.omnisolve.overlay.ui.physics.LocalReducedMotion
-import com.omnisolve.overlay.ui.physics.MotionTokens
-import com.omnisolve.overlay.ui.physics.ScrollRevealSection
 import com.omnisolve.overlay.ui.physics.livingGlassSurface
 import com.omnisolve.overlay.ui.theme.LocalWhiteGlassPalette
 
@@ -76,354 +61,382 @@ fun HomeScreen(
     listState: LazyListState,
     onToggleOverlay: () -> Unit,
     onRequestOverlayPermission: () -> Unit,
-    onOpenAccessibilitySettings: () -> Unit,
-    onApplyPreset: (String) -> Unit,
-    onSelectEngine: (String) -> Unit,
-    onToggleOcrFallback: (Boolean) -> Unit,
+    onSelectSolverMethod: (SolverMethod) -> Unit,
+    onToggleChargingFormat: (Boolean) -> Unit,
+    onOpenSettings: () -> Unit,
+    onSignInServer: () -> Unit,
+    onOpenGeminiLogin: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val palette = LocalWhiteGlassPalette.current
-    val reducedMotion = LocalReducedMotion.current
-
-    val scrollFraction by remember {
-        derivedStateOf {
-            (listState.firstVisibleItemIndex * 240f + listState.firstVisibleItemScrollOffset) / 900f
-        }
-    }
 
     LazyColumn(
         state = listState,
         modifier = modifier
             .fillMaxSize()
             .testTag("home_screen_list"),
-        contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 8.dp, bottom = 112.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 8.dp, bottom = 104.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        // 1. Hero White Liquid Glass Launch Card with Parallax Crystal Artwork
-        item(key = "hero_card") {
-            ScrollRevealSection(index = 0) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .livingGlassSurface(
-                            strength = GlassMaterialStrength.Hero,
-                            cornerRadius = 28.dp,
-                            interactive = true,
-                            scrollParallaxFactor = scrollFraction
-                        )
-                ) {
-                    // Subtle optical crystal hero artwork with scroll parallax
-                    Image(
-                        painter = painterResource(id = R.drawable.img_crystal_hero),
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier
-                            .matchParentSize()
-                            .alpha(0.28f)
-                            .graphicsLayer {
-                                if (!reducedMotion) {
-                                    translationY = scrollFraction * 28f
-                                    scaleX = 1.06f
-                                    scaleY = 1.06f
-                                }
-                            }
+        // 1. Instant Start / Stop Floating Overlay Card
+        item(key = "overlay_launcher_card") {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .livingGlassSurface(
+                        strength = GlassMaterialStrength.Hero,
+                        cornerRadius = 22.dp
                     )
-
-                    // Daylight frost readability veil
-                    Box(
-                        modifier = Modifier
-                            .matchParentSize()
-                            .background(
-                                Brush.verticalGradient(
-                                    colors = listOf(
-                                        Color(0xD9FFFFFF),
-                                        Color(0xEBFFFFFF)
-                                    )
-                                )
-                            )
-                    )
-
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(22.dp)
-                    ) {
-                        // Status Pill
-                        val statusBg by animateColorAsState(
-                            targetValue = if (state.isOverlayRunning) palette.accentMintContainer else palette.accentSkyContainer,
-                            animationSpec = MotionTokens.gentleSettle(reducedMotion),
-                            label = "heroStatusBg"
-                        )
-                        val statusInk = if (state.isOverlayRunning) palette.accentMint else palette.accentSky
-
-                        Row(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(999.dp))
-                                .background(statusBg)
-                                .padding(horizontal = 12.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(8.dp)
-                                    .clip(CircleShape)
-                                    .background(statusInk)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = stringResource(
-                                    if (state.isOverlayRunning) R.string.hero_status_active else R.string.hero_status_ready
-                                ),
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = statusInk
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(14.dp))
-
-                        Text(
-                            text = stringResource(R.string.hero_headline),
-                            style = MaterialTheme.typography.headlineSmall,
-                            color = palette.inkPrimary
-                        )
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        Text(
-                            text = stringResource(R.string.hero_description),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = palette.inkSecondary
-                        )
-
-                        Spacer(modifier = Modifier.height(18.dp))
-
-                        LivingPrimaryButton(
-                            text = stringResource(
-                                if (state.isOverlayRunning) R.string.cta_stop_solver else R.string.cta_start_solver
-                            ),
-                            icon = if (state.isOverlayRunning) Icons.Filled.Stop else Icons.Filled.PlayArrow,
-                            isActiveState = state.isOverlayRunning,
-                            onClick = onToggleOverlay,
-                            testTag = "btn_toggle_overlay",
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-                }
-            }
-        }
-
-        // 2. Live Plain-English Summary Metrics
-        item(key = "metrics_row") {
-            ScrollRevealSection(index = 1) {
-                val aiReady = state.hasSecretApiKey || state.customApiKey.isNotBlank() || state.isGoogleWebLoggedIn
+                    .padding(18.dp)
+            ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    AnimatedMetricTile(
-                        label = stringResource(R.string.stat_solved_label),
-                        numericValue = state.solvedCount,
-                        accentColor = palette.accentSky,
-                        modifier = Modifier.weight(1f)
-                    )
-                    AnimatedMetricTile(
-                        label = stringResource(R.string.stat_speed_label),
-                        textValue = if (state.extractionEngine == MainActivity.ENGINE_NATIVE) "< 1s" else "~1.5s",
-                        accentColor = palette.accentMint,
-                        modifier = Modifier.weight(1f)
-                    )
-                    AnimatedMetricTile(
-                        label = stringResource(R.string.stat_reader_label),
-                        textValue = if (state.extractionEngine == MainActivity.ENGINE_NATIVE) "Instant" else "OCR",
-                        accentColor = palette.inkPrimary,
-                        modifier = Modifier.weight(1f)
-                    )
-                    AnimatedMetricTile(
-                        label = stringResource(R.string.stat_ai_label),
-                        textValue = if (aiReady) "Ready" else "Setup",
-                        accentColor = if (aiReady) palette.accentMint else palette.warningAmber,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-            }
-        }
-
-        // 3. Quick 3-Step Setup Card
-        item(key = "setup_checklist") {
-            ScrollRevealSection(index = 2) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .livingGlassSurface(
-                            strength = GlassMaterialStrength.Card,
-                            cornerRadius = 24.dp,
-                            scrollParallaxFactor = scrollFraction
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(10.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    if (state.isOverlayRunning) Color(0xFF10B981) else palette.accentSky
+                                )
                         )
-                        .padding(20.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp)
-                ) {
-                    Column {
+                        Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = stringResource(R.string.setup_card_title),
+                            text = if (state.isOverlayRunning) "Floating Overlay Active" else "Ready to Launch",
                             style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
                             color = palette.inkPrimary
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = stringResource(R.string.setup_card_subtitle),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = palette.inkSecondary
                         )
                     }
 
-                    SetupStepItem(
-                        icon = Icons.Filled.Layers,
-                        title = stringResource(R.string.perm_overlay_title),
-                        description = stringResource(R.string.perm_overlay_desc),
-                        isReady = state.hasOverlayPermission,
-                        actionText = if (state.hasOverlayPermission) stringResource(R.string.btn_enabled) else stringResource(R.string.btn_grant),
-                        onClick = onRequestOverlayPermission,
-                        testTag = "btn_perm_overlay"
+                    Text(
+                        text = if (state.batteryCamouflage) "91–94%" else "ABCD",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = if (state.batteryCamouflage) Color(0xFF047857) else Color(0xFF0369A1),
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(999.dp))
+                            .background(
+                                if (state.batteryCamouflage) Color(0xFFD1FAE5) else Color(0xFFE0F2FE)
+                            )
+                            .padding(horizontal = 10.dp, vertical = 4.dp)
                     )
+                }
 
-                    SetupStepItem(
-                        icon = Icons.Filled.AccessibilityNew,
-                        title = stringResource(R.string.perm_a11y_title),
-                        description = stringResource(R.string.perm_a11y_desc),
-                        isReady = state.isAccessibilityEnabled,
-                        actionText = if (state.isAccessibilityEnabled) stringResource(R.string.btn_enabled) else stringResource(R.string.btn_open_settings),
-                        onClick = onOpenAccessibilitySettings,
-                        testTag = "btn_perm_accessibility"
-                    )
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = "Tap the floating pill over any quiz screen to solve immediately. Tap again anytime to restart.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = palette.inkSecondary
+                )
 
-                    SetupStepItem(
-                        icon = Icons.Filled.ScreenshotMonitor,
-                        title = stringResource(R.string.perm_capture_title),
-                        description = stringResource(R.string.perm_capture_desc),
-                        isReady = state.isCaptureAuthorized || state.isOverlayRunning,
-                        actionText = if (state.isCaptureAuthorized || state.isOverlayRunning) "Active" else "Auto",
-                        onClick = onToggleOverlay,
-                        testTag = "btn_perm_capture"
+                if (!state.hasOverlayPermission) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(Color(0xFFFEF3C7))
+                            .border(1.dp, Color(0xFFF59E0B), RoundedCornerShape(14.dp))
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Overlay Permission Needed",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF92400E)
+                            )
+                            Text(
+                                text = "Allow Display over other apps once to launch.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color(0xFF78350F)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        LivingSecondaryButton(
+                            text = stringResource(R.string.btn_grant),
+                            icon = Icons.Filled.Layers,
+                            onClick = onRequestOverlayPermission,
+                            testTag = "btn_perm_overlay"
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+                LivingPrimaryButton(
+                    text = if (state.isOverlayRunning) {
+                        stringResource(R.string.cta_stop_solver)
+                    } else {
+                        stringResource(R.string.cta_start_solver)
+                    },
+                    icon = if (state.isOverlayRunning) Icons.Filled.Stop else Icons.Filled.PlayArrow,
+                    isActiveState = state.isOverlayRunning,
+                    onClick = onToggleOverlay,
+                    testTag = "btn_toggle_overlay",
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        }
+
+        // 2. The 3 Primary Answer Methods right on the Home Screen
+        item(key = "home_answer_methods_card") {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .livingGlassSurface(
+                        strength = GlassMaterialStrength.Card,
+                        cornerRadius = 22.dp
                     )
+                    .padding(18.dp)
+            ) {
+                Text(
+                    text = stringResource(R.string.home_methods_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = palette.inkPrimary
+                )
+                Spacer(modifier = Modifier.height(3.dp))
+                Text(
+                    text = stringResource(R.string.home_methods_subtitle),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = palette.inkSecondary
+                )
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Method 1: Server Sol
+                val isServerSignedIn = !state.firebaseUserId.isNullOrBlank()
+                LivingOptionChoiceCard(
+                    title = SolverMethod.FIREBASE_SERVER.title,
+                    subtitle = SolverMethod.FIREBASE_SERVER.subtitle,
+                    selected = state.solverMethod == SolverMethod.FIREBASE_SERVER,
+                    icon = Icons.Filled.CloudDone,
+                    badgeText = if (isServerSignedIn) "Logged In" else "Login Needed",
+                    onClick = { onSelectSolverMethod(SolverMethod.FIREBASE_SERVER) },
+                    testTag = "option_method_firebase"
+                )
+                if (state.solverMethod == SolverMethod.FIREBASE_SERVER && !isServerSignedIn) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    LivingSecondaryButton(
+                        text = if (state.isSigningInGoogle) "Signing in..." else "Log in to Server with Google",
+                        icon = Icons.Filled.CloudDone,
+                        onClick = onSignInServer,
+                        testTag = "btn_home_server_login",
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Method 2: OCR Text Extractor (Previous Method)
+                LivingOptionChoiceCard(
+                    title = SolverMethod.BACKGROUND_GEMINI.title,
+                    subtitle = SolverMethod.BACKGROUND_GEMINI.subtitle,
+                    selected = state.solverMethod == SolverMethod.BACKGROUND_GEMINI,
+                    icon = Icons.Filled.DocumentScanner,
+                    badgeText = if (state.isGoogleWebLoggedIn) "Gemini Ready" else "Built-in",
+                    onClick = { onSelectSolverMethod(SolverMethod.BACKGROUND_GEMINI) },
+                    testTag = "option_method_background_gemini"
+                )
+                if (state.solverMethod == SolverMethod.BACKGROUND_GEMINI && !state.isGoogleWebLoggedIn) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    LivingSecondaryButton(
+                        text = "Connect Background Gemini Session",
+                        icon = Icons.Filled.DocumentScanner,
+                        onClick = onOpenGeminiLogin,
+                        testTag = "btn_home_gemini_login",
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Method 3: API Key (Local Storage)
+                val keyBadge = if (state.configuredKeyCount > 0) {
+                    "${state.configuredKeyCount} Local Key(s)"
+                } else {
+                    "Set in Settings"
+                }
+                LivingOptionChoiceCard(
+                    title = SolverMethod.API_KEYS.title,
+                    subtitle = SolverMethod.API_KEYS.subtitle,
+                    selected = state.solverMethod == SolverMethod.API_KEYS,
+                    icon = Icons.Filled.Key,
+                    badgeText = keyBadge,
+                    onClick = { onSelectSolverMethod(SolverMethod.API_KEYS) },
+                    testTag = "option_method_api_keys"
+                )
+                if (state.solverMethod == SolverMethod.API_KEYS && state.configuredKeyCount == 0) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    LivingSecondaryButton(
+                        text = "Enter Local API Keys in Settings",
+                        icon = Icons.Filled.Settings,
+                        onClick = onOpenSettings,
+                        testTag = "btn_home_enter_keys",
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                // Active indicator if 4th Settings method ("Overlapping Google Completely") is active
+                if (state.solverMethod == SolverMethod.OVERLAPPING_GOOGLE) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(Color(0xFFE0F2FE))
+                            .border(1.4.dp, palette.accentSky, RoundedCornerShape(14.dp))
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.OpenInFull,
+                            contentDescription = null,
+                            tint = palette.accentSky,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Overlapping Google Completely (Active)",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF0C4A6E)
+                            )
+                            Text(
+                                text = "Enabled from Settings. Tap 1, 2, or 3 above anytime to switch back.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = palette.inkSecondary
+                            )
+                        }
+                    }
                 }
             }
         }
 
-        // 4. One-Tap Study Modes (Presets)
-        item(key = "study_modes") {
-            ScrollRevealSection(index = 3) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .livingGlassSurface(
-                            strength = GlassMaterialStrength.AccentSky,
-                            cornerRadius = 24.dp,
-                            scrollParallaxFactor = scrollFraction
-                        )
-                        .padding(20.dp)
+        // 3. Selected Setup Summary & Quick Format Switch (ABCD <-> Charging 91, 92, 93, 94)
+        item(key = "selected_summary_card") {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .livingGlassSurface(
+                        strength = GlassMaterialStrength.Card,
+                        cornerRadius = 22.dp
+                    )
+                    .padding(18.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
-                        text = stringResource(R.string.presets_title),
-                        style = MaterialTheme.typography.titleMedium,
+                        text = stringResource(R.string.home_selected_title),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
                         color = palette.inkPrimary
                     )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = stringResource(R.string.presets_subtitle),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = palette.inkSecondary
+                    LivingSecondaryButton(
+                        text = stringResource(R.string.btn_open_settings),
+                        icon = Icons.Filled.Settings,
+                        onClick = onOpenSettings,
+                        testTag = "btn_open_settings_from_home",
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
                     )
-                    Spacer(modifier = Modifier.height(14.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        PresetModeTile(
-                            title = stringResource(R.string.preset_study_title),
-                            subtitle = stringResource(R.string.preset_study_desc),
-                            icon = Icons.AutoMirrored.Filled.MenuBook,
-                            selected = state.activePreset == "STUDY",
-                            onClick = { onApplyPreset("STUDY") },
-                            testTag = "btn_preset_study",
-                            modifier = Modifier.weight(1f)
-                        )
-                        PresetModeTile(
-                            title = stringResource(R.string.preset_fast_title),
-                            subtitle = stringResource(R.string.preset_fast_desc),
-                            icon = Icons.Filled.Bolt,
-                            selected = state.activePreset == "FAST",
-                            onClick = { onApplyPreset("FAST") },
-                            testTag = "btn_preset_fast",
-                            modifier = Modifier.weight(1f)
-                        )
-                        PresetModeTile(
-                            title = stringResource(R.string.preset_quiet_title),
-                            subtitle = stringResource(R.string.preset_quiet_desc),
-                            icon = Icons.Filled.VisibilityOff,
-                            selected = state.activePreset == "SUBTLE",
-                            onClick = { onApplyPreset("SUBTLE") },
-                            testTag = "btn_preset_subtle",
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
                 }
-            }
-        }
 
-        // 5. How Questions Are Read
-        item(key = "reader_engine") {
-            ScrollRevealSection(index = 4) {
-                Column(
+                Spacer(modifier = Modifier.height(12.dp))
+
+                SummaryStatusRow(
+                    label = "Selected Method",
+                    value = state.solverMethod.shortName
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                SummaryStatusRow(
+                    label = "Overlay Shape",
+                    value = if (state.hudStyle == MainActivity.HUD_STYLE_ISLAND) {
+                        "Top Dynamic Pill (${listOf(100, 90, 50, 25)[state.islandOpacityIndex.coerceIn(0, 3)]}%)"
+                    } else {
+                        "Mini Bubble (${listOf(100, 90, 50, 25)[state.islandOpacityIndex.coerceIn(0, 3)]}%)"
+                    }
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                SummaryStatusRow(
+                    label = "Local API Keys",
+                    value = if (state.configuredKeyCount > 0) {
+                        "${state.configuredKeyCount} saved on device"
+                    } else {
+                        "None saved"
+                    }
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Quick 1-tap Answer Format Toggle (ABCD <-> Charging 91, 92, 93, 94)
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .livingGlassSurface(
-                            strength = GlassMaterialStrength.Card,
-                            cornerRadius = 24.dp,
-                            scrollParallaxFactor = scrollFraction
+                        .minimumInteractiveComponentSize()
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(if (state.batteryCamouflage) Color(0xFFECFDF5) else Color(0xFFF1F5F9))
+                        .border(
+                            width = 1.dp,
+                            color = if (state.batteryCamouflage) Color(0xFF10B981) else Color(0xFFCBD5E1),
+                            shape = RoundedCornerShape(14.dp)
                         )
-                        .padding(20.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                        .clickable(
+                            role = Role.Button,
+                            onClick = { onToggleChargingFormat(!state.batteryCamouflage) }
+                        )
+                        .padding(horizontal = 14.dp, vertical = 12.dp)
+                        .testTag("btn_quick_toggle_format"),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Column {
-                        Text(
-                            text = stringResource(R.string.reader_mode_title),
-                            style = MaterialTheme.typography.titleMedium,
-                            color = palette.inkPrimary
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.BatteryChargingFull,
+                            contentDescription = null,
+                            tint = if (state.batteryCamouflage) Color(0xFF047857) else palette.accentSky,
+                            modifier = Modifier.size(20.dp)
                         )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = stringResource(R.string.reader_mode_subtitle),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = palette.inkSecondary
-                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column {
+                            Text(
+                                text = if (state.batteryCamouflage) {
+                                    "Display: Charging 91, 92, 93, 94"
+                                } else {
+                                    "Display: Option ABCD"
+                                },
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = palette.inkPrimary
+                            )
+                            Text(
+                                text = if (state.batteryCamouflage) {
+                                    "91% = A • 92% = B • 93% = C • 94% = D"
+                                } else {
+                                    "Tap to switch to Charging 91, 92, 93, 94"
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = palette.inkSecondary
+                            )
+                        }
                     }
-
-                    LivingOptionChoiceCard(
-                        title = stringResource(R.string.reader_instant_title),
-                        subtitle = stringResource(R.string.reader_instant_desc),
-                        selected = state.extractionEngine == MainActivity.ENGINE_NATIVE,
-                        icon = Icons.Filled.Bolt,
-                        onClick = { onSelectEngine(MainActivity.ENGINE_NATIVE) },
-                        testTag = "option_engine_native"
-                    )
-
-                    LivingOptionChoiceCard(
-                        title = stringResource(R.string.reader_ocr_title),
-                        subtitle = stringResource(R.string.reader_ocr_desc),
-                        selected = state.extractionEngine == MainActivity.ENGINE_OCR,
-                        icon = Icons.Filled.CameraAlt,
-                        onClick = { onSelectEngine(MainActivity.ENGINE_OCR) },
-                        testTag = "option_engine_ocr"
-                    )
-
-                    LivingSwitchRow(
-                        title = stringResource(R.string.reader_fallback_title),
-                        subtitle = stringResource(R.string.reader_fallback_desc),
-                        checked = state.nativeFallbackOcr,
-                        onCheckedChange = onToggleOcrFallback,
-                        testTag = "switch_ocr_fallback"
+                    Icon(
+                        imageVector = Icons.Filled.SwapHoriz,
+                        contentDescription = "Switch answer format",
+                        tint = palette.inkSecondary,
+                        modifier = Modifier.size(20.dp)
                     )
                 }
             }
@@ -432,119 +445,26 @@ fun HomeScreen(
 }
 
 @Composable
-private fun SetupStepItem(
-    icon: ImageVector,
-    title: String,
-    description: String,
-    isReady: Boolean,
-    actionText: String,
-    onClick: () -> Unit,
-    testTag: String
+private fun SummaryStatusRow(
+    label: String,
+    value: String
 ) {
     val palette = LocalWhiteGlassPalette.current
-
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(if (isReady) Color(0x99F0FDF4) else Color(0xB3F8FAFC))
-            .border(
-                width = 1.dp,
-                color = if (isReady) Color(0x66059669) else Color(0xFFE2E8F0),
-                shape = RoundedCornerShape(16.dp)
-            )
-            .padding(12.dp),
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(
-            modifier = Modifier
-                .size(40.dp)
-                .clip(CircleShape)
-                .background(if (isReady) palette.accentMintContainer else palette.accentSkyContainer),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = if (isReady) Icons.Filled.CheckCircle else icon,
-                contentDescription = null,
-                tint = if (isReady) palette.accentMint else palette.accentSky,
-                modifier = Modifier.size(20.dp)
-            )
-        }
-        Spacer(modifier = Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleSmall,
-                color = palette.inkPrimary
-            )
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = description,
-                style = MaterialTheme.typography.bodySmall,
-                color = palette.inkSecondary
-            )
-        }
-        Spacer(modifier = Modifier.width(8.dp))
-        LivingSecondaryButton(
-            text = actionText,
-            selected = isReady,
-            onClick = onClick,
-            testTag = testTag,
-            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 9.dp)
-        )
-    }
-}
-
-@Composable
-private fun PresetModeTile(
-    title: String,
-    subtitle: String,
-    icon: ImageVector,
-    selected: Boolean,
-    onClick: () -> Unit,
-    testTag: String,
-    modifier: Modifier = Modifier
-) {
-    val palette = LocalWhiteGlassPalette.current
-    val bgColor = if (selected) Color.White else Color(0x99FFFFFF)
-    val borderColor = if (selected) palette.accentSky else Color(0xFFD8E4F0)
-
-    Column(
-        modifier = modifier
-            .minimumInteractiveComponentSize()
-            .clip(RoundedCornerShape(18.dp))
-            .background(bgColor)
-            .border(if (selected) 1.8.dp else 1.dp, borderColor, RoundedCornerShape(18.dp))
-            .clickable(role = Role.Button, onClick = onClick)
-            .padding(12.dp)
-            .testTag(testTag),
-        horizontalAlignment = Alignment.Start
-    ) {
-        Box(
-            modifier = Modifier
-                .size(34.dp)
-                .clip(CircleShape)
-                .background(if (selected) palette.accentSky else palette.accentSkyContainer),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = if (selected) Color.White else palette.accentSky,
-                modifier = Modifier.size(18.dp)
-            )
-        }
-        Spacer(modifier = Modifier.height(10.dp))
         Text(
-            text = title,
-            style = MaterialTheme.typography.titleSmall,
-            color = palette.inkPrimary
-        )
-        Spacer(modifier = Modifier.height(2.dp))
-        Text(
-            text = subtitle,
+            text = label,
             style = MaterialTheme.typography.bodySmall,
             color = palette.inkSecondary
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold,
+            color = palette.inkPrimary
         )
     }
 }

@@ -22,6 +22,6 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "OCR MCQ Solver"
+rootProject.name = "Prism AI"
 
 include(":app")

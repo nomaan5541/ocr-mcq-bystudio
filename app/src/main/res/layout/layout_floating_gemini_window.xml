@@ -5,7 +5,7 @@
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:background="@drawable/bg_gemini_window"
-    android:elevation="18dp"
+    android:elevation="20dp"
     android:clipChildren="false"
     android:clipToPadding="false"
     android:clipToOutline="true">
@@ -22,9 +22,9 @@
         android:paddingEnd="8dp">
 
         <ImageView
-            android:layout_width="20dp"
-            android:layout_height="20dp"
-            android:src="@drawable/ic_virus_avatar"
+            android:layout_width="22dp"
+            android:layout_height="22dp"
+            android:src="@drawable/ic_prism_orb"
             android:layout_marginEnd="6dp"
             android:contentDescription="@null" />
 
@@ -32,9 +32,9 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="Study AI"
+            android:text="Prism AI"
             android:textColor="#020617"
-            android:textSize="12sp"
+            android:textSize="12.5sp"
             android:textStyle="bold"
             android:ellipsize="end"
             android:singleLine="true" />
@@ -72,7 +72,7 @@
             android:focusable="true"
             android:layout_marginEnd="4dp" />
 
-        <!-- New Chat Button -->
+        <!-- Fresh Chat Button -->
         <TextView
             android:id="@+id/btn_window_new_chat"
             android:layout_width="wrap_content"
@@ -81,7 +81,7 @@
             android:gravity="center"
             android:paddingStart="7dp"
             android:paddingEnd="7dp"
-            android:text="Reset"
+            android:text="New"
             android:textColor="#B45309"
             android:textSize="11sp"
             android:textStyle="bold"
@@ -116,7 +116,7 @@
             android:paddingStart="7dp"
             android:paddingEnd="7dp"
             android:text="100%"
-            android:textColor="#0F172A"
+            android:textColor="#020617"
             android:textSize="11sp"
             android:textStyle="bold"
             android:clickable="true"
@@ -130,7 +130,7 @@
             android:layout_height="28dp"
             android:padding="4dp"
             android:src="@android:drawable/ic_menu_revert"
-            android:tint="#0F172A"
+            android:tint="#020617"
             android:clickable="true"
             android:focusable="true"
             android:layout_marginEnd="2dp"

@@ -1,6 +1,6 @@
 {
-  "name": "OCR MCQ Solver",
-  "description": "Autonomous AI Study & MCQ Assistant with Liquid Glass Dynamic Island overlay, Accessibility hierarchy scraper, and on-device ML Kit OCR.",
+  "name": "Prism AI",
+  "description": "Prism AI — iOS 26 Liquid Glass & Physics floating study assistant with Dynamic Island HUD, instant screen reader, ML Kit OCR, and Gemini AI.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

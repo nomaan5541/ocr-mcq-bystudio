@@ -39,11 +39,24 @@ import android.view.animation.OvershootInterpolator
 import android.webkit.*
 import android.widget.*
 import androidx.core.app.NotificationCompat
+import com.google.firebase.Firebase
+import com.google.firebase.FirebaseApp
+import com.google.firebase.auth.auth
 import com.omnisolve.overlay.MainActivity
 import com.omnisolve.overlay.R
 import com.omnisolve.overlay.api.GeminiVisionClient
+import com.omnisolve.overlay.api.MultiProviderApiSolver
+import com.omnisolve.overlay.api.PrismAiSolverEngine
 import com.omnisolve.overlay.capture.OcrEngine
 import com.omnisolve.overlay.capture.ScreenCaptureManager
+import com.omnisolve.overlay.data.SolvedQuestionRecord
+import com.omnisolve.overlay.data.SolvedQuestionRepository
+import com.omnisolve.overlay.firebase.configureAppCheck
+import com.omnisolve.overlay.model.AnswerModel
+import com.omnisolve.overlay.model.SolverMethod
+import com.omnisolve.overlay.model.SubjectMode
+import kotlin.coroutines.cancellation.CancellationException
+import kotlin.coroutines.resume
 import kotlinx.coroutines.*
 import java.util.regex.Pattern
 import okhttp3.OkHttpClient
@@ -67,6 +80,7 @@ class OverlayService : Service() {
         const val EXTRA_NEXT_DELAY_MS = "EXTRA_NEXT_DELAY_MS"
         const val EXTRA_INSTANT_TRIGGER = "EXTRA_INSTANT_TRIGGER"
         const val EXTRA_EXTRACTION_ENGINE = "EXTRA_EXTRACTION_ENGINE"
+        const val EXTRA_SOLVER_METHOD = "EXTRA_SOLVER_METHOD"
         const val EXTRA_HUD_STYLE = "EXTRA_HUD_STYLE"
         const val EXTRA_CAMOUFLAGE = "EXTRA_CAMOUFLAGE"
         const val EXTRA_HAPTIC = "EXTRA_HAPTIC"
@@ -79,12 +93,16 @@ class OverlayService : Service() {
         const val EXTRA_COMPANION_PORT = "EXTRA_COMPANION_PORT"
         const val EXTRA_COMPANION_SYNC_ENABLED = "EXTRA_COMPANION_SYNC_ENABLED"
 
-        private const val GEMINI_WEB_URL = "https://gemini.google.com/"
+        private const val GEMINI_WEB_URL = "https://gemini.google.com/app"
         private const val CHROME_USER_AGENT =
-            "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36"
+            "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36"
 
         @Volatile
         private var instance: OverlayService? = null
+
+        fun isServiceRunning(): Boolean = instance != null
+
+        fun hasScreenCapture(): Boolean = instance?.screenCaptureManager != null
 
         /**
          * Triggered from hardware volume buttons or external shortcuts.
@@ -92,18 +110,70 @@ class OverlayService : Service() {
         fun triggerSolveFromHardware(): Boolean {
             val svc = instance ?: return false
             svc.mainHandler.post {
-                if (!svc.isScanning) {
-                    svc.triggerSolveFlow(autoClickMode = svc.isAutoClickEnabled)
+                if (svc.isAutoClickEnabled) {
+                    if (!svc.isScanning) {
+                        svc.triggerSolveFlow(autoClickMode = true)
+                    }
+                } else {
+                    svc.onUserTapSolve()
                 }
             }
             return true
+        }
+
+        /**
+         * Converts an answer badge (A, B, C, D, E, F, multi-select "A, C", True/False, or numeric)
+         * into Charging Camouflage numbers (91% = A, 92% = B, 93% = C, 94% = D, 95% = E, 96% = F).
+         * Returns Pair(displayBadge, isResolvedAnswer). Idle/error badges ("?", "...", "RETRY", "ERR")
+         * safely return the real device battery percentage so "?" or "ERR" never leaks on screen.
+         */
+        internal fun formatChargingCamouflage(rawBadge: String?, fallbackBatteryPct: Int): Pair<String, Boolean> {
+            val safeFallback = "${fallbackBatteryPct.coerceIn(1, 100)}%"
+            val cleaned = rawBadge
+                ?.trim()
+                ?.removePrefix("(")
+                ?.removeSuffix(")")
+                ?.trim()
+                .orEmpty()
+
+            if (cleaned.isEmpty()) return safeFallback to false
+
+            val upper = cleaned.uppercase()
+            if (upper in setOf("?", "...", "SCAN", "ERR", "RETRY", "LOGIN", "KEY", "EMPTY", "WAIT")) {
+                return safeFallback to false
+            }
+
+            if (upper == "TRUE") return "91%" to true
+            if (upper == "FALSE") return "92%" to true
+
+            // Single letter A-F -> 91%-96%
+            if (upper.length == 1 && upper[0] in 'A'..'F') {
+                val code = 91 + (upper[0] - 'A')
+                return "${code}%" to true
+            }
+
+            // Multi-select e.g. "A, C" or "B, D" -> "91/93%"
+            val parts = upper.split(Regex("[,/&\\s]+")).filter { it.isNotBlank() }
+            if (parts.size >= 2 && parts.all { it.length == 1 && it[0] in 'A'..'F' }) {
+                val joined = parts.joinToString("/") { part -> (91 + (part[0] - 'A')).toString() }
+                return "${joined}%" to true
+            }
+
+            // Numeric answer e.g. "42" or "42.5"
+            if (cleaned.matches(Regex("^[+-]?\\d+(?:\\.\\d+)?%?$"))) {
+                val withPct = if (cleaned.endsWith("%")) cleaned else "${cleaned}%"
+                return withPct to true
+            }
+
+            return safeFallback to false
         }
     }
 
     private lateinit var windowManager: WindowManager
 
-    // HUD Configuration
-    private var extractionEngine = MainActivity.ENGINE_NATIVE
+    // HUD & Solver Configuration
+    private var extractionEngine = MainActivity.ENGINE_OCR
+    private var solverMethod: SolverMethod = SolverMethod.BACKGROUND_GEMINI
     private var hudStyle = MainActivity.HUD_STYLE_ISLAND
     private var isCamouflageEnabled = false
     private var isHapticFeedbackEnabled = true
@@ -138,6 +208,9 @@ class OverlayService : Service() {
     private var tvIslandTitle: TextView? = null
     private var ivIslandIcon: ImageView? = null
     private var btnIslandOpacity: TextView? = null
+    private var llIslandExplanationDrawer: View? = null
+    private var tvIslandMeta: TextView? = null
+    private var tvIslandExplanation: TextView? = null
 
     // Dynamic Island Visibility / Opacity Presets: 100%, 90%, 50%, 25%
     private var currentIslandOpacityIndex = 0
@@ -196,9 +269,9 @@ class OverlayService : Service() {
     private val opacityLevels = floatArrayOf(1.0f, 0.75f, 0.45f)
     private val opacityLabels = arrayOf("100%", "75%", "45%")
 
-    // Sizing presets: 0 = S (Compact), 1 = M (Medium), 2 = L (Large)
+    // Sizing presets: 0 = S (Compact), 1 = M (Medium), 2 = L (Large), 3 = FULL (Complete Overlap)
     private var currentSizeIndex = 0
-    private val sizeLabels = arrayOf("S", "M", "L")
+    private val sizeLabels = arrayOf("S", "M", "L", "FULL")
 
     private var displayMode = MainActivity.MODE_STEALTH
 
@@ -212,10 +285,21 @@ class OverlayService : Service() {
     // High-RAM Engine & Background-to-Front Answer Sync State
     private var cpuWakeLock: PowerManager.WakeLock? = null
     private var highRamSyncJob: Job? = null
+    private var currentSolveFlowJob: Job? = null
     private var activeSolvePollJob: Job? = null
+    private var lastManualTapMs: Long = 0L
 
     @Volatile
     private var latestCachedAnswer: String = ""
+
+    @Volatile
+    private var latestAnswerModel: AnswerModel? = null
+
+    private fun isValidAnswerBadge(badge: String?): Boolean {
+        val clean = badge?.trim().orEmpty()
+        if (clean.isEmpty() || clean.length > 24) return false
+        return clean.uppercase() !in setOf("?", "...", "ERR", "CAP", "TXT", "KEY", "NET", "RETRY", "LOGIN")
+    }
 
     @Volatile
     private var lastSyncedDomTurnSignature: String = ""
@@ -231,6 +315,9 @@ class OverlayService : Service() {
 
     @Volatile
     private var isGeminiReady = false
+
+    @Volatile
+    private var isForegroundStarted = false
 
     // Auto-click bot state
     private var isAutoClickEnabled = false
@@ -253,16 +340,11 @@ class OverlayService : Service() {
     override fun onCreate() {
         super.onCreate()
         instance = this
+        configureAppCheck(this, null)
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
-        try {
-            val savedAns = getSharedPreferences("OmniSolvePrefs", Context.MODE_PRIVATE)
-                .getString("PREF_LAST_SOLVED_ANSWER", "")
-                ?.trim()
-                ?.uppercase() ?: ""
-            if (savedAns in listOf("A", "B", "C", "D")) {
-                latestCachedAnswer = savedAns
-            }
-        } catch (_: Exception) {}
+        // Always start fresh so a previous session's answer is never displayed as current
+        latestCachedAnswer = ""
+        latestAnswerModel = null
         createNotificationChannel()
         acquireHighPerformanceWakeLock()
         registerVolumeButtonReceiver()
@@ -340,13 +422,30 @@ class OverlayService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        startForegroundSafely()
-        acquireHighPerformanceWakeLock()
-
         if (intent?.action == ACTION_UPDATE_CONFIG || intent?.action == ACTION_COMPANION_SYNC) {
+            if (!isForegroundStarted) {
+                stopSelf()
+                return START_NOT_STICKY
+            }
             applyUpdatedConfig(intent)
-            return START_STICKY
+            return START_NOT_STICKY
         }
+
+        val resultCode = intent?.getIntExtra(EXTRA_RESULT_CODE, Activity.RESULT_CANCELED)
+            ?: Activity.RESULT_CANCELED
+        @Suppress("DEPRECATION")
+        val resultData: Intent? = intent?.getParcelableExtra(EXTRA_RESULT_DATA)
+        val hasValidProjectionToken = (resultCode == Activity.RESULT_OK && resultData != null)
+
+        if (!hasValidProjectionToken && !isForegroundStarted) {
+            Log.w(TAG, "OverlayService started without MediaProjection grant — stopping cleanly")
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
+        startForegroundSafely()
+        isForegroundStarted = true
+        acquireHighPerformanceWakeLock()
 
         val prefs = getSharedPreferences("OmniSolvePrefs", Context.MODE_PRIVATE)
 
@@ -371,8 +470,13 @@ class OverlayService : Service() {
             ?: prefs.getBoolean(MainActivity.PREF_KEY_INSTANT_TRIGGER, true)
 
         extractionEngine = intent?.getStringExtra(EXTRA_EXTRACTION_ENGINE)
-            ?: prefs.getString(MainActivity.PREF_KEY_EXTRACTION_ENGINE, MainActivity.ENGINE_NATIVE)
-            ?: MainActivity.ENGINE_NATIVE
+            ?: prefs.getString(MainActivity.PREF_KEY_EXTRACTION_ENGINE, MainActivity.ENGINE_OCR)
+            ?: MainActivity.ENGINE_OCR
+
+        solverMethod = SolverMethod.fromId(
+            intent?.getStringExtra(EXTRA_SOLVER_METHOD)
+                ?: prefs.getString(MainActivity.PREF_KEY_SOLVER_METHOD, SolverMethod.BACKGROUND_GEMINI.id)
+        )
 
         hudStyle = intent?.getStringExtra(EXTRA_HUD_STYLE)
             ?: prefs.getString(MainActivity.PREF_KEY_HUD_STYLE, MainActivity.HUD_STYLE_ISLAND)
@@ -410,74 +514,154 @@ class OverlayService : Service() {
             stopCompanionSync()
         }
 
-        val resultCode = intent?.getIntExtra(EXTRA_RESULT_CODE, Activity.RESULT_CANCELED)
-            ?: Activity.RESULT_CANCELED
-        @Suppress("DEPRECATION")
-        val resultData: Intent? = intent?.getParcelableExtra(EXTRA_RESULT_DATA)
-
-        if (resultCode == Activity.RESULT_OK && resultData != null) {
-            initScreenCapture(resultCode, resultData)
-        } else {
-            Log.w(TAG, "No MediaProjection extras — screen capture unavailable")
+        if (hasValidProjectionToken) {
+            initScreenCapture(resultCode, resultData!!)
         }
 
         mainHandler.postDelayed({
-            // Add Gemini Window FIRST and Floating Pill SECOND so the front overlapping pill
-            // always stays at the highest WindowManager Z-order and responds immediately.
-            setupGeminiWindow()
+            if (solverMethod == SolverMethod.OVERLAPPING_GOOGLE) {
+                currentSizeIndex = 3
+                displayMode = MainActivity.MODE_WINDOW
+            }
+            // Initialize WebView immediately when OCR+Gemini, Overlapping Google, or Window mode is active
+            if (solverMethod == SolverMethod.BACKGROUND_GEMINI ||
+                solverMethod == SolverMethod.OVERLAPPING_GOOGLE ||
+                displayMode == MainActivity.MODE_WINDOW
+            ) {
+                setupGeminiWindow()
+            }
             setupFloatingBubble()
             bringFrontPillToTop()
-            if (latestCachedAnswer in listOf("A", "B", "C", "D") && !isScanning) {
+            if (isValidAnswerBadge(latestCachedAnswer) && !isScanning) {
                 setAnswerUI(latestCachedAnswer, "#047857", triggerFeedback = false)
+            } else if (!isScanning) {
+                setAnswerUI("?", "#0F172A", triggerFeedback = false)
             }
             if (isAutoClickEnabled) startAutoClickBot()
-        }, 200)
+        }, 120)
 
-        return START_STICKY
+        return START_NOT_STICKY
     }
 
     private fun applyUpdatedConfig(intent: Intent?) {
         val prefs = getSharedPreferences("OmniSolvePrefs", Context.MODE_PRIVATE)
-        if (intent != null) {
-            if (intent.hasExtra(EXTRA_EXTRACTION_ENGINE)) {
-                extractionEngine = intent.getStringExtra(EXTRA_EXTRACTION_ENGINE) ?: extractionEngine
-            }
-            if (intent.hasExtra(EXTRA_DISPLAY_MODE)) {
-                displayMode = intent.getStringExtra(EXTRA_DISPLAY_MODE) ?: displayMode
-            }
-            if (intent.hasExtra(EXTRA_AUTO_CLICK)) {
-                isAutoClickEnabled = intent.getBooleanExtra(EXTRA_AUTO_CLICK, isAutoClickEnabled)
-            }
-            if (intent.hasExtra(EXTRA_AFK_MODE)) {
-                isAfkAutoAdvanceEnabled = intent.getBooleanExtra(EXTRA_AFK_MODE, isAfkAutoAdvanceEnabled)
-            }
-            if (intent.hasExtra(EXTRA_SCAN_INTERVAL_SEC)) {
-                scanIntervalMs = intent.getIntExtra(EXTRA_SCAN_INTERVAL_SEC, 3) * 1000L
-            }
-            if (intent.hasExtra(EXTRA_NEXT_DELAY_MS)) {
-                nextDelayMs = intent.getIntExtra(EXTRA_NEXT_DELAY_MS, 1500).toLong()
-            }
-            if (intent.hasExtra(EXTRA_INSTANT_TRIGGER)) {
-                isInstantTriggerEnabled = intent.getBooleanExtra(EXTRA_INSTANT_TRIGGER, isInstantTriggerEnabled)
-            }
-            if (intent.hasExtra(EXTRA_CAMOUFLAGE)) {
-                isCamouflageEnabled = intent.getBooleanExtra(EXTRA_CAMOUFLAGE, isCamouflageEnabled)
-            }
-            if (intent.hasExtra(EXTRA_HAPTIC)) {
-                isHapticFeedbackEnabled = intent.getBooleanExtra(EXTRA_HAPTIC, isHapticFeedbackEnabled)
-            }
-            if (intent.hasExtra(EXTRA_ANTI_CHEAT)) {
-                isAntiCheatEnabled = intent.getBooleanExtra(EXTRA_ANTI_CHEAT, isAntiCheatEnabled)
-            }
-            if (intent.hasExtra(EXTRA_COMPANION_SYNC_ENABLED)) {
-                val syncEnabled = intent.getBooleanExtra(EXTRA_COMPANION_SYNC_ENABLED, false)
-                val host = intent.getStringExtra(EXTRA_COMPANION_HOST) ?: prefs.getString(MainActivity.PREF_KEY_COMPANION_HOST, "192.168.1.100") ?: "192.168.1.100"
-                val port = intent.getIntExtra(EXTRA_COMPANION_PORT, prefs.getInt(MainActivity.PREF_KEY_COMPANION_PORT, 59124))
-                if (syncEnabled) {
-                    startCompanionSync(host, port)
+        if (intent == null) return
+
+        if (intent.hasExtra(EXTRA_EXTRACTION_ENGINE)) {
+            extractionEngine = intent.getStringExtra(EXTRA_EXTRACTION_ENGINE) ?: extractionEngine
+        }
+        if (intent.hasExtra(EXTRA_SOLVER_METHOD)) {
+            solverMethod = SolverMethod.fromId(intent.getStringExtra(EXTRA_SOLVER_METHOD))
+            if (solverMethod == SolverMethod.OVERLAPPING_GOOGLE) {
+                currentSizeIndex = 3
+                displayMode = MainActivity.MODE_WINDOW
+                if (geminiWindowView == null) {
+                    setupGeminiWindow()
                 } else {
-                    stopCompanionSync()
+                    showGeminiWindow(true)
                 }
+                bringFrontPillToTop()
+            } else if (solverMethod == SolverMethod.BACKGROUND_GEMINI && geminiWindowView == null) {
+                setupGeminiWindow()
+                bringFrontPillToTop()
+            }
+        }
+        if (intent.hasExtra(EXTRA_SCAN_INTERVAL_SEC)) {
+            scanIntervalMs = intent.getIntExtra(EXTRA_SCAN_INTERVAL_SEC, 3).coerceIn(1, 10) * 1000L
+        }
+        if (intent.hasExtra(EXTRA_NEXT_DELAY_MS)) {
+            nextDelayMs = intent.getIntExtra(EXTRA_NEXT_DELAY_MS, 1500).toLong().coerceIn(500L, 4000L)
+        }
+        if (intent.hasExtra(EXTRA_INSTANT_TRIGGER)) {
+            isInstantTriggerEnabled = intent.getBooleanExtra(EXTRA_INSTANT_TRIGGER, isInstantTriggerEnabled)
+        }
+        if (intent.hasExtra(EXTRA_AFK_MODE)) {
+            isAfkAutoAdvanceEnabled = intent.getBooleanExtra(EXTRA_AFK_MODE, isAfkAutoAdvanceEnabled)
+        }
+        if (intent.hasExtra(EXTRA_HAPTIC)) {
+            isHapticFeedbackEnabled = intent.getBooleanExtra(EXTRA_HAPTIC, isHapticFeedbackEnabled)
+        }
+        if (intent.hasExtra(EXTRA_ANTI_CHEAT)) {
+            isAntiCheatEnabled = intent.getBooleanExtra(EXTRA_ANTI_CHEAT, isAntiCheatEnabled)
+        }
+
+        var rebuiltBubble = false
+        if (intent.hasExtra(EXTRA_HUD_STYLE)) {
+            val newHudStyle = intent.getStringExtra(EXTRA_HUD_STYLE) ?: hudStyle
+            if (newHudStyle != hudStyle) {
+                hudStyle = newHudStyle
+                try { bubbleView?.let { windowManager.removeView(it) } } catch (_: Exception) {}
+                bubbleView = null
+                setupFloatingBubble()
+                bringFrontPillToTop()
+                rebuiltBubble = true
+            }
+        }
+
+        if (intent.hasExtra(EXTRA_ISLAND_OPACITY_INDEX)) {
+            val opacityIdx = intent.getIntExtra(EXTRA_ISLAND_OPACITY_INDEX, currentIslandOpacityIndex)
+            if (opacityIdx in islandOpacityLevels.indices) {
+                applyIslandOpacity(opacityIdx, showToast = false)
+            }
+        }
+
+        if (intent.hasExtra(EXTRA_CAMOUFLAGE)) {
+            val newCamo = intent.getBooleanExtra(EXTRA_CAMOUFLAGE, isCamouflageEnabled)
+            isCamouflageEnabled = newCamo
+            ivIslandIcon?.setImageResource(
+                if (isCamouflageEnabled) R.drawable.ic_battery_camouflage else R.drawable.ic_prism_orb
+            )
+            if (!isScanning) {
+                if (isValidAnswerBadge(latestCachedAnswer)) {
+                    setAnswerUI(latestCachedAnswer, "#047857", triggerFeedback = false)
+                } else {
+                    setAnswerUI("?", "#0F172A", triggerFeedback = false)
+                }
+            }
+        } else if (rebuiltBubble && !isScanning) {
+            if (isValidAnswerBadge(latestCachedAnswer)) {
+                setAnswerUI(latestCachedAnswer, "#047857", triggerFeedback = false)
+            } else {
+                setAnswerUI("?", "#0F172A", triggerFeedback = false)
+            }
+        }
+
+        if (intent.hasExtra(EXTRA_DISPLAY_MODE)) {
+            val newMode = if (solverMethod == SolverMethod.OVERLAPPING_GOOGLE) {
+                MainActivity.MODE_WINDOW
+            } else {
+                intent.getStringExtra(EXTRA_DISPLAY_MODE) ?: displayMode
+            }
+            displayMode = newMode
+            val shouldShowWin = (displayMode == MainActivity.MODE_WINDOW)
+            if (shouldShowWin && geminiWindowView == null) {
+                setupGeminiWindow()
+                bringFrontPillToTop()
+            } else if (geminiWindowView != null && (shouldShowWin != isWindowVisible || solverMethod == SolverMethod.OVERLAPPING_GOOGLE)) {
+                showGeminiWindow(shouldShowWin)
+            }
+        }
+
+        if (intent.hasExtra(EXTRA_AUTO_CLICK)) {
+            val newAuto = intent.getBooleanExtra(EXTRA_AUTO_CLICK, isAutoClickEnabled)
+            isAutoClickEnabled = newAuto
+            updateBotToggleUI()
+            if (isAutoClickEnabled) {
+                startAutoClickBot()
+            } else {
+                stopAutoClickBot()
+            }
+        }
+
+        if (intent.hasExtra(EXTRA_COMPANION_SYNC_ENABLED)) {
+            val syncEnabled = intent.getBooleanExtra(EXTRA_COMPANION_SYNC_ENABLED, false)
+            val host = intent.getStringExtra(EXTRA_COMPANION_HOST)
+                ?: prefs.getString(MainActivity.PREF_KEY_COMPANION_HOST, "192.168.1.100") ?: "192.168.1.100"
+            val port = intent.getIntExtra(EXTRA_COMPANION_PORT, prefs.getInt(MainActivity.PREF_KEY_COMPANION_PORT, 59124))
+            if (syncEnabled) {
+                startCompanionSync(host, port)
+            } else {
+                stopCompanionSync()
             }
         }
     }
@@ -549,6 +733,7 @@ class OverlayService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        currentSolveFlowJob?.cancel()
         activeSolvePollJob?.cancel()
         highRamSyncJob?.cancel()
         stopCompanionSync()
@@ -649,15 +834,21 @@ class OverlayService : Service() {
             btnClose        = bubbleView!!.findViewById(R.id.btn_island_close)
             tvIslandTitle   = bubbleView!!.findViewById(R.id.tv_island_title)
             ivIslandIcon    = bubbleView!!.findViewById(R.id.iv_island_icon)
+            llIslandExplanationDrawer = bubbleView!!.findViewById(R.id.ll_island_explanation_drawer)
+            tvIslandMeta    = bubbleView!!.findViewById(R.id.tv_island_meta)
+            tvIslandExplanation = bubbleView!!.findViewById(R.id.tv_island_explanation)
 
             if (isCamouflageEnabled) {
                 ivIslandIcon?.setImageResource(R.drawable.ic_battery_camouflage)
-                tvIslandTitle?.text = "Battery"
-                tvAnswerDisplay?.text = "${getDeviceBatteryPercentage()}%"
+                tvIslandTitle?.text = "Charging"
+                val (camoText, isSolved) = formatChargingCamouflage(latestCachedAnswer, getDeviceBatteryPercentage())
+                tvAnswerDisplay?.text = camoText
                 tvAnswerDisplay?.textSize = 13f
+                tvAnswerDisplay?.setTextColor(Color.parseColor(if (isSolved) "#047857" else "#0F172A"))
+                llIslandExplanationDrawer?.visibility = View.GONE
             } else {
-                ivIslandIcon?.setImageResource(R.drawable.ic_virus_avatar)
-                if (latestCachedAnswer in listOf("A", "B", "C", "D")) {
+                ivIslandIcon?.setImageResource(R.drawable.ic_prism_orb)
+                if (isValidAnswerBadge(latestCachedAnswer)) {
                     tvIslandTitle?.text = "Answer"
                     tvAnswerDisplay?.text = latestCachedAnswer
                 } else {
@@ -666,12 +857,24 @@ class OverlayService : Service() {
                 }
             }
 
-            // Tapping island body triggers solve (or syncs background answer if ready)
+            // Tapping explanation drawer collapses it cleanly
+            llIslandExplanationDrawer?.setOnClickListener {
+                val group = bubbleView as? ViewGroup
+                if (group != null) {
+                    TransitionManager.beginDelayedTransition(group, AutoTransition().apply { duration = 200 })
+                }
+                llIslandExplanationDrawer?.visibility = View.GONE
+                try { windowManager.updateViewLayout(bubbleView, bubbleParams) } catch (_: Exception) {}
+            }
+
+            // Tapping island body always scans & solves immediately (cancelling any stuck in-flight try)
             bubbleView!!.findViewById<View>(R.id.ll_island_body)?.setOnClickListener {
-                syncStoredAnswerFromBackgroundDom(forceUiRefresh = true)
-                if (!isScanning) triggerSolveFlow()
+                onUserTapSolve()
             }
         } else {
+            llIslandExplanationDrawer = null
+            tvIslandMeta = null
+            tvIslandExplanation = null
             bubbleContainer = bubbleView!!.findViewById(R.id.bubble_icon_container)
             expandedToolbar = bubbleView!!.findViewById(R.id.expanded_toolbar)
             btnScan         = bubbleView!!.findViewById(R.id.btn_scan)
@@ -682,10 +885,14 @@ class OverlayService : Service() {
             btnClose        = bubbleView!!.findViewById(R.id.btn_close_toolbar)
 
             if (isCamouflageEnabled) {
-                tvAnswerDisplay?.text = "${getDeviceBatteryPercentage()}%"
+                val (camoText, isSolved) = formatChargingCamouflage(latestCachedAnswer, getDeviceBatteryPercentage())
+                tvAnswerDisplay?.text = camoText
                 tvAnswerDisplay?.textSize = 13f
-            } else if (latestCachedAnswer in listOf("A", "B", "C", "D")) {
+                tvAnswerDisplay?.setTextColor(Color.parseColor(if (isSolved) "#047857" else "#0F172A"))
+            } else if (isValidAnswerBadge(latestCachedAnswer)) {
                 tvAnswerDisplay?.text = latestCachedAnswer
+            } else {
+                tvAnswerDisplay?.text = "?"
             }
         }
 
@@ -708,13 +915,12 @@ class OverlayService : Service() {
         // Update bot toggle icon state
         updateBotToggleUI()
 
-        // Single tap: syncs any stored background answer & toggles expanded toolbar;
-        // Double tap: cycles pill visibility (100% -> 90% -> 50% -> 25%)
+        // Single tap on orb icon toggles expanded toolbar;
+        // Double tap cycles pill visibility (100% -> 90% -> 50% -> 25%)
         bubbleContainer.setOnTouchListener(createDragAndTapListener(
             bubbleParams,
             { bubbleView },
             onSingleTap = {
-                syncStoredAnswerFromBackgroundDom(forceUiRefresh = true)
                 val group = bubbleView as? ViewGroup
                 if (group != null) {
                     val transition = AutoTransition().apply {
@@ -732,18 +938,31 @@ class OverlayService : Service() {
         ))
 
         btnScan.setOnClickListener {
-            if (!isScanning) triggerSolveFlow()
+            onUserTapSolve()
         }
 
-        // Tapping the window toggle button or answer box syncs background answer & opens/hides Gemini window
+        // Tapping the window toggle button opens/hides the floating Gemini window
         btnToggleWindow?.setOnClickListener {
-            syncStoredAnswerFromBackgroundDom(forceUiRefresh = true)
             toggleGeminiWindow()
         }
 
         tvAnswerDisplay?.setOnClickListener {
-            syncStoredAnswerFromBackgroundDom(forceUiRefresh = true)
-            toggleGeminiWindow()
+            val drawer = llIslandExplanationDrawer
+            val hasCurrentExplanation = latestAnswerModel != null && !tvIslandExplanation?.text.isNullOrBlank()
+            if (isIsland && !isCamouflageEnabled && drawer != null && hasCurrentExplanation && !isScanning) {
+                val group = bubbleView as? ViewGroup
+                if (group != null) {
+                    val transition = AutoTransition().apply {
+                        duration = 220
+                        interpolator = OvershootInterpolator(1.1f)
+                    }
+                    TransitionManager.beginDelayedTransition(group, transition)
+                }
+                drawer.visibility = if (drawer.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+                try { windowManager.updateViewLayout(bubbleView, bubbleParams) } catch (_: Exception) {}
+            } else {
+                onUserTapSolve()
+            }
         }
 
         // Bot toggle button
@@ -839,25 +1058,27 @@ class OverlayService : Service() {
         progressBar = geminiWindowView!!.findViewById(R.id.web_progress_bar)
         geminiWebView = geminiWindowView!!.findViewById(R.id.gemini_webview)
 
-        if (latestCachedAnswer in listOf("A", "B", "C", "D")) {
+        if (isValidAnswerBadge(latestCachedAnswer)) {
             tvWindowAnswerBadge?.text = latestCachedAnswer
         }
 
         tvWindowAnswerBadge?.setOnClickListener {
-            syncStoredAnswerFromBackgroundDom(forceUiRefresh = true)
+            onUserTapSolve()
         }
 
         headerDragArea.setOnTouchListener(createDragListener(windowParams, { geminiWindowView }))
 
         btnWindowScan.setOnClickListener {
-            if (!isScanning) triggerSolveFlow()
+            onUserTapSolve()
         }
 
         val btnNewChat = geminiWindowView!!.findViewById<View?>(R.id.btn_window_new_chat)
         btnNewChat?.setOnClickListener {
-            lastSyncedDomTurnSignature = ""
-            geminiWebView?.loadUrl("https://gemini.google.com/app")
-            Toast.makeText(this, "Started fresh Gemini session", Toast.LENGTH_SHORT).show()
+            serviceScope.launch(Dispatchers.Main) {
+                lastSyncedDomTurnSignature = ""
+                forceResetGeminiWebChat()
+                Toast.makeText(this@OverlayService, "Opened fresh Gemini chat", Toast.LENGTH_SHORT).show()
+            }
         }
 
         btnSize.setOnClickListener {
@@ -917,9 +1138,10 @@ class OverlayService : Service() {
     }
 
     /**
-     * Parks the Gemini WebView in a full 340dp x 440dp in-RAM viewport anchored on-screen at
-     * imperceptible alpha (0.015f) with FLAG_NOT_TOUCHABLE so SurfaceFlinger continues ticking
-     * 60fps VSYNCs and Chromium never discards GPU tiles or freezes streaming responses.
+     * Parks the Gemini WebView in a full 340dp x 440dp in-RAM viewport shifted mostly off-screen
+     * (`x = -336dp` so 4dp overlaps at imperceptible `alpha = 0.015f` with `FLAG_NOT_TOUCHABLE`).
+     * Keeping real 340dp x 440dp window dimensions ensures Angular's `<rich-textarea>` and Send
+     * button never collapse into a 0px layout while intercepting zero touches on screen.
      */
     private fun parkGeminiWindowInRam() {
         val winView = geminiWindowView ?: return
@@ -932,9 +1154,9 @@ class OverlayService : Service() {
             dpToPx(440)
         )
 
-        windowParams.width = dpToPx(8)
-        windowParams.height = dpToPx(8)
-        windowParams.x = 0
+        windowParams.width = dpToPx(340)
+        windowParams.height = dpToPx(440)
+        windowParams.x = -dpToPx(336)
         windowParams.y = getStatusBarHeight()
         windowParams.flags =
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
@@ -968,6 +1190,11 @@ class OverlayService : Service() {
             2 -> {
                 windowParams.width = (metrics.widthPixels * 0.92).toInt().coerceAtMost(dpToPx(420))
                 windowParams.height = (metrics.heightPixels * 0.65).toInt().coerceAtMost(dpToPx(580))
+            }
+            else -> {
+                // Preset 3 ("FULL"): Overlapping Google Completely over screen
+                windowParams.width = (metrics.widthPixels * 0.96).toInt()
+                windowParams.height = (metrics.heightPixels * 0.82).toInt()
             }
         }
         try { windowManager.updateViewLayout(geminiWindowView, windowParams) } catch (_: Exception) {}
@@ -1012,9 +1239,10 @@ class OverlayService : Service() {
             cookieManager.setAcceptThirdPartyCookies(webView, true)
         }
 
-        // High-RAM Mode: keep hardware layer resident and lock Chromium renderer priority to IMPORTANT
-        // with waivedWhenNotVisible = false so Android never suspends or evicts background WebView RAM.
-        webView.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+        // Use LAYER_TYPE_SOFTWARE without offscreenPreRaster so background Service WebView
+        // composites cleanly on CPU without probing /dev/dri/renderD128 DRM rendernodes on emulators.
+        geminiWindowView?.setLayerType(View.LAYER_TYPE_SOFTWARE, null)
+        webView.setLayerType(View.LAYER_TYPE_SOFTWARE, null)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             webView.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false)
         }
@@ -1022,7 +1250,6 @@ class OverlayService : Service() {
         webView.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
-            databaseEnabled = true
             useWideViewPort = true
             loadWithOverviewMode = true
             setSupportZoom(true)
@@ -1031,9 +1258,6 @@ class OverlayService : Service() {
             mediaPlaybackRequiresUserGesture = false
             userAgentString = CHROME_USER_AGENT
             cacheMode = WebSettings.LOAD_DEFAULT
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                offscreenPreRaster = true
-            }
         }
 
         webView.onResume()
@@ -1081,7 +1305,6 @@ class OverlayService : Service() {
                 view?.onResume()
                 view?.resumeTimers()
                 Log.d(TAG, "Gemini page fully loaded and warm in RAM")
-                syncStoredAnswerFromBackgroundDom(forceUiRefresh = false)
             }
 
             override fun onRenderProcessGone(view: WebView?, detail: RenderProcessGoneDetail?): Boolean {
@@ -1123,11 +1346,32 @@ class OverlayService : Service() {
     }
 
     private fun toggleGeminiWindow() {
+        if (geminiWindowView == null) {
+            displayMode = MainActivity.MODE_WINDOW
+            setupGeminiWindow()
+            bringFrontPillToTop()
+            return
+        }
         if (isWindowVisible) {
             showGeminiWindow(false)
         } else {
             showGeminiWindow(true)
         }
+    }
+
+    private suspend fun ensureGeminiWindowReady(): Boolean {
+        withContext(Dispatchers.Main) {
+            if (geminiWindowView == null) {
+                setupGeminiWindow()
+                bringFrontPillToTop()
+            }
+        }
+        if (isGeminiReady) return true
+        repeat(25) {
+            delay(160)
+            if (isGeminiReady) return true
+        }
+        return geminiWebView != null
     }
 
     private fun showGeminiWindow(show: Boolean) {
@@ -1148,8 +1392,9 @@ class OverlayService : Service() {
                 WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
                 WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH
             applySizePreset(currentSizeIndex)
-            windowParams.x = 24
-            windowParams.y = getStatusBarHeight() + dpToPx(58)
+            val screenW = resources.displayMetrics.widthPixels
+            windowParams.x = ((screenW - windowParams.width) / 2).coerceAtLeast(8)
+            windowParams.y = getStatusBarHeight() + dpToPx(54)
             setWindowFocusable(true)
             try { windowManager.updateViewLayout(winView, windowParams) } catch (_: Exception) {}
 
@@ -1157,12 +1402,11 @@ class OverlayService : Service() {
             geminiWebView?.onResume()
             geminiWebView?.resumeTimers()
 
-            // Keep front overlapping pill above the window and sync any stored background answer
+            // Keep front overlapping pill above the window
             bringFrontPillToTop()
-            if (latestCachedAnswer in listOf("A", "B", "C", "D") && !isScanning) {
+            if (isValidAnswerBadge(latestCachedAnswer) && !isScanning) {
                 setAnswerUI(latestCachedAnswer, "#047857", triggerFeedback = false)
             }
-            syncStoredAnswerFromBackgroundDom(forceUiRefresh = true)
 
             // Crisp Spring Pop In Animation
             winView.scaleX = 0.90f
@@ -1176,8 +1420,6 @@ class OverlayService : Service() {
                 .setInterpolator(OvershootInterpolator(1.3f))
                 .start()
         } else {
-            // Sync any answer visible in the window onto the front pill before parking
-            syncStoredAnswerFromBackgroundDom(forceUiRefresh = true)
             winView.animate().cancel()
             winView.animate()
                 .scaleX(0.90f)
@@ -1207,71 +1449,138 @@ class OverlayService : Service() {
         }
     }
 
-    // ─── 3. Solving Flow: Screen OCR → Background Gemini → Single Letter HUD ─
+    /**
+     * Temporarily grants input focus to the parked off-screen WebView while keeping `FLAG_NOT_TOUCHABLE`
+     * so `document.execCommand('insertText')` updates Angular's Quill/ProseMirror `FormControl`
+     * and enables the Send button without intercepting user touches.
+     */
+    private fun setParkedWebViewKeyboardFocus(focusable: Boolean) {
+        val winView = geminiWindowView ?: return
+        if (isWindowVisible) return
+        windowParams.flags = if (focusable) {
+            WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+        } else {
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+        }
+        try {
+            windowManager.updateViewLayout(winView, windowParams)
+        } catch (_: Exception) {}
+        if (focusable) {
+            geminiWebView?.onResume()
+            geminiWebView?.resumeTimers()
+            geminiWebView?.requestFocus()
+        }
+    }
+
+    // ─── 3. Solving Flow: Screenshot + ML Kit OCR → 3 Answer Methods → Pill ──
 
     /**
-     * Core solve flow: Extracts text (Native A11y tree or Screen Capture OCR) → Gemini → Answer letter.
-     * @param autoClickMode If true, also performs auto-click on the detected answer option.
+     * Handles any manual tap on the Floating Pill / Scan button / Answer badge.
+     * If a previous solve is still running or stuck, immediately cancels it and starts a fresh try!
+     */
+    private fun onUserTapSolve() {
+        val now = System.currentTimeMillis()
+        if (now - lastManualTapMs < 350L) return
+        lastManualTapMs = now
+        if (isScanning) {
+            Log.d(TAG, "User tapped pill while scanning — cancelling in-flight solve and starting a fresh attempt immediately")
+            currentSolveFlowJob?.cancel()
+            activeSolvePollJob?.cancel()
+            isScanning = false
+        }
+        triggerSolveFlow(autoClickMode = false)
+    }
+
+    /**
+     * Core solve flow:
+     * 1. Captures screenshot and extracts full screen text via ML Kit OCR (with optional Native A11y mode).
+     * 2. Formats a strictly SINGLE-LINE prompt containing the full OCR question + options (zero newlines).
+     * 3. Routes to the user's chosen Answer Method:
+     *    - Method 1 (`FIREBASE_SERVER`): Logged-in Firebase Cloud Server
+     *    - Method 2 (`BACKGROUND_GEMINI`): Screenshot -> ML Kit OCR -> Built-in Background Gemini Flash
+     *    - Method 3 (`API_KEYS`): Multi-AI Keys (NVIDIA Free, OpenRouter Free, Gemini, OpenAI) with automatic quota shifting
      */
     private fun triggerSolveFlow(autoClickMode: Boolean = false) {
         val prefs = getSharedPreferences("OmniSolvePrefs", Context.MODE_PRIVATE)
-        val customApiKey = prefs.getString(MainActivity.PREF_KEY_GEMINI_API_KEY, null)
-        val selectedModel = prefs.getString(MainActivity.PREF_KEY_GEMINI_MODEL, GeminiVisionClient.DEFAULT_MODEL)
-        val resolvedApiKey = GeminiVisionClient.resolveApiKey(customApiKey)
+        val method = SolverMethod.fromId(
+            prefs.getString(MainActivity.PREF_KEY_SOLVER_METHOD, solverMethod.id)
+        )
+        solverMethod = method
+        val autoFailover = prefs.getBoolean(MainActivity.PREF_KEY_AUTO_FAILOVER, true)
 
-        if (!isGeminiReady && resolvedApiKey == null) {
-            if (!autoClickMode) {
-                Toast.makeText(this, "⏳ Gemini is still loading (or configure GEMINI_API_KEY in Secrets)...", Toast.LENGTH_SHORT).show()
-            }
-            return
-        }
+        val selectedModel = prefs.getString(
+            MainActivity.PREF_KEY_GEMINI_MODEL,
+            PrismAiSolverEngine.DEFAULT_CLOUD_MODEL
+        ) ?: PrismAiSolverEngine.DEFAULT_CLOUD_MODEL
+        val subjectMode = SubjectMode.fromId(
+            prefs.getString(MainActivity.PREF_KEY_SUBJECT_MODE, SubjectMode.GENERAL.id)
+        )
+        val dualVerify = prefs.getBoolean(MainActivity.PREF_KEY_DUAL_VERIFY, false)
+        val translateToEnglish = prefs.getBoolean(MainActivity.PREF_KEY_TRANSLATE_ENGLISH, false)
 
-        val currentEngine = prefs.getString(MainActivity.PREF_KEY_EXTRACTION_ENGINE, extractionEngine) ?: extractionEngine
-        val isNativeMode = (currentEngine == MainActivity.ENGINE_NATIVE)
+        val currentEngine = prefs.getString(MainActivity.PREF_KEY_EXTRACTION_ENGINE, MainActivity.ENGINE_OCR)
+            ?: MainActivity.ENGINE_OCR
         val a11yActive = AutoClickAccessibilityService.isServiceRunning()
+        // Screenshot + ML Kit OCR is always used for Method 2 (when screen capture is active) and as default
+        val useScreenOcr = (method == SolverMethod.BACKGROUND_GEMINI && screenCaptureManager != null) ||
+            currentEngine != MainActivity.ENGINE_NATIVE ||
+            !a11yActive
         val allowOcrFallback = prefs.getBoolean(MainActivity.PREF_KEY_NATIVE_FALLBACK_OCR, true)
         val autoCopyClipboard = prefs.getBoolean(MainActivity.PREF_KEY_AUTO_COPY_CLIPBOARD, false)
 
-        if (!isNativeMode && screenCaptureManager == null) {
+        if (useScreenOcr && screenCaptureManager == null && !a11yActive) {
             if (!autoClickMode) {
-                Toast.makeText(this, "Screen capture not ready. Grant permission in app.", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Screen capture not ready. Tap Start Floating Pill inside Prism AI.", Toast.LENGTH_SHORT).show()
             }
             return
         }
-        if (isNativeMode && !a11yActive) {
-            if (allowOcrFallback && screenCaptureManager != null) {
-                Log.i(TAG, "Native mode active but Accessibility Service not running; will use OCR fallback")
-            } else {
-                if (!autoClickMode) {
-                    Toast.makeText(this, "Please enable Accessibility Service for Native mode.", Toast.LENGTH_SHORT).show()
-                }
-                return
-            }
-        }
 
         val currentSolveId = ++activeSolveId
+        currentSolveFlowJob?.cancel()
+        activeSolvePollJob?.cancel()
         isScanning = true
+
+        // Clear previous question's answer immediately so stale answers can NEVER reappear
+        if (!autoClickMode) {
+            latestCachedAnswer = ""
+            latestAnswerModel = null
+            mainHandler.post {
+                llIslandExplanationDrawer?.visibility = View.GONE
+                tvIslandExplanation?.text = ""
+                tvIslandMeta?.text = ""
+            }
+        }
         setAnswerUI("...", "#0369A1", loading = true, triggerFeedback = false)
         val btnWindowScan = geminiWindowView?.findViewById<TextView>(R.id.btn_window_scan)
-        btnWindowScan?.text = "Reading..."
+        btnWindowScan?.text = "OCR..."
 
-        serviceScope.launch {
+        currentSolveFlowJob = serviceScope.launch {
+            var bitmapToRecycle: Bitmap? = null
             try {
                 var extractedText = ""
                 var textBlocks = emptyList<Pair<String, Rect>>()
-                var bitmapToRecycle: Bitmap? = null
 
-                if (isNativeMode && a11yActive) {
-                    btnWindowScan?.text = "Reading..."
+                if (!useScreenOcr && a11yActive) {
                     val scraped = withContext(Dispatchers.Default) {
                         AutoClickAccessibilityService.extractScreenHierarchy()
                     }
-                    if (scraped != null && scraped.first.length >= 5) {
+                    val meaningfulChars = scraped?.first?.count { it.isLetterOrDigit() } ?: 0
+                    if (scraped != null && meaningfulChars >= 25) {
                         extractedText = scraped.first
                         textBlocks = scraped.second
                         Log.d(TAG, "Native accessibility scraping succeeded: ${textBlocks.size} blocks, ${extractedText.length} chars")
+                        val mentionsVisual = Regex(
+                            """\b(diagram|figure|fig|graph|image|chart|table|picture|shown|circuit|plot|map|triangle|angle)\b""",
+                            RegexOption.IGNORE_CASE
+                        ).containsMatchIn(extractedText)
+                        if (screenCaptureManager != null && mentionsVisual) {
+                            bitmapToRecycle = captureFrameOnly()
+                        }
                     } else if (allowOcrFallback && screenCaptureManager != null) {
-                        Log.w(TAG, "Native scraping returned empty, falling back to Screen Capture OCR...")
                         val ocrData = captureAndOcr()
                         if (ocrData == null) {
                             setAnswerUI("CAP", "#B45309", triggerFeedback = false)
@@ -1283,13 +1592,12 @@ class OverlayService : Service() {
                         textBlocks = ocrData.second
                         bitmapToRecycle = ocrData.third
                     } else {
-                        Log.w(TAG, "Native scraping returned empty and OCR fallback disabled/unavailable")
                         setAnswerUI("TXT", "#B45309", triggerFeedback = false)
                         btnWindowScan?.text = "Solve"
                         isScanning = false
                         return@launch
                     }
-                } else {
+                } else if (screenCaptureManager != null) {
                     val ocrData = captureAndOcr()
                     if (ocrData == null) {
                         setAnswerUI("CAP", "#B45309", triggerFeedback = false)
@@ -1300,43 +1608,46 @@ class OverlayService : Service() {
                     extractedText = ocrData.first
                     textBlocks = ocrData.second
                     bitmapToRecycle = ocrData.third
+                } else if (a11yActive) {
+                    val scraped = withContext(Dispatchers.Default) {
+                        AutoClickAccessibilityService.extractScreenHierarchy()
+                    }
+                    extractedText = scraped?.first.orEmpty()
+                    textBlocks = scraped?.second.orEmpty()
                 }
 
-                if (extractedText.isBlank() || extractedText.length < 5) {
+                val meaningfulCount = extractedText.count { it.isLetterOrDigit() }
+                if (meaningfulCount < 4) {
+                    Log.w(TAG, "OCR extracted insufficient text ($meaningfulCount chars) — aborting instead of sending empty prompt")
                     setAnswerUI("TXT", "#B45309", triggerFeedback = false)
                     btnWindowScan?.text = "Solve"
                     isScanning = false
-                    bitmapToRecycle?.recycle()
                     return@launch
                 }
 
-                // Check if this looks like an MCQ (has option labels)
-                val isMcq = Regex("""\b[A-Da-d][.)\s]""").containsMatchIn(extractedText) ||
-                            Regex("""\b(option|choice)\s*[A-Da-d]""", RegexOption.IGNORE_CASE).containsMatchIn(extractedText) ||
-                            Regex("""\b[1-4][.)\s]""").containsMatchIn(extractedText)
+                // Check if this looks like an MCQ when Auto-Click Bot is polling
+                val isMcq = Regex("""\b[A-Fa-f][.)\s]""").containsMatchIn(extractedText) ||
+                            Regex("""\b(option|choice)\s*[A-Fa-f]""", RegexOption.IGNORE_CASE).containsMatchIn(extractedText) ||
+                            Regex("""\b[1-6][.)\s]""").containsMatchIn(extractedText)
 
                 if (autoClickMode && !isMcq) {
-                    if (latestCachedAnswer in listOf("A", "B", "C", "D")) {
+                    if (isValidAnswerBadge(latestCachedAnswer)) {
                         setAnswerUI(latestCachedAnswer, "#047857", triggerFeedback = false)
                     } else {
                         setAnswerUI("?", "#0F172A", triggerFeedback = false)
                     }
                     btnWindowScan?.text = "Solve"
                     isScanning = false
-                    bitmapToRecycle?.recycle()
                     return@launch
                 }
 
-                // AEI AFK Bot: Check if question is identical to already solved question
                 val questionSignature = computeQuestionSignature(extractedText)
                 if (autoClickMode && questionSignature == lastSolvedQuestionSignature && lastSolvedQuestionSignature.isNotEmpty()) {
-                    Log.d(TAG, "AEI AFK Bot: Screen still shows already answered question ($questionSignature). Waiting for new question...")
-                    if (latestCachedAnswer in listOf("A", "B", "C", "D")) {
+                    if (isValidAnswerBadge(latestCachedAnswer)) {
                         setAnswerUI(latestCachedAnswer, "#047857", triggerFeedback = false)
                     }
                     btnWindowScan?.text = "Solve"
                     isScanning = false
-                    bitmapToRecycle?.recycle()
                     return@launch
                 }
 
@@ -1344,88 +1655,200 @@ class OverlayService : Service() {
                     lastSolvedQuestionSignature = questionSignature
                 }
 
-                bitmapToRecycle?.recycle()
-
-                // 5. Strict single-letter answer prompt formulation
-                val promptText = "CRITICAL INSTRUCTION: You are an expert MCQ Solver. Read the question and the choices below. Identify the single correct option letter (A, B, C, or D).\nSTRICT RULE: Reply ONLY with 'CORRECT_OPTION: X' where X is strictly one letter A, B, C, or D. Do not write any explanations, markdown or greetings.\n\n$extractedText"
+                // Strictly SINGLE-LINE prompt containing the full OCR question + options (zero '\n' so Quill never submits early)
+                val promptText = MultiProviderApiSolver.buildSingleLineSolverPrompt(extractedText)
 
                 if (autoCopyClipboard) {
                     try {
                         val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        clipboard.setPrimaryClip(ClipData.newPlainText("OCR MCQ Solver Question", promptText))
+                        clipboard.setPrimaryClip(ClipData.newPlainText("Prism AI Question", promptText))
                     } catch (e: Exception) {
                         Log.w(TAG, "Clipboard copy error: ${e.message}")
                     }
                 }
 
-                // 6. Solve via Direct Gemini REST API if key is configured, otherwise High-RAM Background Gemini Web
-                btnWindowScan?.text = "Solving..."
-                if (resolvedApiKey != null) {
-                    try {
-                        val answerModel = geminiVisionClient.analyzeMCQText(
+                var failureBadge = "RETRY"
+                var failureToast: String? = null
+
+                suspend fun tryFirebaseServer(isPrimary: Boolean): Boolean {
+                    val uid = try {
+                        if (FirebaseApp.getApps(this@OverlayService).isNotEmpty()) Firebase.auth.currentUser?.uid else null
+                    } catch (_: Exception) {
+                        null
+                    }
+                    // Require Google Sign-In when user explicitly selected Method 1 (Firebase Server);
+                    // allow App Check-authenticated emergency failover when used as a secondary backup.
+                    if (isPrimary && uid.isNullOrBlank()) {
+                        failureBadge = "LOGIN"
+                        failureToast = "Log in with Google on the AI Engine tab to use Firebase Server."
+                        return false
+                    }
+                    withContext(Dispatchers.Main) {
+                        btnWindowScan?.text = if (dualVerify) "Verifying..." else "Firebase..."
+                    }
+                    return try {
+                        val answerModel = PrismAiSolverEngine.solveQuestion(
                             extractedText = extractedText,
-                            apiKey = resolvedApiKey,
-                            modelName = selectedModel
+                            screenBitmap = bitmapToRecycle,
+                            requestedModel = selectedModel,
+                            subjectMode = subjectMode,
+                            dualVerify = dualVerify,
+                            translateToEnglish = translateToEnglish
                         )
-                        val letter = answerModel.correctChoice.trim().uppercase()
-                        withContext(Dispatchers.Main) {
-                            if (autoClickMode) {
-                                pendingAutoClickBlocks = textBlocks
+                        val resolvedBadge = answerModel.correctChoice.trim()
+                        if (isValidAnswerBadge(resolvedBadge)) {
+                            withContext(Dispatchers.Main) {
+                                if (autoClickMode) pendingAutoClickBlocks = textBlocks
+                                deliverResolvedAnswer(
+                                    rawLetter = resolvedBadge,
+                                    isAutoClick = autoClickMode,
+                                    solveId = currentSolveId,
+                                    questionPreview = extractedText,
+                                    answerModel = answerModel
+                                )
                             }
-                            deliverResolvedAnswer(
-                                rawLetter = letter,
-                                isAutoClick = autoClickMode,
-                                solveId = currentSolveId,
-                                questionPreview = extractedText
-                            )
+                            true
+                        } else {
+                            false
                         }
-                        return@launch
-                    } catch (apiErr: Exception) {
-                        Log.w(TAG, "REST API solve failed (${apiErr.message}), falling back to High-RAM Gemini Web session")
+                    } catch (ce: CancellationException) {
+                        if (ce !is TimeoutCancellationException) throw ce
+                        Log.w(TAG, "Firebase Server timed out: ${ce.message}")
+                        false
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Firebase Server failed: ${e.message}")
+                        false
                     }
                 }
 
-                if (isGeminiReady) {
+                suspend fun tryApiKeys(isPrimary: Boolean): Boolean {
+                    if (!MultiProviderApiSolver.hasAnyConfiguredKey(this@OverlayService)) {
+                        if (isPrimary) {
+                            failureBadge = "KEY"
+                            failureToast = "Add a free NVIDIA, OpenRouter, Gemini, or OpenAI key in AI Engine."
+                        }
+                        return false
+                    }
+                    withContext(Dispatchers.Main) {
+                        btnWindowScan?.text = "API..."
+                    }
+                    return try {
+                        val answerModel = MultiProviderApiSolver.solveWithFailover(
+                            context = this@OverlayService,
+                            extractedText = extractedText,
+                            subjectMode = subjectMode
+                        )
+                        val resolvedBadge = answerModel.correctChoice.trim()
+                        if (isValidAnswerBadge(resolvedBadge)) {
+                            withContext(Dispatchers.Main) {
+                                if (autoClickMode) pendingAutoClickBlocks = textBlocks
+                                deliverResolvedAnswer(
+                                    rawLetter = resolvedBadge,
+                                    isAutoClick = autoClickMode,
+                                    solveId = currentSolveId,
+                                    questionPreview = extractedText,
+                                    answerModel = answerModel
+                                )
+                            }
+                            true
+                        } else {
+                            false
+                        }
+                    } catch (ce: CancellationException) {
+                        if (ce !is TimeoutCancellationException) throw ce
+                        false
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Multi-AI API Keys solver failed: ${e.message}")
+                        if (isPrimary) {
+                            failureToast = e.message
+                        }
+                        false
+                    }
+                }
+
+                suspend fun tryBackgroundGemini(isPrimary: Boolean): Boolean {
+                    if (!ensureGeminiWindowReady()) return false
                     withContext(Dispatchers.Main) {
                         pendingAutoClickBlocks = if (autoClickMode) textBlocks else null
-                        geminiWebView?.onResume()
-                        geminiWebView?.resumeTimers()
-                        injectAndWatchGeminiWeb(
-                            text = promptText,
-                            isAutoClick = autoClickMode,
-                            solveId = currentSolveId,
-                            questionPreview = extractedText
-                        )
                     }
-                } else {
+                    return solveViaGeminiWebSession(
+                        promptText = promptText,
+                        isAutoClick = autoClickMode,
+                        solveId = currentSolveId,
+                        questionPreview = extractedText,
+                        isPrimaryMethod = isPrimary,
+                        suppressFailureUi = true
+                    )
+                }
+
+                val solved = when (method) {
+                    SolverMethod.FIREBASE_SERVER -> {
+                        tryFirebaseServer(isPrimary = true) ||
+                            (autoFailover && (tryApiKeys(isPrimary = false) || tryBackgroundGemini(isPrimary = false)))
+                    }
+                    SolverMethod.BACKGROUND_GEMINI -> {
+                        tryBackgroundGemini(isPrimary = true) ||
+                            (autoFailover && (tryApiKeys(isPrimary = false) || tryFirebaseServer(isPrimary = false)))
+                    }
+                    SolverMethod.API_KEYS -> {
+                        tryApiKeys(isPrimary = true) ||
+                            (autoFailover && (tryFirebaseServer(isPrimary = false) || tryBackgroundGemini(isPrimary = false)))
+                    }
+                    SolverMethod.OVERLAPPING_GOOGLE -> {
+                        withContext(Dispatchers.Main) {
+                            if (!isWindowVisible && geminiWindowView != null) {
+                                currentSizeIndex = 3
+                                showGeminiWindow(true)
+                            }
+                        }
+                        tryBackgroundGemini(isPrimary = true) ||
+                            (autoFailover && (tryApiKeys(isPrimary = false) || tryFirebaseServer(isPrimary = false)))
+                    }
+                }
+
+                if (!solved && activeSolveId == currentSolveId && deliveredSolveId != currentSolveId) {
                     withContext(Dispatchers.Main) {
-                        setAnswerUI("KEY", "#B45309", triggerFeedback = false)
+                        val color = if (failureBadge == "LOGIN" || failureBadge == "KEY") "#B45309" else "#BE123C"
+                        setAnswerUI(failureBadge, color, loading = false, triggerFeedback = false)
+                        btnWindowScan?.text = "Solve"
+                        isScanning = false
+                        if (!autoClickMode && !failureToast.isNullOrBlank()) {
+                            Toast.makeText(this@OverlayService, failureToast, Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
+
+            } catch (ce: CancellationException) {
+                throw ce
+            } catch (e: Exception) {
+                Log.e(TAG, "SolveFlow error: ${e.message}", e)
+                if (activeSolveId == currentSolveId) {
+                    withContext(Dispatchers.Main) {
+                        setAnswerUI("ERR", "#BE123C", triggerFeedback = false)
                         btnWindowScan?.text = "Solve"
                         isScanning = false
                     }
                 }
-
-            } catch (e: Exception) {
-                Log.e(TAG, "SolveFlow error: ${e.message}", e)
-                withContext(Dispatchers.Main) {
-                    setAnswerUI("ERR", "#BE123C", triggerFeedback = false)
-                    btnWindowScan?.text = "Solve"
-                    isScanning = false
-                }
+            } finally {
+                try {
+                    bitmapToRecycle?.recycle()
+                } catch (_: Exception) {}
             }
         }
     }
 
     /**
-     * Fallback helper: captures screen via MediaProjection, hides both overlays briefly, and extracts text via ML Kit OCR.
+     * Captures a clean screenshot frame without OCR when Multimodal Vision needs visual context
+     * alongside Native Accessibility text.
      */
-    private suspend fun captureAndOcr(): Triple<String, List<Pair<String, Rect>>, Bitmap?>? {
+    private suspend fun captureFrameOnly(): Bitmap? {
         val scm = screenCaptureManager ?: return null
+        val wasWindowOpen = isWindowVisible
         withContext(Dispatchers.Main) {
             bubbleView?.visibility = View.INVISIBLE
             geminiWindowView?.visibility = View.INVISIBLE
         }
-        delay(240)
+        delay(150)
 
         val bitmap: Bitmap? = withContext(Dispatchers.IO) {
             scm.captureCurrentFrame()
@@ -1433,10 +1856,42 @@ class OverlayService : Service() {
 
         withContext(Dispatchers.Main) {
             bubbleView?.visibility = View.VISIBLE
-            geminiWindowView?.visibility = View.VISIBLE
-            if (isWindowVisible) {
+            if (wasWindowOpen) {
+                geminiWindowView?.visibility = View.VISIBLE
                 setWindowFocusable(true)
                 geminiWebView?.requestFocus()
+            } else {
+                parkGeminiWindowInRam()
+            }
+            bringFrontPillToTop()
+        }
+        return bitmap
+    }
+
+    /**
+     * Fallback helper: captures screen via MediaProjection, hides both overlays briefly, and extracts text via ML Kit OCR.
+     */
+    private suspend fun captureAndOcr(): Triple<String, List<Pair<String, Rect>>, Bitmap?>? {
+        val scm = screenCaptureManager ?: return null
+        val wasWindowOpen = isWindowVisible
+        withContext(Dispatchers.Main) {
+            bubbleView?.visibility = View.INVISIBLE
+            geminiWindowView?.visibility = View.INVISIBLE
+        }
+        delay(200)
+
+        val bitmap: Bitmap? = withContext(Dispatchers.IO) {
+            scm.captureCurrentFrame()
+        }
+
+        withContext(Dispatchers.Main) {
+            bubbleView?.visibility = View.VISIBLE
+            if (wasWindowOpen) {
+                geminiWindowView?.visibility = View.VISIBLE
+                setWindowFocusable(true)
+                geminiWebView?.requestFocus()
+            } else {
+                parkGeminiWindowInRam()
             }
             bringFrontPillToTop()
         }
@@ -1472,32 +1927,40 @@ class OverlayService : Service() {
         rawLetter: String,
         isAutoClick: Boolean,
         solveId: Long,
-        questionPreview: String? = null
+        questionPreview: String? = null,
+        answerModel: AnswerModel? = null
     ) {
-        val letter = rawLetter.trim().uppercase()
-        if (letter !in listOf("A", "B", "C", "D")) return
+        val trimmed = rawLetter.trim()
+        if (!isValidAnswerBadge(trimmed)) return
+        val formattedBadge = if (trimmed.length == 1 && trimmed[0].uppercaseChar() in 'A'..'F') {
+            trimmed.uppercase()
+        } else {
+            trimmed.take(24)
+        }
+
         if (solveId > 0L && deliveredSolveId == solveId) return
         if (solveId > 0L) {
             deliveredSolveId = solveId
         }
 
         activeSolvePollJob?.cancel()
-        latestCachedAnswer = letter
+        latestCachedAnswer = formattedBadge
+        latestAnswerModel = answerModel
 
         try {
             val prefs = getSharedPreferences("OmniSolvePrefs", Context.MODE_PRIVATE)
             val newCount = prefs.getInt("PREF_SOLVED_COUNT", 0) + 1
             val editor = prefs.edit()
-                .putString("PREF_LAST_SOLVED_ANSWER", letter)
+                .putString("PREF_LAST_SOLVED_ANSWER", formattedBadge)
                 .putInt("PREF_SOLVED_COUNT", newCount)
 
             if (!questionPreview.isNullOrBlank()) {
                 val snippet = questionPreview.lines()
                     .map { it.trim() }
                     .firstOrNull { it.length >= 6 }
-                    ?.take(72) ?: "Screen MCQ"
+                    ?.take(72) ?: "Screen Question"
                 val existing = prefs.getString("PREF_SOLVE_HISTORY", "") ?: ""
-                val entry = "${System.currentTimeMillis()}||$letter||$snippet"
+                val entry = "${System.currentTimeMillis()}||$formattedBadge||$snippet"
                 val merged = (listOf(entry) + existing.split("\n").filter { it.isNotBlank() })
                     .take(25)
                     .joinToString("\n")
@@ -1506,333 +1969,780 @@ class OverlayService : Service() {
             editor.apply()
         } catch (_: Exception) {}
 
+        // Sync solved question to Firestore Cloud Deck when signed in with Google
+        if (!questionPreview.isNullOrBlank()) {
+            try {
+                if (FirebaseApp.getApps(this).isNotEmpty()) {
+                    val uid = Firebase.auth.currentUser?.uid
+                    if (!uid.isNullOrBlank()) {
+                        val modelToSave = answerModel ?: AnswerModel(
+                            correctChoice = formattedBadge,
+                            engineLabel = "Gemini Web Session"
+                        )
+                        val record = SolvedQuestionRecord.fromAnswerModel(
+                            userId = uid,
+                            questionText = questionPreview,
+                            answer = modelToSave
+                        )
+                        serviceScope.launch(Dispatchers.IO) {
+                            SolvedQuestionRepository(applicationContext).saveSolvedQuestion(record)
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Cloud history save skipped: ${e.message}")
+            }
+        }
+
         val blocks = pendingAutoClickBlocks
         pendingAutoClickBlocks = null
 
         mainHandler.post {
+            // Update collapsible 2-line explanation drawer on Dynamic Island
+            if (answerModel != null && (answerModel.explanation.isNotBlank() || answerModel.shortAnswer.isNotBlank())) {
+                val verifiedPrefix = if (answerModel.verified) "Verified • " else ""
+                tvIslandMeta?.text = "${verifiedPrefix}${answerModel.confidence}% Sure • tap badge to hide"
+                val bodyText = buildString {
+                    if (answerModel.shortAnswer.isNotBlank() &&
+                        !answerModel.shortAnswer.equals(formattedBadge, ignoreCase = true)
+                    ) {
+                        append(answerModel.shortAnswer.trim())
+                        if (answerModel.explanation.isNotBlank()) append(" — ")
+                    }
+                    append(answerModel.explanation.trim())
+                    if (answerModel.translatedQuestion.isNotBlank()) {
+                        append("\nEN: ")
+                        append(answerModel.translatedQuestion.trim())
+                    }
+                }.trim()
+                tvIslandExplanation?.text = bodyText
+            } else {
+                tvIslandExplanation?.text = ""
+                llIslandExplanationDrawer?.visibility = View.GONE
+            }
+
             geminiWindowView?.findViewById<TextView>(R.id.btn_window_scan)?.text = "Solve"
-            setAnswerUI(letter, "#047857", loading = false, triggerFeedback = true)
+            setAnswerUI(formattedBadge, "#047857", loading = false, triggerFeedback = true)
             bringFrontPillToTop()
             if ((isAutoClick || isAutoClickEnabled) && blocks != null) {
-                performAutoClick(letter, blocks)
+                val targetLetters = answerModel?.extractTargetLetters()
+                    ?.ifEmpty { listOf(formattedBadge.uppercase()) }
+                    ?: listOf(formattedBadge.uppercase())
+                val primaryTarget = targetLetters.firstOrNull().orEmpty()
+                if (primaryTarget.length == 1 && primaryTarget[0] in 'A'..'F') {
+                    performAutoClick(primaryTarget, blocks)
+                }
+            }
+        }
+    }
+
+    private suspend fun evaluateJsJson(js: String): JSONObject? = withContext(Dispatchers.Main) {
+        val wv = geminiWebView ?: return@withContext null
+        wv.onResume()
+        wv.resumeTimers()
+        suspendCancellableCoroutine { cont ->
+            wv.evaluateJavascript(js) { raw ->
+                if (cont.isActive) {
+                    cont.resume(parseJsEvalJson(raw))
+                }
             }
         }
     }
 
     /**
-     * Injects prompt into the hot-in-RAM Gemini WebView AND launches a Kotlin-side 250ms active
-     * DOM poller (`startKotlinActiveAnswerPoll`) that cannot be throttled by background JS timers.
+     * Forces Gemini WebView onto a clean New Chat session:
+     * 1. Clicks visible top-bar New Chat icon if present.
+     * 2. On mobile User-Agent where New Chat lives inside the collapsed hamburger ("burger") drawer,
+     *    opens the menu drawer if needed or navigates cleanly to `/app` while strictly awaiting
+     *    `onPageFinished` (`isGeminiReady == true`) so prompt injection never races with page unload.
      */
-    private fun injectAndWatchGeminiWeb(
-        text: String,
-        isAutoClick: Boolean,
-        solveId: Long,
-        questionPreview: String
-    ) {
-        val sanitized = text
-            .replace("\\", "\\\\")
-            .replace("`", "\\`")
-            .replace("\"", "\\\"")
-            .replace("\n", "\\n")
-            .replace("\r", "")
-
-        val jsScript = """
+    private suspend fun forceResetGeminiWebChat(): Boolean {
+        val triggerSpaNewChatJs = """
             (function() {
                 try {
-                    let prompt = "$sanitized";
-                    let responseSelector = 'model-response, [data-message-author-role="model"], message-content, .model-response-text, .response-container-content, .markdown-main-panel, .markdown, [data-test-id="model-turn"]';
-
-                    function simulateClick(el) {
-                        if (!el) return;
-                        ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(type => {
-                            let evt = new MouseEvent(type, { bubbles: true, cancelable: true, view: window });
-                            el.dispatchEvent(evt);
-                        });
-                        try { el.focus(); } catch(_) {}
+                    function isTrulyVisible(el) {
+                        if (!el || el.offsetParent === null) return false;
+                        let st = window.getComputedStyle(el);
+                        if (st.visibility === 'hidden' || st.display === 'none' || parseFloat(st.opacity || '1') <= 0.05) return false;
+                        let r = el.getBoundingClientRect();
+                        return r.width > 0 && r.height > 0;
                     }
 
-                    // 1. Tag all existing response elements and record baseline text so only the new turn is read
-                    let oldElements = document.querySelectorAll(responseSelector);
-                    let baselineLast = "";
-                    for (let i = 0; i < oldElements.length; i++) {
-                        oldElements[i].setAttribute('data-omni-old', 'true');
-                        let t = (oldElements[i].innerText || oldElements[i].textContent || '').trim();
-                        if (t.length > 0) baselineLast = t;
-                    }
-                    window._omniBaselineCount = oldElements.length;
-                    window._omniBaselineLast = baselineLast;
-                    window._omniAnswerDelivered = false;
+                    let stopBtns = Array.from(document.querySelectorAll(
+                        'button[aria-label*="Stop" i], [data-test-id="stop-button"]'
+                    ));
+                    stopBtns.filter(isTrulyVisible).forEach(btn => {
+                        try { btn.click(); } catch(_) {}
+                    });
 
-                    // 2. Focus rich-textarea
-                    let richTextarea = document.querySelector('rich-textarea');
-                    if (richTextarea) simulateClick(richTextarea);
-
-                    // 3. Find editable input element
-                    let input = document.querySelector('rich-textarea div[contenteditable="true"]') ||
-                                document.querySelector('rich-textarea p') ||
-                                document.querySelector('div.ql-editor') ||
-                                document.querySelector('div[contenteditable="true"]') ||
-                                document.querySelector('textarea[aria-label*="Prompt"]') ||
-                                document.querySelector('textarea') ||
-                                document.querySelector('input[type="text"]');
-
-                    if (!input) return JSON.stringify({ status: "INPUT_NOT_FOUND" });
-
-                    simulateClick(input);
-
-                    // 4. Insert prompt
-                    if (input.tagName && (input.tagName.toLowerCase() === 'textarea' || input.tagName.toLowerCase() === 'input')) {
-                        input.value = prompt;
-                        input.dispatchEvent(new Event('input', { bubbles: true }));
-                        input.dispatchEvent(new Event('change', { bubbles: true }));
-                    } else {
-                        try {
-                            let selection = window.getSelection();
-                            let range = document.createRange();
-                            range.selectNodeContents(input);
-                            selection.removeAllRanges();
-                            selection.addRange(range);
-                        } catch(_) {}
-
-                        let execSuccess = false;
-                        try {
-                            execSuccess = document.execCommand('insertText', false, prompt);
-                        } catch(_) {}
-
-                        if (!execSuccess || !input.textContent || input.textContent.trim().length === 0) {
-                            input.innerHTML = '<p>' + prompt.replace(/\n/g, '<br>') + '</p>';
-                            try {
-                                input.dispatchEvent(new InputEvent('beforeinput', { bubbles: true, inputType: 'insertText', data: prompt }));
-                                input.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: prompt }));
-                            } catch(_) {}
-                        }
-
-                        input.dispatchEvent(new Event('input', { bubbles: true }));
-                        input.dispatchEvent(new Event('change', { bubbles: true }));
-                    }
-
-                    // 5. Try clicking Send immediately or within 450ms
-                    function trySendNow() {
-                        let sendBtn = document.querySelector('button[aria-label*="Send"]') ||
-                                      document.querySelector('button[aria-label*="send"]') ||
-                                      document.querySelector('button[aria-label*="Submit"]') ||
-                                      document.querySelector('.send-button') ||
-                                      document.querySelector('button.send-button-container') ||
-                                      document.querySelector('mat-icon[fonticon="send"]')?.closest('button') ||
-                                      document.querySelector('mat-icon[data-mat-icon-name="send"]')?.closest('button') ||
-                                      document.querySelector('button[data-test-id="send-button"]');
-                        if (sendBtn && !sendBtn.disabled && sendBtn.getAttribute('aria-disabled') !== 'true') {
-                            simulateClick(sendBtn);
-                            return true;
-                        }
-                        return false;
-                    }
-
-                    if (!trySendNow()) {
-                        let attempts = 0;
-                        let sendTimer = setInterval(function() {
-                            attempts++;
-                            if (trySendNow() || attempts >= 8) {
-                                clearInterval(sendTimer);
-                                if (attempts >= 8) {
-                                    try {
-                                        let enterEvt = new KeyboardEvent('keydown', {
-                                            key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true
-                                        });
-                                        input.dispatchEvent(enterEvt);
-                                    } catch(_) {}
-                                }
+                    let newChatSelectors = [
+                        '[data-test-id="new-chat-button"]',
+                        'a[aria-label*="New chat" i]',
+                        'button[aria-label*="New chat" i]',
+                        'a[href="/app"]',
+                        'mat-icon[fonticon="edit_square"]',
+                        'mat-icon[data-mat-icon-name="edit_square"]',
+                        'mat-icon[fonticon="add_comment"]',
+                        'mat-icon[data-mat-icon-name="add_comment"]'
+                    ];
+                    for (let sel of newChatSelectors) {
+                        let matches = Array.from(document.querySelectorAll(sel));
+                        for (let el of matches) {
+                            let clickable = el.closest('a, button, [role="button"]') || el;
+                            if (clickable && isTrulyVisible(clickable)) {
+                                try { clickable.click(); } catch(_) {}
+                                return JSON.stringify({ clickedSpa: true, openedDrawer: false });
                             }
-                        }, 80);
+                        }
                     }
 
-                    return JSON.stringify({ status: "SUCCESS", baselineCount: oldElements.length });
-                } catch(err) {
-                    return JSON.stringify({ status: "ERROR", message: err.message });
+                    // Mobile layout fallback: open hamburger ("burger") menu to expose New Chat button
+                    let burger = document.querySelector(
+                        'button[aria-label*="Main menu" i], button[aria-label*="Menu" i], [data-test-id="side-nav-menu-button"]'
+                    );
+                    if (burger && isTrulyVisible(burger)) {
+                        try { burger.click(); } catch(_) {}
+                        return JSON.stringify({ clickedSpa: false, openedDrawer: true });
+                    }
+                    return JSON.stringify({ clickedSpa: false, openedDrawer: false });
+                } catch (e) {
+                    return JSON.stringify({ clickedSpa: false, openedDrawer: false, error: e.message });
                 }
             })();
         """.trimIndent()
 
-        mainHandler.post {
-            geminiWebView?.onResume()
-            geminiWebView?.resumeTimers()
-            geminiWebView?.evaluateJavascript(jsScript) { rawResult ->
-                Log.d(TAG, "JS Injection result: $rawResult")
-                val json = parseJsEvalJson(rawResult)
-                val status = json?.optString("status", "") ?: ""
-                if (status == "INPUT_NOT_FOUND") {
-                    isScanning = false
-                    geminiWindowView?.findViewById<TextView>(R.id.btn_window_scan)?.text = "Solve"
-                    setAnswerUI("KEY", "#B45309", triggerFeedback = false)
-                    Toast.makeText(
-                        this,
-                        "Sign in to Google inside AI & History (or add an API Key) to solve",
-                        Toast.LENGTH_LONG
-                    ).show()
-                } else {
-                    startKotlinActiveAnswerPoll(
-                        solveId = solveId,
-                        isAutoClick = isAutoClick,
-                        questionPreview = questionPreview
-                    )
+        val clickDrawerNewChatJs = """
+            (function() {
+                try {
+                    let selectors = [
+                        '[data-test-id="new-chat-button"]',
+                        'a[aria-label*="New chat" i]',
+                        'button[aria-label*="New chat" i]',
+                        'a[href="/app"]'
+                    ];
+                    for (let sel of selectors) {
+                        let el = document.querySelector(sel);
+                        let clickable = el ? (el.closest('a, button, [role="button"]') || el) : null;
+                        if (clickable && clickable.offsetParent !== null) {
+                            try { clickable.click(); } catch(_) {}
+                            return JSON.stringify({ clicked: true });
+                        }
+                    }
+                    return JSON.stringify({ clicked: false });
+                } catch (e) {
+                    return JSON.stringify({ clicked: false });
+                }
+            })();
+        """.trimIndent()
+
+        val checkCleanStateJs = """
+            (function() {
+                try {
+                    let byTag = Array.from(document.querySelectorAll('model-response'));
+                    let turns = byTag.length > 0
+                        ? byTag
+                        : Array.from(document.querySelectorAll('[data-message-author-role="model"], [data-test-id="model-turn"]'));
+                    let editor = document.querySelector('rich-textarea div[contenteditable="true"], div.ql-editor, div[contenteditable="true"], textarea');
+                    let signInBtn = document.querySelector('a[href*="ServiceLogin"], a[aria-label*="Sign in" i], button[aria-label*="Sign in" i]');
+                    return JSON.stringify({
+                        turnCount: turns.length,
+                        hasEditor: !!editor,
+                        needsLogin: !editor && !!signInBtn,
+                        readyState: document.readyState || ""
+                    });
+                } catch (e) {
+                    return JSON.stringify({ turnCount: -1, hasEditor: false, needsLogin: false });
+                }
+            })();
+        """.trimIndent()
+
+        val spaRes = evaluateJsJson(triggerSpaNewChatJs)
+        val clickedDirect = spaRes?.optBoolean("clickedSpa", false) == true
+        val openedDrawer = spaRes?.optBoolean("openedDrawer", false) == true
+
+        if (openedDrawer) {
+            delay(220)
+            evaluateJsJson(clickDrawerNewChatJs)
+        }
+
+        if (clickedDirect || openedDrawer) {
+            repeat(7) {
+                delay(150)
+                val check = evaluateJsJson(checkCleanStateJs)
+                if (check?.optBoolean("hasEditor", false) == true && check.optInt("turnCount", 99) == 0) {
+                    isGeminiReady = true
+                    return true
                 }
             }
         }
+
+        // Clean navigation fallback: wait until onPageFinished sets isGeminiReady = true so we NEVER race the old unloading DOM!
+        withContext(Dispatchers.Main) {
+            isGeminiReady = false
+            geminiWebView?.loadUrl(GEMINI_WEB_URL)
+        }
+        delay(350)
+        repeat(35) {
+            delay(200)
+            if (!isGeminiReady) return@repeat
+            val check = evaluateJsJson(checkCleanStateJs)
+            if (check?.optBoolean("needsLogin", false) == true) {
+                return false
+            }
+            if (check?.optBoolean("hasEditor", false) == true) {
+                return true
+            }
+        }
+        return evaluateJsJson(checkCleanStateJs)?.optBoolean("hasEditor", false) == true
     }
 
     /**
-     * Kotlin-driven 250ms DOM poller that runs on the foreground service coroutine + CPU WakeLock.
-     * Immune to background WebView timer throttling and handles Markdown/prose responses cleanly.
+     * End-to-end Race-Free Gemini WebView Fallback Solver Pipeline:
+     * 1. Reuses the warm, hydrated Gemini chat directly for fast consecutive solves (0ms reload overhead),
+     *    only resetting via `forceResetGeminiWebChat()` when an active stream is stuck, the editor is missing,
+     *    or the conversation exceeds 8 turns.
+     * 2. Records both distinct model turn count AND latest turn text signature before injecting the prompt
+     *    so new answers are detected immediately even if Gemini virtualizes older DOM nodes.
+     * 3. Polls until the Send button is enabled and invokes native `.click()` once (never cancelling generation).
      */
-    private fun startKotlinActiveAnswerPoll(
-        solveId: Long,
+    /**
+     * End-to-end Race-Free Gemini WebView Fallback Solver Pipeline:
+     * 1. Resets to a clean SPA chat whenever a prior turn exists so previous answers can NEVER bleed in.
+     * 2. Temporarily enables keyboard focus on the parked 340dp x 440dp WebView while keeping
+     *    `FLAG_NOT_TOUCHABLE` so Angular's `<rich-textarea>` `FormControl` registers the prompt
+     *    and activates the Send button 100% reliably, then immediately releases focus.
+     * 3. Strictly requires `turns.length > baselineModelTurns` before reading any answer, and fails
+     *    fast with `"RETRY"` (never displaying a previous answer) if sending or generation fails.
+     */
+    private suspend fun solveViaGeminiWebSession(
+        promptText: String,
         isAutoClick: Boolean,
-        questionPreview: String
-    ) {
-        activeSolvePollJob?.cancel()
-        activeSolvePollJob = serviceScope.launch(Dispatchers.Main) {
-            var lastObservedText = ""
-            var stableTicks = 0
-            val maxTicks = 100 // 100 * 250ms = 25 seconds max
+        solveId: Long,
+        questionPreview: String,
+        isPrimaryMethod: Boolean = true,
+        suppressFailureUi: Boolean = false
+    ): Boolean = withContext(Dispatchers.Main) {
+            val btnWindowScan = geminiWindowView?.findViewById<TextView>(R.id.btn_window_scan)
 
-            val inspectDomJs = """
+            val inspectStateJs = """
                 (function() {
                     try {
-                        // Nudge send button if prompt is still sitting unsent in rich-textarea
-                        let editor = document.querySelector('rich-textarea div[contenteditable="true"], textarea');
-                        if (editor && (editor.textContent || editor.value || '').trim().length > 12) {
-                            let sendBtn = document.querySelector('button[aria-label*="Send"], button[aria-label*="send"], button.send-button-container, .send-button, button[data-test-id="send-button"]');
-                            if (sendBtn && !sendBtn.disabled && sendBtn.getAttribute('aria-disabled') !== 'true') {
-                                sendBtn.click();
-                            }
+                        function isTrulyVisible(el) {
+                            if (!el) return false;
+                            let st = window.getComputedStyle(el);
+                            if (st.visibility === 'hidden' || st.display === 'none' || parseFloat(st.opacity || '1') <= 0.05) return false;
+                            let r = el.getBoundingClientRect();
+                            return r.width > 0 && r.height > 0;
                         }
-
-                        let selector = 'model-response, [data-message-author-role="model"], message-content, .model-response-text, .response-container-content, .markdown-main-panel, .markdown, [data-test-id="model-turn"]';
-                        let nodes = document.querySelectorAll(selector);
-                        let freshText = "";
-                        for (let i = 0; i < nodes.length; i++) {
-                            let el = nodes[i];
-                            if (el.getAttribute('data-omni-old') !== 'true' && !el.closest('[data-omni-old="true"]')) {
-                                let t = (el.innerText || el.textContent || '').trim();
-                                if (t.length > 0) freshText = t;
-                            }
-                        }
-
-                        // Fallback if Gemini mutated an existing container in-place
-                        if (!freshText && nodes.length > 0) {
-                            let tail = (nodes[nodes.length - 1].innerText || nodes[nodes.length - 1].textContent || '').trim();
-                            if (tail && tail !== (window._omniBaselineLast || '')) {
-                                freshText = tail;
-                            }
-                        }
-
-                        let stopEl = document.querySelector('button[aria-label*="Stop response"], button[aria-label*="Stop generating"], [data-test-id="stop-button"]');
-                        let streaming = !!(stopEl && stopEl.offsetParent !== null);
-
+                        let byTag = Array.from(document.querySelectorAll('model-response'));
+                        let turns = byTag.length > 0
+                            ? byTag
+                            : Array.from(document.querySelectorAll('[data-message-author-role="model"], [data-test-id="model-turn"]'));
+                        let stopBtns = Array.from(document.querySelectorAll('button[aria-label*="Stop" i], [data-test-id="stop-button"]'));
+                        let generating = stopBtns.some(isTrulyVisible);
+                        let editor = document.querySelector('rich-textarea div[contenteditable="true"], div.ql-editor, div[contenteditable="true"], textarea');
+                        let signInBtn = document.querySelector('a[href*="ServiceLogin"], a[aria-label*="Sign in" i], button[aria-label*="Sign in" i]');
                         return JSON.stringify({
-                            freshText: freshText,
-                            streaming: streaming,
-                            nodeCount: nodes.length
+                            turnCount: turns.length,
+                            generating: generating,
+                            hasEditor: !!editor,
+                            needsLogin: !editor && !!signInBtn
                         });
                     } catch (e) {
-                        return JSON.stringify({ freshText: "", streaming: false, error: e.message });
+                        return JSON.stringify({ turnCount: 0, generating: false, hasEditor: false, needsLogin: false });
+                    }
+                })();
+            """.trimIndent()
+
+            var preState = evaluateJsJson(inspectStateJs)
+            val preTurns = preState?.optInt("turnCount", 0) ?: 0
+            val wasGenerating = preState?.optBoolean("generating", false) ?: false
+            val hasEditorInitially = preState?.optBoolean("hasEditor", false) ?: false
+
+            // Fast zero-reload SPA "New chat" click whenever a previous answer turn is on screen
+            if (!wasGenerating && hasEditorInitially && preTurns in 1..5) {
+                val quickSpaNewChatJs = """
+                    (function() {
+                        try {
+                            let selectors = [
+                                '[data-test-id="new-chat-button"]',
+                                'a[aria-label*="New chat" i]',
+                                'button[aria-label*="New chat" i]',
+                                'a[href="/app"]'
+                            ];
+                            for (let sel of selectors) {
+                                let el = document.querySelector(sel);
+                                let clickable = el ? (el.closest('a, button, [role="button"]') || el) : null;
+                                if (clickable && clickable.offsetParent !== null) {
+                                    clickable.click();
+                                    return JSON.stringify({ reset: true });
+                                }
+                            }
+                            return JSON.stringify({ reset: false });
+                        } catch (e) {
+                            return JSON.stringify({ reset: false });
+                        }
+                    })();
+                """.trimIndent()
+                val quickRes = evaluateJsJson(quickSpaNewChatJs)
+                if (quickRes?.optBoolean("reset", false) == true) {
+                    lastSyncedDomTurnSignature = ""
+                    delay(180)
+                    preState = evaluateJsJson(inspectStateJs)
+                }
+            } else if (wasGenerating || !hasEditorInitially || preTurns > 5) {
+                btnWindowScan?.text = "New Chat..."
+                Log.d(TAG, "Resetting Gemini WebView chat (preTurns=$preTurns, generating=$wasGenerating, hasEditor=$hasEditorInitially)")
+                lastSyncedDomTurnSignature = ""
+                forceResetGeminiWebChat()
+                delay(140)
+                preState = evaluateJsJson(inspectStateJs)
+            }
+
+            if (!isActive || activeSolveId != solveId) return@withContext false
+
+            if (preState?.optBoolean("needsLogin", false) == true || preState?.optBoolean("hasEditor", false) != true) {
+                if (!suppressFailureUi) {
+                    isScanning = false
+                    btnWindowScan?.text = "Solve"
+                    setAnswerUI("KEY", "#B45309", triggerFeedback = false)
+                }
+                if (isPrimaryMethod && !isAutoClick) {
+                    Toast.makeText(
+                        this@OverlayService,
+                        "Sign in to Built-in Gemini on the AI Engine tab (or add a free API key)",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+                return@withContext false
+            }
+
+            val baselineTurnsJs = """
+                (function() {
+                    let byTag = Array.from(document.querySelectorAll('model-response'));
+                    let m = byTag.length > 0
+                        ? byTag
+                        : Array.from(document.querySelectorAll('[data-message-author-role="model"], [data-test-id="model-turn"]'))
+                              .filter((el, _, arr) => !arr.some(other => other !== el && other.contains(el)));
+                    let u = Array.from(document.querySelectorAll('user-query, [data-message-author-role="user"]'));
+                    let lastTxt = m.length > 0 ? (m[m.length - 1].innerText || m[m.length - 1].textContent || '').trim() : '';
+                    return JSON.stringify({ modelTurns: m.length, userTurns: u.length, lastText: lastTxt });
+                })();
+            """.trimIndent()
+            val baselineObj = evaluateJsJson(baselineTurnsJs)
+            val baselineModelTurns = baselineObj?.optInt("modelTurns", 0) ?: 0
+            val baselineUserTurns = baselineObj?.optInt("userTurns", 0) ?: 0
+            val baselineLastText = baselineObj?.optString("lastText", "")?.trim().orEmpty()
+            val escapedBaselineText = JSONObject.quote(baselineLastText)
+
+            val escapedPrompt = JSONObject.quote(promptText)
+            val insertPromptJs = """
+                (function() {
+                    try {
+                        const prompt = $escapedPrompt;
+                        let richTextarea = document.querySelector('rich-textarea');
+                        if (richTextarea) {
+                            try { richTextarea.click(); } catch(_) {}
+                        }
+
+                        let input = document.querySelector('rich-textarea div[contenteditable="true"]') ||
+                                    document.querySelector('div.ql-editor[contenteditable="true"]') ||
+                                    document.querySelector('div[contenteditable="true"][role="textbox"]') ||
+                                    document.querySelector('div[contenteditable="true"]') ||
+                                    document.querySelector('textarea[aria-label*="Prompt" i]') ||
+                                    document.querySelector('textarea');
+
+                        if (!input) return JSON.stringify({ status: "INPUT_NOT_FOUND" });
+
+                        try { input.focus(); } catch(_) {}
+
+                        if (input.tagName && (input.tagName.toLowerCase() === 'textarea' || input.tagName.toLowerCase() === 'input')) {
+                            let setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set;
+                            if (setter) setter.call(input, prompt); else input.value = prompt;
+                            input.dispatchEvent(new Event('input', { bubbles: true }));
+                            input.dispatchEvent(new Event('change', { bubbles: true }));
+                        } else {
+                            try {
+                                let sel = window.getSelection();
+                                let range = document.createRange();
+                                range.selectNodeContents(input);
+                                sel.removeAllRanges();
+                                sel.addRange(range);
+                                document.execCommand('delete', false, null);
+                            } catch(_) {}
+
+                            let inserted = false;
+                            try {
+                                inserted = document.execCommand('insertText', false, prompt);
+                            } catch(_) {}
+
+                            let currentText = (input.innerText || input.textContent || '').trim();
+                            if (!inserted || !currentText) {
+                                try {
+                                    let dt = new DataTransfer();
+                                    dt.setData('text/plain', prompt);
+                                    let pasteEvt = new ClipboardEvent('paste', {
+                                        bubbles: true,
+                                        cancelable: true,
+                                        clipboardData: dt
+                                    });
+                                    input.dispatchEvent(pasteEvt);
+                                } catch(_) {}
+                            }
+
+                            currentText = (input.innerText || input.textContent || '').trim();
+                            if (!currentText) {
+                                input.innerHTML = '';
+                                let p = document.createElement('p');
+                                p.textContent = prompt;
+                                input.appendChild(p);
+                                input.classList.remove('ql-blank');
+                                try {
+                                    input.dispatchEvent(new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'insertText', data: prompt }));
+                                    input.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: prompt }));
+                                } catch(_) {
+                                    input.dispatchEvent(new Event('input', { bubbles: true }));
+                                }
+                            } else {
+                                input.dispatchEvent(new Event('input', { bubbles: true }));
+                            }
+                        }
+
+                        let len = (input.innerText || input.textContent || input.value || '').trim().length;
+                        return JSON.stringify({ status: len > 0 ? "INSERTED" : "EMPTY_AFTER_INSERT", length: len });
+                    } catch (e) {
+                        return JSON.stringify({ status: "ERROR", message: e.message });
+                    }
+                })();
+            """.trimIndent()
+
+            val clickStrictSendOnceJs = """
+                (function() {
+                    try {
+                        function isTrulyVisible(el) {
+                            if (!el) return false;
+                            let st = window.getComputedStyle(el);
+                            if (st.visibility === 'hidden' || st.display === 'none' || parseFloat(st.opacity || '1') <= 0.05) return false;
+                            let r = el.getBoundingClientRect();
+                            return r.width > 0 && r.height > 0;
+                        }
+
+                        function isForbiddenButton(btn) {
+                            if (!btn) return true;
+                            let meta = (
+                                (btn.getAttribute('aria-label') || '') + ' ' +
+                                (btn.getAttribute('mattooltip') || '') + ' ' +
+                                (btn.getAttribute('title') || '') + ' ' +
+                                (btn.getAttribute('data-test-id') || '')
+                            ).toLowerCase();
+                            if (meta.includes('stop') || meta.includes('cancel') || meta.includes('mic') || meta.includes('voice') || meta.includes('upload') || meta.includes('menu')) {
+                                return true;
+                            }
+                            let icon = btn.querySelector('mat-icon, i, span.google-symbols, span.material-symbols-outlined');
+                            if (icon) {
+                                let iconName = (
+                                    (icon.getAttribute('fonticon') || '') + ' ' +
+                                    (icon.getAttribute('data-mat-icon-name') || '') + ' ' +
+                                    (icon.textContent || '')
+                                ).toLowerCase();
+                                if (iconName.includes('stop') || iconName.includes('mic')) return true;
+                            }
+                            return false;
+                        }
+
+                        let candidates = [];
+                        let sendIconBtn = document.querySelector('mat-icon[fonticon="send"], mat-icon[data-mat-icon-name="send"]')?.closest('button');
+                        if (sendIconBtn) candidates.push(sendIconBtn);
+                        document.querySelectorAll(
+                            'button[aria-label*="Send" i], button[aria-label*="Submit" i], button[data-test-id="send-button"], button.send-button, button.send-button-container'
+                        ).forEach(b => candidates.push(b));
+
+                        for (let btn of candidates) {
+                            if (!btn || !isTrulyVisible(btn) || isForbiddenButton(btn)) continue;
+                            if (btn.disabled || btn.getAttribute('aria-disabled') === 'true') continue;
+                            try { btn.click(); } catch(_) {
+                                ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(type => {
+                                    btn.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window }));
+                                });
+                            }
+                            return JSON.stringify({ sent: true, method: "button" });
+                        }
+                        return JSON.stringify({ sent: false, reason: "send_button_not_ready" });
+                    } catch (e) {
+                        return JSON.stringify({ sent: false, error: e.message });
+                    }
+                })();
+            """.trimIndent()
+
+            val pressEnterFallbackJs = """
+                (function() {
+                    try {
+                        let input = document.querySelector('rich-textarea div[contenteditable="true"]') ||
+                                    document.querySelector('div.ql-editor[contenteditable="true"]') ||
+                                    document.querySelector('textarea');
+                        if (!input) return JSON.stringify({ sent: false });
+                        input.focus();
+                        ['keydown', 'keypress', 'keyup'].forEach(type => {
+                            input.dispatchEvent(new KeyboardEvent(type, {
+                                key: 'Enter',
+                                code: 'Enter',
+                                keyCode: 13,
+                                which: 13,
+                                bubbles: true,
+                                cancelable: true
+                            }));
+                        });
+                        return JSON.stringify({ sent: true, method: "enter_key" });
+                    } catch (e) {
+                        return JSON.stringify({ sent: false });
+                    }
+                })();
+            """.trimIndent()
+
+            var insertStatus = ""
+            var sendRes: JSONObject? = null
+            try {
+                // Grant keyboard focus to the parked 340dp x 440dp WebView so execCommand updates Angular FormControl
+                if (!isWindowVisible) {
+                    setParkedWebViewKeyboardFocus(true)
+                    delay(55)
+                } else {
+                    setWindowFocusable(true)
+                    geminiWebView?.requestFocus()
+                    delay(35)
+                }
+
+                val insertRes = evaluateJsJson(insertPromptJs)
+                insertStatus = insertRes?.optString("status", "") ?: ""
+                Log.d(TAG, "Gemini prompt insert status: $insertRes")
+
+                if (insertStatus != "INPUT_NOT_FOUND" && insertStatus != "EMPTY_AFTER_INSERT") {
+                    for (sendAttempt in 1..8) {
+                        delay(65)
+                        sendRes = evaluateJsJson(clickStrictSendOnceJs)
+                        if (sendRes?.optBoolean("sent", false) == true) break
+                    }
+                    if (sendRes?.optBoolean("sent", false) != true) {
+                        sendRes = evaluateJsJson(pressEnterFallbackJs)
+                    }
+                    delay(70)
+                }
+            } finally {
+                if (!isWindowVisible) {
+                    setParkedWebViewKeyboardFocus(false)
+                    bringFrontPillToTop()
+                }
+            }
+
+            if (insertStatus == "INPUT_NOT_FOUND") {
+                if (!suppressFailureUi) {
+                    isScanning = false
+                    btnWindowScan?.text = "Solve"
+                    setAnswerUI("KEY", "#B45309", triggerFeedback = false)
+                }
+                return@withContext false
+            }
+
+            if (sendRes?.optBoolean("sent", false) != true) {
+                Log.w(TAG, "Gemini WebView send button never activated ($sendRes) — aborting fast without stale fallback")
+                if (!suppressFailureUi) {
+                    isScanning = false
+                    btnWindowScan?.text = "Solve"
+                    setAnswerUI("RETRY", "#BE123C", triggerFeedback = false)
+                }
+                return@withContext false
+            }
+
+            Log.d(TAG, "Gemini strict single-shot send result: $sendRes")
+            btnWindowScan?.text = "Solving..."
+
+            var lastCleanText = ""
+            var stableTicks = 0
+            val maxTicks = 75 // ~13.5s max
+
+            val inspectTurnJs = """
+                (function() {
+                    try {
+                        const prevLastRaw = $escapedBaselineText;
+                        function isTrulyVisible(el) {
+                            if (!el) return false;
+                            let st = window.getComputedStyle(el);
+                            if (st.visibility === 'hidden' || st.display === 'none' || parseFloat(st.opacity || '1') <= 0.05) return false;
+                            let r = el.getBoundingClientRect();
+                            return r.width > 0 && r.height > 0;
+                        }
+
+                        let byTag = Array.from(document.querySelectorAll('model-response'));
+                        let turns = byTag.length > 0
+                            ? byTag
+                            : Array.from(document.querySelectorAll('[data-message-author-role="model"], [data-test-id="model-turn"]'))
+                                  .filter((el, _, arr) => !arr.some(other => other !== el && other.contains(el)));
+                        if (turns.length === 0) {
+                            turns = Array.from(document.querySelectorAll('message-content')).filter(el => !el.closest('user-query'));
+                        }
+                        let userTurns = document.querySelectorAll('user-query, [data-message-author-role="user"]').length;
+
+                        let stopCandidates = Array.from(document.querySelectorAll(
+                            'button[aria-label*="Stop" i], [data-test-id="stop-button"]'
+                        ));
+                        let stopVisible = stopCandidates.some(isTrulyVisible);
+
+                        let editor = document.querySelector('rich-textarea div[contenteditable="true"], div.ql-editor, textarea');
+                        let editorRemainingLen = editor ? (editor.innerText || editor.textContent || editor.value || '').trim().length : 0;
+
+                        if (turns.length <= $baselineModelTurns) {
+                            return JSON.stringify({
+                                hasNewTurn: false,
+                                cleanText: "",
+                                isGenerating: stopVisible,
+                                isThinking: stopVisible,
+                                turnCount: turns.length,
+                                userTurnCount: userTurns,
+                                editorLen: editorRemainingLen
+                            });
+                        }
+
+                        let latestTurn = turns[turns.length - 1];
+                        let rawTurnText = (latestTurn.innerText || latestTurn.textContent || '').trim();
+                        if ($baselineModelTurns > 0 && rawTurnText === prevLastRaw) {
+                            return JSON.stringify({
+                                hasNewTurn: false,
+                                cleanText: "",
+                                isGenerating: stopVisible,
+                                isThinking: stopVisible,
+                                turnCount: turns.length,
+                                userTurnCount: userTurns,
+                                editorLen: editorRemainingLen
+                            });
+                        }
+
+                        let hasWorkingBanner = /gemini[^\n]*is\s+working/i.test(rawTurnText);
+
+                        let nonThoughtMarkdown = Array.from(
+                            latestTurn.querySelectorAll('.markdown-main-panel, .markdown')
+                        ).find(el => !el.closest('model-thoughts, .thoughts-container, thinking-process'));
+
+                        let answerRoot = nonThoughtMarkdown ||
+                                         latestTurn.querySelector('message-content') ||
+                                         latestTurn.querySelector('.model-response-text') ||
+                                         latestTurn;
+
+                        let clone = answerRoot.cloneNode(true);
+                        clone.querySelectorAll(
+                            'model-thoughts, .thoughts-container, thinking-process, button, mat-icon, svg, script, style'
+                        ).forEach(n => n.remove());
+
+                        let cleanText = (clone.innerText || clone.textContent || '')
+                            .replace(/gemini[^\n]*is\s+working\.{0,3}/gi, ' ')
+                            .replace(/^\s*(show|hide)\s+(thinking|thoughts|work).*$/gim, ' ')
+                            .replace(/^\s*(thinking|working|analyzing|searching)\.{0,3}\s*$/gim, ' ')
+                            .trim();
+
+                        return JSON.stringify({
+                            hasNewTurn: true,
+                            cleanText: cleanText,
+                            isGenerating: stopVisible,
+                            isThinking: (hasWorkingBanner || stopVisible) && cleanText.length === 0,
+                            turnCount: turns.length,
+                            userTurnCount: userTurns,
+                            editorLen: editorRemainingLen
+                        });
+                    } catch (e) {
+                        return JSON.stringify({ hasNewTurn: false, cleanText: "", isGenerating: false, isThinking: false, error: e.message });
                     }
                 })();
             """.trimIndent()
 
             for (tick in 1..maxTicks) {
-                if (!isActive || deliveredSolveId == solveId || activeSolveId != solveId) return@launch
+                delay(180)
+                if (!isActive || deliveredSolveId == solveId || activeSolveId != solveId) return@withContext (deliveredSolveId == solveId)
 
-                geminiWebView?.onResume()
-                geminiWebView?.resumeTimers()
+                val pollJson = evaluateJsJson(inspectTurnJs) ?: continue
+                val hasNewTurn = pollJson.optBoolean("hasNewTurn", false)
+                val cleanText = pollJson.optString("cleanText", "").trim()
+                val isGenerating = pollJson.optBoolean("isGenerating", false)
+                val isThinking = pollJson.optBoolean("isThinking", false)
+                val turnCount = pollJson.optInt("turnCount", 0)
+                val userTurnCount = pollJson.optInt("userTurnCount", 0)
+                val editorLen = pollJson.optInt("editorLen", 0)
 
-                val evalJson = suspendCancellableCoroutine<JSONObject?> { cont ->
-                    val wv = geminiWebView
-                    if (wv == null) {
-                        cont.resume(null) {}
-                        return@suspendCancellableCoroutine
-                    }
-                    wv.evaluateJavascript(inspectDomJs) { raw ->
-                        if (cont.isActive) {
-                            cont.resume(parseJsEvalJson(raw)) {}
-                        }
-                    }
+                // Fast dead-send abort: if after ~2.7s no user turn was added and Gemini isn't generating, fail fast
+                if (tick == 15 && !hasNewTurn && !isGenerating && userTurnCount <= baselineUserTurns && editorLen > 0) {
+                    Log.w(TAG, "Prompt remained unsent in editor after 2.7s — failing fast instead of stalling")
+                    break
                 }
 
-                val freshText = evalJson?.optString("freshText", "")?.trim() ?: ""
-                val isStreaming = evalJson?.optBoolean("streaming", false) ?: false
+                if (isThinking && cleanText.isEmpty()) {
+                    btnWindowScan?.text = "Thinking..."
+                    tvIslandTitle?.text = if (isCamouflageEnabled) "Charging" else "Thinking..."
+                    continue
+                }
 
-                if (freshText.isNotEmpty()) {
-                    val stripped = freshText.replace(Regex("[*_`~#]+"), " ").trim()
+                if (hasNewTurn && cleanText.isNotEmpty()) {
+                    val stripped = cleanText.replace(Regex("[*_`~#]+"), " ").trim()
 
-                    // Immediate fast-path if strict CORRECT_OPTION is already present
-                    val strictFastMatch = Regex(
-                        """CORRECT[\s_]*OPTION\s*[:=\-]?\s*\(?([A-Da-d])\)?(?:\b|$)""",
+                    val explicitFast = Regex(
+                        """(?:FINAL[\s_]*ANSWER|CORRECT[\s_]*OPTION)\s*[:=\-]?\s*\(?([A-Fa-f](?:\s*,\s*[A-Fa-f])*|True|False|[+-]?\d+(?:\.\d+)?)\)?(?:\b|$)""",
                         RegexOption.IGNORE_CASE
                     ).find(stripped)
 
-                    if (strictFastMatch != null) {
-                        val fastLetter = strictFastMatch.groupValues[1].uppercase()
-                        lastSyncedDomTurnSignature = "${evalJson?.optInt("nodeCount", 0)}:${freshText.hashCode()}"
+                    if (explicitFast != null && (!isGenerating || explicitFast.groupValues[1].length == 1)) {
+                        val rawMatch = explicitFast.groupValues[1].trim()
+                        val fastBadge = when {
+                            rawMatch.equals("true", ignoreCase = true) -> "True"
+                            rawMatch.equals("false", ignoreCase = true) -> "False"
+                            rawMatch.all { it.isLetter() || it == ',' || it.isWhitespace() } ->
+                                rawMatch.uppercase().replace(Regex("\\s+"), " ")
+                            else -> rawMatch
+                        }
+                        lastSyncedDomTurnSignature = "$turnCount:${cleanText.hashCode()}"
                         deliverResolvedAnswer(
-                            rawLetter = fastLetter,
+                            rawLetter = fastBadge,
                             isAutoClick = isAutoClick,
                             solveId = solveId,
                             questionPreview = questionPreview
                         )
-                        return@launch
+                        return@withContext true
                     }
 
-                    if (freshText == lastObservedText && !isStreaming) {
+                    if (cleanText == lastCleanText) {
                         stableTicks++
                     } else {
-                        lastObservedText = freshText
+                        lastCleanText = cleanText
                         stableTicks = 0
                     }
 
-                    // Once response text stabilizes for ~750ms (3 ticks), extract option letter cleanly
-                    if (stableTicks >= 3) {
+                    if ((!isGenerating && stableTicks >= 2) || stableTicks >= 4) {
                         val parsedLetter = try {
-                            geminiVisionClient.extractAnswerLetter(freshText).correctChoice
+                            geminiVisionClient.extractAnswerLetter(cleanText).correctChoice
                         } catch (_: Exception) {
                             null
                         }
-                        if (parsedLetter != null && parsedLetter in listOf("A", "B", "C", "D")) {
-                            lastSyncedDomTurnSignature = "${evalJson?.optInt("nodeCount", 0)}:${freshText.hashCode()}"
+                        if (isValidAnswerBadge(parsedLetter)) {
+                            lastSyncedDomTurnSignature = "$turnCount:${cleanText.hashCode()}"
                             deliverResolvedAnswer(
-                                rawLetter = parsedLetter,
+                                rawLetter = parsedLetter!!,
                                 isAutoClick = isAutoClick,
                                 solveId = solveId,
                                 questionPreview = questionPreview
                             )
-                            return@launch
+                            return@withContext true
                         }
                     }
                 }
-
-                delay(250)
             }
 
-            // Timeout fallback: check if a stored answer already exists in background DOM before showing timeout
-            if (deliveredSolveId != solveId && activeSolveId == solveId) {
+            if (!suppressFailureUi && deliveredSolveId != solveId && activeSolveId == solveId) {
                 isScanning = false
-                geminiWindowView?.findViewById<TextView>(R.id.btn_window_scan)?.text = "Solve"
-                syncStoredAnswerFromBackgroundDom(forceUiRefresh = true)
-                if (latestCachedAnswer in listOf("A", "B", "C", "D")) {
-                    setAnswerUI(latestCachedAnswer, "#047857", triggerFeedback = false)
-                } else {
-                    setAnswerUI("?", "#0F172A", triggerFeedback = false)
-                }
+                btnWindowScan?.text = "Solve"
+                setAnswerUI("RETRY", "#BE123C", loading = false, triggerFeedback = false)
             }
-        }
+            return@withContext (deliveredSolveId == solveId)
     }
 
     /**
-     * Continuous High-RAM Keep-Alive & Stored Background Answer Sync Loop.
-     * Runs every 900ms while OverlayService is active:
-     * 1. Keeps Chromium timers & VSYNC active in RAM so opening the window never reloads or lags.
-     * 2. Reads any answer already present in the background Gemini window and mirrors it onto
-     *    the front overlapping pill (`tvAnswerDisplay`) and window badge (`tvWindowAnswerBadge`).
+     * Continuous High-RAM Keep-Alive Loop: keeps WebView renderer & V8 timers active in RAM
+     * without ever reading old DOM turns or overwriting the Dynamic Island with a previous answer.
      */
     private fun startHighRamKeepAliveAndSync() {
         if (highRamSyncJob?.isActive == true) return
@@ -1840,88 +2750,7 @@ class OverlayService : Service() {
             while (isActive) {
                 geminiWebView?.onResume()
                 geminiWebView?.resumeTimers()
-                if (!isScanning && isGeminiReady) {
-                    syncStoredAnswerFromBackgroundDom(forceUiRefresh = false)
-                }
-                delay(900)
-            }
-        }
-    }
-
-    /**
-     * Reads the latest completed model response currently inside the background `geminiWebView`
-     * and ensures the front overlapping pill (`tvAnswerDisplay`) and window header badge
-     * (`tvWindowAnswerBadge`) represent that stored answer immediately.
-     */
-    private fun syncStoredAnswerFromBackgroundDom(forceUiRefresh: Boolean) {
-        val wv = geminiWebView ?: return
-        val readLatestTurnJs = """
-            (function() {
-                try {
-                    let selector = 'model-response, [data-message-author-role="model"], message-content, .model-response-text, .response-container-content, .markdown-main-panel, .markdown, [data-test-id="model-turn"]';
-                    let nodes = document.querySelectorAll(selector);
-                    if (!nodes || nodes.length === 0) {
-                        return JSON.stringify({ text: "", count: 0, streaming: false });
-                    }
-                    let lastText = "";
-                    for (let i = nodes.length - 1; i >= 0; i--) {
-                        let t = (nodes[i].innerText || nodes[i].textContent || '').trim();
-                        if (t.length > 0) {
-                            lastText = t;
-                            break;
-                        }
-                    }
-                    let stopEl = document.querySelector('button[aria-label*="Stop response"], button[aria-label*="Stop generating"], [data-test-id="stop-button"]');
-                    let streaming = !!(stopEl && stopEl.offsetParent !== null);
-                    return JSON.stringify({ text: lastText, count: nodes.length, streaming: streaming });
-                } catch (e) {
-                    return JSON.stringify({ text: "", count: 0, streaming: false });
-                }
-            })();
-        """.trimIndent()
-
-        mainHandler.post {
-            wv.evaluateJavascript(readLatestTurnJs) { raw ->
-                val json = parseJsEvalJson(raw) ?: return@evaluateJavascript
-                val isStreaming = json.optBoolean("streaming", false)
-                val lastText = json.optString("text", "").trim()
-                val count = json.optInt("count", 0)
-                if (isStreaming || count == 0 || lastText.isBlank()) {
-                    if (forceUiRefresh && !isScanning && latestCachedAnswer in listOf("A", "B", "C", "D")) {
-                        setAnswerUI(latestCachedAnswer, "#047857", triggerFeedback = false)
-                    }
-                    return@evaluateJavascript
-                }
-
-                val turnSig = "$count:${lastText.hashCode()}"
-                val parsedLetter = try {
-                    geminiVisionClient.extractAnswerLetter(lastText).correctChoice
-                } catch (_: Exception) {
-                    null
-                }
-
-                if (parsedLetter != null && parsedLetter in listOf("A", "B", "C", "D")) {
-                    val currentDisplayed = tvAnswerDisplay?.text?.toString()?.trim() ?: ""
-                    val isNewTurn = (turnSig != lastSyncedDomTurnSignature)
-                    val frontOutOfSync = !isCamouflageEnabled && currentDisplayed != parsedLetter
-
-                    if (isNewTurn || frontOutOfSync || forceUiRefresh) {
-                        val shouldBuzz = isNewTurn && latestCachedAnswer != parsedLetter
-                        lastSyncedDomTurnSignature = turnSig
-                        latestCachedAnswer = parsedLetter
-                        try {
-                            getSharedPreferences("OmniSolvePrefs", Context.MODE_PRIVATE)
-                                .edit()
-                                .putString("PREF_LAST_SOLVED_ANSWER", parsedLetter)
-                                .apply()
-                        } catch (_: Exception) {}
-                        if (!isScanning) {
-                            setAnswerUI(parsedLetter, "#047857", loading = false, triggerFeedback = shouldBuzz)
-                        }
-                    }
-                } else if (forceUiRefresh && !isScanning && latestCachedAnswer in listOf("A", "B", "C", "D")) {
-                    setAnswerUI(latestCachedAnswer, "#047857", triggerFeedback = false)
-                }
+                delay(1200)
             }
         }
     }
@@ -1935,53 +2764,54 @@ class OverlayService : Service() {
         mainHandler.post {
             val normalized = text.trim()
             if (isCamouflageEnabled) {
+                ivIslandIcon?.setImageResource(R.drawable.ic_battery_camouflage)
+                llIslandExplanationDrawer?.visibility = View.GONE
+                val batteryNow = getDeviceBatteryPercentage()
                 if (loading) {
-                    tvIslandTitle?.text = "Checking..."
-                    tvAnswerDisplay?.text = "..."
+                    tvIslandTitle?.text = "Charging"
+                    val loadingCamo = "${batteryNow}%"
+                    tvAnswerDisplay?.text = loadingCamo
+                    tvAnswerDisplay?.textSize = 13f
                     tvAnswerDisplay?.setTextColor(Color.parseColor("#0369A1"))
-                    tvWindowAnswerBadge?.text = "..."
+                    tvWindowAnswerBadge?.text = loadingCamo
                     tvWindowAnswerBadge?.setTextColor(Color.parseColor("#0369A1"))
                 } else {
-                    val code = when (normalized.uppercase()) {
-                        "A" -> 91
-                        "B" -> 92
-                        "C" -> 93
-                        "D" -> 94
-                        else -> null
-                    }
-                    if (code != null) {
-                        tvIslandTitle?.text = "Battery"
-                        tvAnswerDisplay?.text = "${code}%"
-                        tvAnswerDisplay?.setTextColor(Color.parseColor("#047857"))
-                        tvWindowAnswerBadge?.text = "${code}%"
-                        tvWindowAnswerBadge?.setTextColor(Color.parseColor("#047857"))
-                    } else {
-                        tvIslandTitle?.text = "Battery"
-                        val fallbackText = if (normalized.length <= 4) normalized else "${getDeviceBatteryPercentage()}%"
-                        tvAnswerDisplay?.text = fallbackText
-                        tvAnswerDisplay?.setTextColor(Color.parseColor(colorHex))
-                        tvWindowAnswerBadge?.text = fallbackText
-                        tvWindowAnswerBadge?.setTextColor(Color.parseColor(colorHex))
-                    }
+                    val (camoText, isResolved) = formatChargingCamouflage(normalized, batteryNow)
+                    tvIslandTitle?.text = "Charging"
+                    tvAnswerDisplay?.text = camoText
+                    tvAnswerDisplay?.textSize = if (camoText.length <= 4) 13.5f else 11.5f
+                    val badgeColor = Color.parseColor(if (isResolved) "#047857" else "#0F172A")
+                    tvAnswerDisplay?.setTextColor(badgeColor)
+                    tvWindowAnswerBadge?.text = camoText
+                    tvWindowAnswerBadge?.setTextColor(badgeColor)
                 }
             } else {
+                ivIslandIcon?.setImageResource(R.drawable.ic_prism_orb)
                 if (loading) {
                     tvIslandTitle?.text = "Solving..."
                     tvAnswerDisplay?.text = normalized
+                    tvAnswerDisplay?.textSize = 14f
                     tvAnswerDisplay?.setTextColor(Color.parseColor(colorHex))
                     tvWindowAnswerBadge?.text = normalized
                     tvWindowAnswerBadge?.setTextColor(Color.parseColor(colorHex))
                 } else {
-                    if (normalized.uppercase() in listOf("A", "B", "C", "D")) {
-                        val upper = normalized.uppercase()
-                        tvIslandTitle?.text = "Answer"
-                        tvAnswerDisplay?.text = upper
+                    if (isValidAnswerBadge(normalized)) {
+                        val displayVal = if (normalized.length == 1) normalized.uppercase() else normalized
+                        val hasDrawerInfo = !tvIslandExplanation?.text.isNullOrBlank()
+                        tvIslandTitle?.text = if (hasDrawerInfo) "Answer • Info" else "Answer"
+                        tvAnswerDisplay?.text = displayVal
+                        tvAnswerDisplay?.textSize = when {
+                            displayVal.length <= 2 -> 15f
+                            displayVal.length <= 7 -> 12.5f
+                            else -> 10.5f
+                        }
                         tvAnswerDisplay?.setTextColor(Color.parseColor("#047857"))
-                        tvWindowAnswerBadge?.text = upper
+                        tvWindowAnswerBadge?.text = displayVal
                         tvWindowAnswerBadge?.setTextColor(Color.parseColor("#047857"))
                     } else {
                         tvIslandTitle?.text = "Tap to Solve"
                         tvAnswerDisplay?.text = normalized
+                        tvAnswerDisplay?.textSize = 14f
                         tvAnswerDisplay?.setTextColor(Color.parseColor(colorHex))
                         tvWindowAnswerBadge?.text = normalized
                         tvWindowAnswerBadge?.setTextColor(Color.parseColor(colorHex))
@@ -1995,7 +2825,7 @@ class OverlayService : Service() {
                 stopScanBreathingAnim()
                 ivScanIcon?.setImageResource(android.R.drawable.ic_media_play)
                 isScanning = false
-                if (triggerFeedback && normalized.uppercase() in listOf("A", "B", "C", "D")) {
+                if (triggerFeedback && isValidAnswerBadge(normalized)) {
                     animateAnswerPop(tvAnswerDisplay)
                     animateAnswerPop(tvWindowAnswerBadge)
                     triggerHapticFeedback(normalized)
@@ -2008,10 +2838,7 @@ class OverlayService : Service() {
 
     /**
      * Silent Haptic Vibration Feedback:
-     * 1 short pulse = A
-     * 2 short pulses = B
-     * 3 short pulses = C
-     * 4 short pulses = D
+     * 1..6 short pulses = A..F (1 pulse fallback for True/False/numerical answers)
      */
     private fun triggerHapticFeedback(answerLetter: String) {
         if (!isHapticFeedbackEnabled) return
@@ -2020,7 +2847,9 @@ class OverlayService : Service() {
             "B" -> 2
             "C" -> 3
             "D" -> 4
-            else -> 0
+            "E" -> 5
+            "F" -> 6
+            else -> if (isValidAnswerBadge(answerLetter)) 1 else 0
         }
         if (pulseCount == 0) return
 
@@ -2085,7 +2914,7 @@ class OverlayService : Service() {
         Log.d(TAG, "Auto-click bot STARTED (interval=${scanIntervalMs}ms, nextDelay=${nextDelayMs}ms, instantTrigger=$isInstantTriggerEnabled)")
         autoClickJob = serviceScope.launch {
             while (isActive && isAutoClickEnabled) {
-                if (!isScanning && isGeminiReady) {
+                if (!isScanning) {
                     triggerSolveFlow(autoClickMode = true)
                 }
                 // When instant trigger is active and waiting for new question, check rapidly (800ms)
@@ -2106,18 +2935,17 @@ class OverlayService : Service() {
     }
 
     /**
-     * Intelligently locates the option on screen corresponding to the answer letter (A, B, C, D).
-     * Handles:
-     * - Standard letters: "(A)", "A.", "A)", "[A]", "Option A"
-     * - Numeric options: "(1)", "1.", "1)", "[1]", "Option 1" (where A=1, B=2, C=3, D=4)
-     * - Cluster analysis: Identifies the group of 4 options vertically aligned, avoiding false matches in browser chrome.
+     * Intelligently locates the option on screen corresponding to the answer letter (A..F).
      */
     private fun findOptionTargetRect(targetLetter: String, textBlocks: List<Pair<String, Rect>>): Rect? {
         val letter = targetLetter.uppercase().trim()
-        val numStr = when (letter) { "A" -> "1"; "B" -> "2"; "C" -> "3"; "D" -> "4"; else -> "" }
+        val numStr = when (letter) {
+            "A" -> "1"; "B" -> "2"; "C" -> "3"; "D" -> "4"; "E" -> "5"; "F" -> "6"
+            else -> ""
+        }
 
-        val allLetters = listOf("A", "B", "C", "D")
-        val allNumbers = listOf("1", "2", "3", "4")
+        val allLetters = listOf("A", "B", "C", "D", "E", "F")
+        val allNumbers = listOf("1", "2", "3", "4", "5", "6")
 
         // Screen geometry cutoffs to avoid top browser bar and bottom system bar
         val displayMetrics = resources.displayMetrics
@@ -2436,7 +3264,7 @@ class OverlayService : Service() {
                                     stopSelf()
                                 }
                                 ?.start()
-                            Toast.makeText(this@OverlayService, "👋 OCR MCQ Solver Closed", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(this@OverlayService, "Prism AI Island Closed", Toast.LENGTH_SHORT).show()
                             return true
                         }
 
@@ -2532,17 +3360,17 @@ class OverlayService : Service() {
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val ch = NotificationChannel(
-                CHANNEL_ID, "OCR MCQ Solver Overlay", NotificationManager.IMPORTANCE_LOW
-            ).apply { description = "MCQ AI solver overlay" }
+                CHANNEL_ID, "Prism AI Overlay", NotificationManager.IMPORTANCE_LOW
+            ).apply { description = "Prism AI Liquid Glass Dynamic Island solver" }
             getSystemService(NotificationManager::class.java).createNotificationChannel(ch)
         }
     }
 
     private fun buildNotification(): Notification =
         NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("OCR MCQ Solver Active")
-            .setContentText("Headless Gemini solver active. Tap bubble to solve.")
-            .setSmallIcon(R.drawable.ic_virus_avatar)
+            .setContentTitle("Prism AI Island Active")
+            .setContentText("Auto-fresh Gemini solver ready. Tap the Dynamic Island to solve.")
+            .setSmallIcon(R.drawable.ic_prism_orb)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setOngoing(true)
             .build()

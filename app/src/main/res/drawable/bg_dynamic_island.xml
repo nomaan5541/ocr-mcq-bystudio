@@ -1,33 +1,33 @@
 <?xml version="1.0" encoding="utf-8"?>
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Pure Daylight White Optical Pill Fill -->
+    <!-- iOS 26 Optical Liquid Glass Capsule Body -->
     <item>
         <shape android:shape="rectangle">
             <gradient
-                android:startColor="#F8FFFFFF"
-                android:centerColor="#F5F8FAFC"
-                android:endColor="#F2F1F5F9"
+                android:startColor="#FAFFFFFF"
+                android:centerColor="#F5F4F9FF"
+                android:endColor="#F0E8F2FD"
                 android:angle="270" />
-            <corners android:radius="40dp" />
+            <corners android:radius="42dp" />
         </shape>
     </item>
-    <!-- Top Specular Fresnel Rim -->
-    <item android:top="0dp" android:bottom="20dp">
+    <!-- Top Specular Fresnel Refraction Sheen -->
+    <item android:top="1dp" android:left="6dp" android:right="6dp" android:bottom="22dp">
         <shape android:shape="rectangle">
             <gradient
-                android:startColor="#CCFFFFFF"
+                android:startColor="#EBFFFFFF"
                 android:endColor="#00FFFFFF"
                 android:angle="270" />
-            <corners android:radius="40dp" />
+            <corners android:radius="42dp" />
         </shape>
     </item>
-    <!-- Crisp Optical Sky Border -->
+    <!-- Prismatic Double Rim Border -->
     <item>
         <shape android:shape="rectangle">
-            <corners android:radius="40dp" />
+            <corners android:radius="42dp" />
             <stroke
-                android:width="1.3dp"
-                android:color="#660284C7" />
+                android:width="1.4dp"
+                android:color="#730284C7" />
         </shape>
     </item>
 </layer-list>

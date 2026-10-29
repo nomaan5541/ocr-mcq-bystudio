@@ -2,167 +2,217 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/island_root"
     android:layout_width="wrap_content"
-    android:layout_height="48dp"
-    android:orientation="horizontal"
-    android:gravity="center_vertical"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
     android:background="@drawable/bg_dynamic_island"
-    android:elevation="16dp"
+    android:elevation="18dp"
     android:paddingStart="6dp"
     android:paddingEnd="10dp"
-    android:paddingTop="4dp"
-    android:paddingBottom="4dp"
+    android:paddingTop="5dp"
+    android:paddingBottom="5dp"
     android:clipToPadding="false"
     android:clipChildren="false">
 
-    <!-- Island Leading Icon (Avatar / Battery Icon) -->
-    <FrameLayout
-        android:id="@+id/island_icon_container"
-        android:layout_width="36dp"
-        android:layout_height="36dp"
-        android:background="@drawable/bg_floating_bubble"
-        android:clickable="true"
-        android:focusable="true"
-        android:contentDescription="Tap to expand solver controls">
-
-        <ImageView
-            android:id="@+id/iv_island_icon"
-            android:layout_width="30dp"
-            android:layout_height="30dp"
-            android:layout_gravity="center"
-            android:src="@drawable/ic_virus_avatar"
-            android:scaleType="centerCrop"
-            android:contentDescription="@null" />
-    </FrameLayout>
-
-    <!-- Main Dynamic Island Content -->
+    <!-- Top Primary Dynamic Island Row -->
     <LinearLayout
-        android:id="@+id/ll_island_body"
+        android:id="@+id/island_top_row"
         android:layout_width="wrap_content"
-        android:layout_height="match_parent"
+        android:layout_height="38dp"
         android:orientation="horizontal"
-        android:gravity="center_vertical"
-        android:layout_marginStart="8dp"
-        android:layout_marginEnd="4dp">
+        android:gravity="center_vertical">
 
-        <!-- Status / Camouflage Label -->
-        <TextView
-            android:id="@+id/tv_island_title"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Tap to Solve"
-            android:textColor="#020617"
-            android:textSize="12.5sp"
-            android:textStyle="bold"
-            android:maxLines="1" />
-
-        <!-- Prominent Answer / Camouflage Badge -->
-        <TextView
-            android:id="@+id/tv_island_answer"
-            android:layout_width="wrap_content"
-            android:minWidth="36dp"
-            android:layout_height="34dp"
-            android:layout_marginStart="8dp"
-            android:paddingStart="10dp"
-            android:paddingEnd="10dp"
-            android:background="@drawable/bg_answer_box"
-            android:gravity="center"
-            android:text="?"
-            android:textColor="#047857"
-            android:textSize="16sp"
-            android:textStyle="bold" />
-
-    </LinearLayout>
-
-    <!-- Expandable Controls Tray -->
-    <LinearLayout
-        android:id="@+id/island_expanded_controls"
-        android:layout_width="wrap_content"
-        android:layout_height="match_parent"
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
-        android:visibility="gone"
-        android:layout_marginStart="4dp">
-
-        <!-- Scan / Play Action -->
+        <!-- Island Leading Icon (Prism Orb / Battery Disguise) -->
         <FrameLayout
-            android:id="@+id/btn_island_scan"
+            android:id="@+id/island_icon_container"
             android:layout_width="36dp"
             android:layout_height="36dp"
-            android:layout_marginStart="4dp"
-            android:background="@drawable/bg_scan_button"
+            android:background="@drawable/bg_floating_bubble"
             android:clickable="true"
             android:focusable="true"
-            android:contentDescription="Solve visible question">
+            android:contentDescription="Tap to expand Prism AI controls">
 
             <ImageView
-                android:id="@+id/iv_island_scan_icon"
-                android:layout_width="18dp"
-                android:layout_height="18dp"
+                android:id="@+id/iv_island_icon"
+                android:layout_width="30dp"
+                android:layout_height="30dp"
                 android:layout_gravity="center"
-                android:src="@android:drawable/ic_media_play"
-                android:tint="#FFFFFF"
+                android:src="@drawable/ic_prism_orb"
+                android:scaleType="centerInside"
                 android:contentDescription="@null" />
         </FrameLayout>
 
-        <!-- Toggle Gemini Window -->
-        <ImageView
-            android:id="@+id/btn_island_toggle_window"
-            android:layout_width="36dp"
-            android:layout_height="36dp"
-            android:layout_marginStart="6dp"
-            android:padding="7dp"
-            android:background="@drawable/bg_chip_action"
-            android:src="@android:drawable/ic_menu_view"
-            android:tint="#0284C7"
-            android:clickable="true"
-            android:focusable="true"
-            android:contentDescription="Open AI chat window" />
-
-        <!-- Bot Toggle Button -->
-        <ImageView
-            android:id="@+id/btn_island_bot_toggle"
-            android:layout_width="36dp"
-            android:layout_height="36dp"
-            android:layout_marginStart="6dp"
-            android:padding="7dp"
-            android:background="@drawable/bg_chip_action"
-            android:src="@android:drawable/ic_menu_myplaces"
-            android:tint="#1E293B"
-            android:clickable="true"
-            android:focusable="true"
-            android:contentDescription="Toggle Auto-Tap Answer" />
-
-        <!-- Opacity / Visibility Toggle Button -->
-        <TextView
-            android:id="@+id/btn_island_opacity"
+        <!-- Main Dynamic Island Content (Tap anywhere here to instant-solve) -->
+        <LinearLayout
+            android:id="@+id/ll_island_body"
             android:layout_width="wrap_content"
-            android:minWidth="38dp"
-            android:layout_height="36dp"
-            android:layout_marginStart="6dp"
-            android:paddingStart="8dp"
-            android:paddingEnd="8dp"
-            android:gravity="center"
-            android:background="@drawable/bg_chip_action"
-            android:text="100%"
-            android:textColor="#020617"
-            android:textSize="11sp"
-            android:textStyle="bold"
-            android:clickable="true"
-            android:focusable="true"
-            android:contentDescription="Change pill transparency" />
+            android:layout_height="match_parent"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginStart="8dp"
+            android:layout_marginEnd="4dp">
 
-        <!-- Close / Minimize Tray Button -->
-        <ImageView
-            android:id="@+id/btn_island_close"
-            android:layout_width="32dp"
-            android:layout_height="32dp"
-            android:layout_marginStart="6dp"
-            android:padding="4dp"
-            android:src="@android:drawable/ic_menu_close_clear_cancel"
-            android:tint="#0F172A"
-            android:clickable="true"
-            android:focusable="true"
-            android:contentDescription="Collapse toolbar" />
+            <!-- Status / Camouflage Label -->
+            <TextView
+                android:id="@+id/tv_island_title"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Tap to Solve"
+                android:textColor="#020617"
+                android:textSize="12.5sp"
+                android:textStyle="bold"
+                android:maxWidth="130dp"
+                android:ellipsize="end"
+                android:maxLines="1" />
+
+            <!-- Prominent Answer / Camouflage Badge (Tap to expand 2-line explanation) -->
+            <TextView
+                android:id="@+id/tv_island_answer"
+                android:layout_width="wrap_content"
+                android:minWidth="36dp"
+                android:maxWidth="128dp"
+                android:layout_height="34dp"
+                android:layout_marginStart="8dp"
+                android:paddingStart="10dp"
+                android:paddingEnd="10dp"
+                android:background="@drawable/bg_answer_box"
+                android:gravity="center"
+                android:singleLine="true"
+                android:ellipsize="end"
+                android:text="?"
+                android:textColor="#047857"
+                android:textSize="15sp"
+                android:textStyle="bold" />
+
+        </LinearLayout>
+
+        <!-- Expandable Controls Tray -->
+        <LinearLayout
+            android:id="@+id/island_expanded_controls"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:visibility="gone"
+            android:layout_marginStart="4dp">
+
+            <!-- Scan / Play Action -->
+            <FrameLayout
+                android:id="@+id/btn_island_scan"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:layout_marginStart="4dp"
+                android:background="@drawable/bg_scan_button"
+                android:clickable="true"
+                android:focusable="true"
+                android:contentDescription="Solve visible question">
+
+                <ImageView
+                    android:id="@+id/iv_island_scan_icon"
+                    android:layout_width="18dp"
+                    android:layout_height="18dp"
+                    android:layout_gravity="center"
+                    android:src="@android:drawable/ic_media_play"
+                    android:tint="#FFFFFF"
+                    android:contentDescription="@null" />
+            </FrameLayout>
+
+            <!-- Toggle Gemini Window -->
+            <ImageView
+                android:id="@+id/btn_island_toggle_window"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:layout_marginStart="6dp"
+                android:padding="7dp"
+                android:background="@drawable/bg_chip_action"
+                android:src="@android:drawable/ic_menu_view"
+                android:tint="#0284C7"
+                android:clickable="true"
+                android:focusable="true"
+                android:contentDescription="Open Prism AI window" />
+
+            <!-- Bot Toggle Button -->
+            <ImageView
+                android:id="@+id/btn_island_bot_toggle"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:layout_marginStart="6dp"
+                android:padding="7dp"
+                android:background="@drawable/bg_chip_action"
+                android:src="@android:drawable/ic_menu_myplaces"
+                android:tint="#0F172A"
+                android:clickable="true"
+                android:focusable="true"
+                android:contentDescription="Toggle Auto-Tap Answer" />
+
+            <!-- Opacity / Visibility Toggle Button -->
+            <TextView
+                android:id="@+id/btn_island_opacity"
+                android:layout_width="wrap_content"
+                android:minWidth="38dp"
+                android:layout_height="36dp"
+                android:layout_marginStart="6dp"
+                android:paddingStart="8dp"
+                android:paddingEnd="8dp"
+                android:gravity="center"
+                android:background="@drawable/bg_chip_action"
+                android:text="100%"
+                android:textColor="#020617"
+                android:textSize="11sp"
+                android:textStyle="bold"
+                android:clickable="true"
+                android:focusable="true"
+                android:contentDescription="Change pill transparency" />
+
+            <!-- Close / Minimize Tray Button -->
+            <ImageView
+                android:id="@+id/btn_island_close"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:layout_marginStart="6dp"
+                android:padding="4dp"
+                android:src="@android:drawable/ic_menu_close_clear_cancel"
+                android:tint="#020617"
+                android:clickable="true"
+                android:focusable="true"
+                android:contentDescription="Collapse toolbar" />
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+    <!-- Collapsible Step-by-Step 2-Line Explanation & Confidence Drawer -->
+    <LinearLayout
+        android:id="@+id/ll_island_explanation_drawer"
+        android:layout_width="276dp"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:visibility="gone"
+        android:paddingStart="8dp"
+        android:paddingEnd="6dp"
+        android:paddingTop="6dp"
+        android:paddingBottom="4dp">
+
+        <TextView
+            android:id="@+id/tv_island_meta"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="98% Confidence • Cloud Gemini"
+            android:textColor="#0369A1"
+            android:textSize="10.5sp"
+            android:textStyle="bold"
+            android:maxLines="1"
+            android:ellipsize="end" />
+
+        <TextView
+            android:id="@+id/tv_island_explanation"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:text=""
+            android:textColor="#020617"
+            android:textSize="11.5sp"
+            android:maxLines="3"
+            android:ellipsize="end" />
 
     </LinearLayout>
 

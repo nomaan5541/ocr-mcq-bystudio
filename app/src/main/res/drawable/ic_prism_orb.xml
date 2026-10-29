@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="28dp"
+    android:height="28dp"
+    android:viewportWidth="28"
+    android:viewportHeight="28">
+
+    <!-- Outer Liquid Glass Sphere -->
+    <path android:pathData="M14,2A12,12 0,1 1,2 14A12,12 0,0 1,14 2Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="4"
+                android:startY="3"
+                android:endX="24"
+                android:endY="25"
+                android:type="linear">
+                <item android:offset="0.0" android:color="#FF38BDF8" />
+                <item android:offset="0.52" android:color="#FF0284C7" />
+                <item android:offset="1.0" android:color="#FF1D4ED8" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Specular Top Glass Caustic Arc -->
+    <path
+        android:fillColor="#66FFFFFF"
+        android:pathData="M14,3.4C9.1,3.4 5.1,6.6 3.9,11.1C6.4,8.2 10.0,6.6 14,6.6C18.0,6.6 21.6,8.2 24.1,11.1C22.9,6.6 18.9,3.4 14,3.4Z" />
+
+    <!-- Inner Prismatic Diamond Core -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M14,6.5L20.2,14L14,21.5L7.8,14Z" />
+
+    <!-- Refracted Mint Facet -->
+    <path
+        android:fillColor="#FFA7F3D0"
+        android:pathData="M14,6.5L20.2,14L14,15.4Z" />
+
+    <!-- Refracted Sky Facet -->
+    <path
+        android:fillColor="#FFBAE6FD"
+        android:pathData="M14,15.4L20.2,14L14,21.5Z" />
+</vector>

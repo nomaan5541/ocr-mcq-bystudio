@@ -6,7 +6,7 @@
     android:orientation="horizontal"
     android:gravity="center_vertical"
     android:background="@drawable/bg_toolbar_pill"
-    android:elevation="14dp"
+    android:elevation="16dp"
     android:paddingStart="4dp"
     android:paddingEnd="10dp"
     android:paddingTop="4dp"
@@ -14,7 +14,7 @@
     android:clipToPadding="false"
     android:clipChildren="false">
 
-    <!-- Floating Solver Bubble -->
+    <!-- Floating Prism Orb Bubble -->
     <FrameLayout
         android:id="@+id/bubble_icon_container"
         android:layout_width="48dp"
@@ -22,15 +22,15 @@
         android:background="@drawable/bg_floating_bubble"
         android:clickable="true"
         android:focusable="true"
-        android:contentDescription="Solver Bubble">
+        android:contentDescription="Prism AI Orb">
 
         <ImageView
             android:id="@+id/iv_bubble_icon"
-            android:layout_width="42dp"
-            android:layout_height="42dp"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
             android:layout_gravity="center"
-            android:src="@drawable/ic_virus_avatar"
-            android:scaleType="centerCrop"
+            android:src="@drawable/ic_prism_orb"
+            android:scaleType="centerInside"
             android:contentDescription="@null" />
     </FrameLayout>
 
@@ -89,7 +89,7 @@
             android:tint="#0284C7"
             android:clickable="true"
             android:focusable="true"
-            android:contentDescription="Open AI Chat Window" />
+            android:contentDescription="Open Prism AI Window" />
 
         <!-- Auto-Click Bot Toggle Button -->
         <ImageView
@@ -100,7 +100,7 @@
             android:padding="7dp"
             android:background="@drawable/bg_chip_action"
             android:src="@android:drawable/ic_menu_myplaces"
-            android:tint="#1E293B"
+            android:tint="#0F172A"
             android:clickable="true"
             android:focusable="true"
             android:contentDescription="Toggle Auto-Tap Answer" />
@@ -132,7 +132,7 @@
             android:layout_marginStart="8dp"
             android:padding="4dp"
             android:src="@android:drawable/ic_menu_close_clear_cancel"
-            android:tint="#0F172A"
+            android:tint="#020617"
             android:clickable="true"
             android:focusable="true"
             android:contentDescription="Collapse Toolbar" />

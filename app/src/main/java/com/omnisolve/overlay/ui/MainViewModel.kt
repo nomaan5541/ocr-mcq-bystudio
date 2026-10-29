@@ -6,26 +6,41 @@ import android.provider.Settings
 import android.webkit.CookieManager
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.google.firebase.Firebase
+import com.google.firebase.FirebaseApp
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.auth
 import com.omnisolve.overlay.MainActivity
 import com.omnisolve.overlay.api.GeminiVisionClient
+import com.omnisolve.overlay.api.MultiProviderApiSolver
+import com.omnisolve.overlay.api.PrismAiSolverEngine
+import com.omnisolve.overlay.data.SolvedQuestionRecord
+import com.omnisolve.overlay.data.SolvedQuestionRepository
+import com.omnisolve.overlay.model.AnswerModel
+import com.omnisolve.overlay.model.SolverMethod
+import com.omnisolve.overlay.model.SubjectMode
 import com.omnisolve.overlay.service.AutoClickAccessibilityService
+import com.omnisolve.overlay.service.OverlayService
 import com.omnisolve.overlay.ui.components.AppTab
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import kotlin.coroutines.cancellation.CancellationException
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 data class PracticeSample(
     val category: String,
     val question: String,
     val options: List<String>,
     val correctLetter: String,
-    val explanation: String
+    val explanation: String,
+    val subjectMode: SubjectMode = SubjectMode.GENERAL
 )
 
 data class SolvedHistoryEntry(
@@ -43,11 +58,24 @@ data class MainUiState(
     val isAccessibilityEnabled: Boolean = false,
     val isCaptureAuthorized: Boolean = false,
     val isGoogleWebLoggedIn: Boolean = false,
-    val hasSecretApiKey: Boolean = false,
+    val hasSecretApiKey: Boolean = true,
 
-    // Preferences
-    val extractionEngine: String = MainActivity.ENGINE_NATIVE,
+    // Google Cloud Account State
+    val firebaseUserId: String? = null,
+    val firebaseUserName: String? = null,
+    val firebaseUserEmail: String? = null,
+    val isSigningInGoogle: Boolean = false,
+
+    // Preferences (Screenshot + ML Kit OCR default)
+    val extractionEngine: String = MainActivity.ENGINE_OCR,
     val nativeFallbackOcr: Boolean = true,
+    val solverMethod: SolverMethod = SolverMethod.BACKGROUND_GEMINI,
+    val autoFailoverEnabled: Boolean = true,
+    val nvidiaApiKey: String = "",
+    val openRouterApiKey: String = "",
+    val geminiApiKey: String = "",
+    val openAiApiKey: String = "",
+    val configuredKeyCount: Int = 0,
     val activePreset: String = "STUDY",
     val hudStyle: String = MainActivity.HUD_STYLE_ISLAND,
     val islandOpacityIndex: Int = 0,
@@ -65,7 +93,10 @@ data class MainUiState(
     val companionHost: String = "192.168.1.100",
     val companionPort: Int = 59124,
     val customApiKey: String = "",
-    val geminiModel: String = GeminiVisionClient.DEFAULT_MODEL,
+    val geminiModel: String = PrismAiSolverEngine.DEFAULT_CLOUD_MODEL,
+    val subjectMode: SubjectMode = SubjectMode.GENERAL,
+    val dualVerifyEnabled: Boolean = false,
+    val translateToEnglish: Boolean = false,
 
     // Practice & Metrics
     val solvedCount: Int = 12,
@@ -84,14 +115,14 @@ private fun defaultHistoryEntries(): List<SolvedHistoryEntry> = listOf(
         id = 1L,
         questionPreview = "Which cell structure produces most ATP energy?",
         answerLetter = "B",
-        sourceLabel = "Biology Practice",
+        sourceLabel = "Biology • Cloud Gemini",
         timestamp = "Just now"
     ),
     SolvedHistoryEntry(
         id = 2L,
         questionPreview = "Search time in a balanced binary search tree?",
         answerLetter = "B",
-        sourceLabel = "CS Practice",
+        sourceLabel = "CS • Cloud Gemini",
         timestamp = "Earlier"
     )
 )
@@ -100,6 +131,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val prefs = application.getSharedPreferences("OmniSolvePrefs", Context.MODE_PRIVATE)
     private val geminiClient = GeminiVisionClient()
+    private var authStateListener: FirebaseAuth.AuthStateListener? = null
 
     val samples = listOf(
         PracticeSample(
@@ -112,7 +144,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 "D) Lysosome"
             ),
             correctLetter = "B",
-            explanation = "Mitochondria are the powerhouses of the cell, converting nutrients into ATP through cellular respiration."
+            explanation = "Mitochondria are the powerhouses of the cell, converting nutrients into ATP through cellular respiration.",
+            subjectMode = SubjectMode.MEDICAL
         ),
         PracticeSample(
             category = "Computer Science • Sample 2 of 4",
@@ -124,7 +157,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 "D) O(n²) quadratic time"
             ),
             correctLetter = "B",
-            explanation = "Each comparison halves the remaining search space in a balanced tree, giving O(log n) worst-case lookup."
+            explanation = "Each comparison halves the remaining search space in a balanced tree, giving O(log n) worst-case lookup.",
+            subjectMode = SubjectMode.CODING
         ),
         PracticeSample(
             category = "Chemistry • Sample 3 of 4",
@@ -136,7 +170,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 "D) Square planar, 90°"
             ),
             correctLetter = "C",
-            explanation = "Oxygen's two lone electron pairs push the two hydrogen atoms closer together into a bent ~104.5° shape."
+            explanation = "Oxygen's two lone electron pairs push the two hydrogen atoms closer together into a bent ~104.5° shape.",
+            subjectMode = SubjectMode.SCIENCE
         ),
         PracticeSample(
             category = "Physics • Sample 4 of 4",
@@ -148,24 +183,122 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 "D) Newton's Third Law"
             ),
             correctLetter = "D",
-            explanation = "Newton's Third Law of Motion states that forces between two interacting objects act in equal and opposite pairs."
+            explanation = "Newton's Third Law of Motion states that forces between two interacting objects act in equal and opposite pairs.",
+            subjectMode = SubjectMode.SCIENCE
         )
     )
 
     private val _uiState = MutableStateFlow(loadInitialState())
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
 
+    init {
+        attachFirebaseAuthObserver()
+    }
+
+    private fun attachFirebaseAuthObserver() {
+        val ctx = getApplication<Application>()
+        if (FirebaseApp.getApps(ctx).isEmpty()) return
+        try {
+            val auth = Firebase.auth
+            val listener = FirebaseAuth.AuthStateListener { firebaseAuth ->
+                val user = firebaseAuth.currentUser
+                _uiState.update {
+                    it.copy(
+                        firebaseUserId = user?.uid,
+                        firebaseUserName = user?.displayName,
+                        firebaseUserEmail = user?.email
+                    )
+                }
+            }
+            authStateListener = listener
+            auth.addAuthStateListener(listener)
+        } catch (_: Exception) {
+        }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        val ctx = getApplication<Application>()
+        if (FirebaseApp.getApps(ctx).isNotEmpty()) {
+            try {
+                authStateListener?.let { Firebase.auth.removeAuthStateListener(it) }
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    private fun loadPersistedOverlayHistory(): List<SolvedHistoryEntry> {
+        val raw = prefs.getString("PREF_SOLVE_HISTORY", "")?.trim().orEmpty()
+        if (raw.isBlank()) return defaultHistoryEntries()
+        val fmt = SimpleDateFormat("h:mm a", Locale.getDefault())
+        val parsed = raw.lines().mapNotNull { line ->
+            val parts = line.split("||")
+            if (parts.size >= 3) {
+                val ts = parts[0].toLongOrNull() ?: System.currentTimeMillis()
+                val badge = parts[1].trim().ifBlank { "?" }
+                val snippet = parts[2].trim().ifBlank { "Screen Question" }
+                SolvedHistoryEntry(
+                    id = ts,
+                    questionPreview = snippet,
+                    answerLetter = badge,
+                    sourceLabel = "Prism Island",
+                    timestamp = fmt.format(Date(ts))
+                )
+            } else {
+                null
+            }
+        }
+        return parsed.ifEmpty { defaultHistoryEntries() }
+    }
+
     private fun loadInitialState(): MainUiState {
-        // Ensure White Glass light mode is saved as default for OverlayService consistency
         prefs.edit().putString(MainActivity.PREF_KEY_THEME_MODE, MainActivity.THEME_LIGHT).apply()
 
-        val customKey = prefs.getString(MainActivity.PREF_KEY_GEMINI_API_KEY, "") ?: ""
-        val secretAvailable = GeminiVisionClient.resolveApiKey(null) != null
+        val rawSavedModel = prefs.getString(MainActivity.PREF_KEY_GEMINI_MODEL, PrismAiSolverEngine.DEFAULT_CLOUD_MODEL)
+            ?: PrismAiSolverEngine.DEFAULT_CLOUD_MODEL
+        val normalizedModel = GeminiVisionClient.sanitizeModel(rawSavedModel)
+        if (normalizedModel != rawSavedModel) {
+            prefs.edit().putString(MainActivity.PREF_KEY_GEMINI_MODEL, normalizedModel).apply()
+        }
+
+        val savedSubject = SubjectMode.fromId(
+            prefs.getString(MainActivity.PREF_KEY_SUBJECT_MODE, SubjectMode.GENERAL.id)
+        )
+        val dualVerify = prefs.getBoolean(MainActivity.PREF_KEY_DUAL_VERIFY, false)
+        val translate = prefs.getBoolean(MainActivity.PREF_KEY_TRANSLATE_ENGLISH, false)
+
+        val savedMethod = SolverMethod.fromId(
+            prefs.getString(MainActivity.PREF_KEY_SOLVER_METHOD, SolverMethod.BACKGROUND_GEMINI.id)
+        )
+        val autoFailover = prefs.getBoolean(MainActivity.PREF_KEY_AUTO_FAILOVER, true)
+        val nvidiaKey = prefs.getString(MainActivity.PREF_KEY_NVIDIA_API_KEY, "")?.trim().orEmpty()
+        val openRouterKey = prefs.getString(MainActivity.PREF_KEY_OPENROUTER_API_KEY, "")?.trim().orEmpty()
+        val geminiKey = prefs.getString(MainActivity.PREF_KEY_GEMINI_API_KEY, "")?.trim().orEmpty()
+        val openAiKey = prefs.getString(MainActivity.PREF_KEY_OPENAI_API_KEY, "")?.trim().orEmpty()
+        val configuredKeys = MultiProviderApiSolver.getConfiguredProviders(getApplication()).size
+
+        val currentUser = try {
+            if (FirebaseApp.getApps(getApplication()).isNotEmpty()) Firebase.auth.currentUser else null
+        } catch (_: Exception) {
+            null
+        }
 
         return MainUiState(
-            extractionEngine = prefs.getString(MainActivity.PREF_KEY_EXTRACTION_ENGINE, MainActivity.ENGINE_NATIVE)
-                ?: MainActivity.ENGINE_NATIVE,
+            isOverlayRunning = OverlayService.isServiceRunning(),
+            isCaptureAuthorized = OverlayService.hasScreenCapture(),
+            firebaseUserId = currentUser?.uid,
+            firebaseUserName = currentUser?.displayName,
+            firebaseUserEmail = currentUser?.email,
+            extractionEngine = prefs.getString(MainActivity.PREF_KEY_EXTRACTION_ENGINE, MainActivity.ENGINE_OCR)
+                ?: MainActivity.ENGINE_OCR,
             nativeFallbackOcr = prefs.getBoolean(MainActivity.PREF_KEY_NATIVE_FALLBACK_OCR, true),
+            solverMethod = savedMethod,
+            autoFailoverEnabled = autoFailover,
+            nvidiaApiKey = nvidiaKey,
+            openRouterApiKey = openRouterKey,
+            geminiApiKey = geminiKey,
+            openAiApiKey = openAiKey,
+            configuredKeyCount = configuredKeys,
             hudStyle = prefs.getString(MainActivity.PREF_KEY_HUD_STYLE, MainActivity.HUD_STYLE_ISLAND)
                 ?: MainActivity.HUD_STYLE_ISLAND,
             islandOpacityIndex = prefs.getInt("PREF_ISLAND_OPACITY_INDEX", 0).coerceIn(0, 3),
@@ -183,11 +316,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             companionSyncEnabled = prefs.getBoolean(MainActivity.PREF_KEY_COMPANION_SYNC_ENABLED, false),
             companionHost = prefs.getString(MainActivity.PREF_KEY_COMPANION_HOST, "192.168.1.100") ?: "192.168.1.100",
             companionPort = prefs.getInt(MainActivity.PREF_KEY_COMPANION_PORT, 59124),
-            customApiKey = customKey,
-            hasSecretApiKey = secretAvailable,
-            geminiModel = prefs.getString(MainActivity.PREF_KEY_GEMINI_MODEL, GeminiVisionClient.DEFAULT_MODEL)
-                ?: GeminiVisionClient.DEFAULT_MODEL,
-            solvedCount = prefs.getInt("PREF_SOLVED_COUNT", 12)
+            hasSecretApiKey = true,
+            geminiModel = normalizedModel,
+            subjectMode = savedSubject,
+            dualVerifyEnabled = dualVerify,
+            translateToEnglish = translate,
+            solvedCount = prefs.getInt("PREF_SOLVED_COUNT", 12),
+            historyEntries = loadPersistedOverlayHistory()
         )
     }
 
@@ -205,16 +340,38 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         } catch (_: Exception) {
             false
         }
-        val secretAvailable = GeminiVisionClient.resolveApiKey(null) != null
+        val currentUser = try {
+            if (FirebaseApp.getApps(ctx).isNotEmpty()) Firebase.auth.currentUser else null
+        } catch (_: Exception) {
+            null
+        }
+        if (authStateListener == null && FirebaseApp.getApps(ctx).isNotEmpty()) {
+            attachFirebaseAuthObserver()
+        }
 
+        val configuredKeys = MultiProviderApiSolver.getConfiguredProviders(ctx).size
+        val overlayRunning = OverlayService.isServiceRunning()
+        val captureActive = OverlayService.hasScreenCapture()
         _uiState.update {
             it.copy(
+                isOverlayRunning = overlayRunning,
+                isCaptureAuthorized = if (overlayRunning) captureActive else false,
                 hasOverlayPermission = canDraw,
                 isAccessibilityEnabled = a11yRunning,
                 isGoogleWebLoggedIn = hasGoogleSession,
-                hasSecretApiKey = secretAvailable
+                firebaseUserId = currentUser?.uid,
+                firebaseUserName = currentUser?.displayName,
+                firebaseUserEmail = currentUser?.email,
+                configuredKeyCount = configuredKeys,
+                hasSecretApiKey = true,
+                solvedCount = prefs.getInt("PREF_SOLVED_COUNT", it.solvedCount),
+                historyEntries = loadPersistedOverlayHistory()
             )
         }
+    }
+
+    fun setGoogleSignInLoading(loading: Boolean) {
+        _uiState.update { it.copy(isSigningInGoogle = loading) }
     }
 
     fun selectTab(tab: AppTab) {
@@ -252,6 +409,89 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         onSyncService()
     }
 
+    fun selectSolverMethod(method: SolverMethod, onSyncService: () -> Unit) {
+        val targetDisplayMode = if (method == SolverMethod.OVERLAPPING_GOOGLE) {
+            MainActivity.MODE_WINDOW
+        } else {
+            MainActivity.MODE_STEALTH
+        }
+        prefs.edit()
+            .putString(MainActivity.PREF_KEY_SOLVER_METHOD, method.id)
+            .putString(MainActivity.PREF_KEY_DISPLAY_MODE, targetDisplayMode)
+            .apply()
+        _uiState.update {
+            it.copy(
+                solverMethod = method,
+                displayMode = targetDisplayMode
+            )
+        }
+        showBannerMessage("Selected: ${method.title}")
+        onSyncService()
+    }
+
+    fun setAutoFailoverEnabled(enabled: Boolean, onSyncService: () -> Unit) {
+        prefs.edit().putBoolean(MainActivity.PREF_KEY_AUTO_FAILOVER, enabled).apply()
+        _uiState.update { it.copy(autoFailoverEnabled = enabled) }
+        onSyncService()
+    }
+
+    fun saveMultiProviderApiKeys(
+        nvidiaKey: String,
+        openRouterKey: String,
+        geminiKey: String,
+        openAiKey: String,
+        onSyncService: () -> Unit
+    ) {
+        val cleanNvidia = nvidiaKey.trim()
+        val cleanOpenRouter = openRouterKey.trim()
+        val cleanGemini = geminiKey.trim()
+        val cleanOpenAi = openAiKey.trim()
+
+        prefs.edit()
+            .putString(MainActivity.PREF_KEY_NVIDIA_API_KEY, cleanNvidia)
+            .putString(MainActivity.PREF_KEY_OPENROUTER_API_KEY, cleanOpenRouter)
+            .putString(MainActivity.PREF_KEY_GEMINI_API_KEY, cleanGemini)
+            .putString(MainActivity.PREF_KEY_OPENAI_API_KEY, cleanOpenAi)
+            .apply()
+
+        val activeCount = MultiProviderApiSolver.getConfiguredProviders(getApplication()).size
+        _uiState.update {
+            it.copy(
+                nvidiaApiKey = cleanNvidia,
+                openRouterApiKey = cleanOpenRouter,
+                geminiApiKey = cleanGemini,
+                openAiApiKey = cleanOpenAi,
+                configuredKeyCount = activeCount
+            )
+        }
+        showBannerMessage(
+            if (activeCount > 0) "Saved $activeCount local API key(s) on device"
+            else "No API keys saved locally"
+        )
+        onSyncService()
+    }
+
+    fun clearLocalApiKeys(onSyncService: () -> Unit) {
+        prefs.edit()
+            .remove(MainActivity.PREF_KEY_NVIDIA_API_KEY)
+            .remove(MainActivity.PREF_KEY_OPENROUTER_API_KEY)
+            .remove(MainActivity.PREF_KEY_GEMINI_API_KEY)
+            .remove(MainActivity.PREF_KEY_OPENAI_API_KEY)
+            .apply()
+
+        _uiState.update {
+            it.copy(
+                nvidiaApiKey = "",
+                openRouterApiKey = "",
+                geminiApiKey = "",
+                openAiApiKey = "",
+                configuredKeyCount = 0
+            )
+        }
+        showBannerMessage("Cleared local API keys from device")
+        onSyncService()
+    }
+
     fun applyStudyPreset(preset: String, onSyncService: () -> Unit) {
         val editor = prefs.edit()
         when (preset) {
@@ -264,7 +504,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     .putBoolean(MainActivity.PREF_KEY_INSTANT_TRIGGER, true)
                     .putInt(MainActivity.PREF_KEY_SCAN_INTERVAL_SEC, 3)
                     .putInt(MainActivity.PREF_KEY_NEXT_DELAY_MS, 1500)
-                    .putString(MainActivity.PREF_KEY_EXTRACTION_ENGINE, MainActivity.ENGINE_NATIVE)
+                    .putString(MainActivity.PREF_KEY_EXTRACTION_ENGINE, MainActivity.ENGINE_OCR)
                     .apply()
                 _uiState.update {
                     it.copy(
@@ -277,10 +517,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         instantTriggerEnabled = true,
                         scanIntervalSec = 3,
                         nextDelayMs = 1500,
-                        extractionEngine = MainActivity.ENGINE_NATIVE
+                        extractionEngine = MainActivity.ENGINE_OCR
                     )
                 }
-                showBannerMessage("Study Mode active: balanced speed and clear top pill")
+                showBannerMessage("Prism Mode active: Screenshot OCR & crystal top pill")
             }
             "FAST" -> {
                 editor.putString(MainActivity.PREF_KEY_HUD_STYLE, MainActivity.HUD_STYLE_ISLAND)
@@ -291,7 +531,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     .putBoolean(MainActivity.PREF_KEY_INSTANT_TRIGGER, true)
                     .putInt(MainActivity.PREF_KEY_SCAN_INTERVAL_SEC, 1)
                     .putInt(MainActivity.PREF_KEY_NEXT_DELAY_MS, 500)
-                    .putString(MainActivity.PREF_KEY_EXTRACTION_ENGINE, MainActivity.ENGINE_NATIVE)
+                    .putString(MainActivity.PREF_KEY_EXTRACTION_ENGINE, MainActivity.ENGINE_OCR)
                     .apply()
                 _uiState.update {
                     it.copy(
@@ -304,10 +544,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         instantTriggerEnabled = true,
                         scanIntervalSec = 1,
                         nextDelayMs = 500,
-                        extractionEngine = MainActivity.ENGINE_NATIVE
+                        extractionEngine = MainActivity.ENGINE_OCR
                     )
                 }
-                showBannerMessage("Fast Mode active: 1-second checks for rapid review")
+                showBannerMessage("Turbo Mode active: rapid Screenshot OCR checks")
             }
             "SUBTLE" -> {
                 editor.putString(MainActivity.PREF_KEY_HUD_STYLE, MainActivity.HUD_STYLE_ISLAND)
@@ -318,7 +558,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     .putBoolean(MainActivity.PREF_KEY_INSTANT_TRIGGER, false)
                     .putInt(MainActivity.PREF_KEY_SCAN_INTERVAL_SEC, 6)
                     .putInt(MainActivity.PREF_KEY_NEXT_DELAY_MS, 2500)
-                    .putString(MainActivity.PREF_KEY_EXTRACTION_ENGINE, MainActivity.ENGINE_NATIVE)
+                    .putString(MainActivity.PREF_KEY_EXTRACTION_ENGINE, MainActivity.ENGINE_OCR)
                     .apply()
                 _uiState.update {
                     it.copy(
@@ -331,10 +571,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         instantTriggerEnabled = false,
                         scanIntervalSec = 6,
                         nextDelayMs = 2500,
-                        extractionEngine = MainActivity.ENGINE_NATIVE
+                        extractionEngine = MainActivity.ENGINE_OCR
                     )
                 }
-                showBannerMessage("Subtle Mode active: battery indicator look & gentle buzz")
+                showBannerMessage("Stealth Mode active: battery disguise & gentle pulse")
             }
         }
         onSyncService()
@@ -420,6 +660,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun setBatteryCamouflage(enabled: Boolean, onSyncService: () -> Unit) {
         prefs.edit().putBoolean(MainActivity.PREF_KEY_CAMOUFLAGE, enabled).apply()
         _uiState.update { it.copy(batteryCamouflage = enabled) }
+        showBannerMessage(
+            if (enabled) "Answer format: Charging 91, 92, 93, 94"
+            else "Answer format: Option ABCD"
+        )
         onSyncService()
     }
 
@@ -463,21 +707,33 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         onSyncService()
     }
 
-    fun saveCustomApiKey(keyInput: String) {
-        val trimmed = keyInput.trim()
-        prefs.edit().putString(MainActivity.PREF_KEY_GEMINI_API_KEY, trimmed).apply()
-        _uiState.update { it.copy(customApiKey = trimmed) }
-        showBannerMessage(if (trimmed.isNotEmpty()) "Gemini API key saved" else "Custom API key cleared")
+    fun selectGeminiModel(modelId: String) {
+        val safeModel = GeminiVisionClient.sanitizeModel(modelId)
+        prefs.edit().putString(MainActivity.PREF_KEY_GEMINI_MODEL, safeModel).apply()
+        _uiState.update { it.copy(geminiModel = safeModel) }
+        showBannerMessage("Switched Cloud AI engine to $safeModel")
     }
 
-    fun selectGeminiModel(modelId: String) {
-        prefs.edit().putString(MainActivity.PREF_KEY_GEMINI_MODEL, modelId).apply()
-        _uiState.update { it.copy(geminiModel = modelId) }
+    fun selectSubjectMode(mode: SubjectMode) {
+        prefs.edit().putString(MainActivity.PREF_KEY_SUBJECT_MODE, mode.id).apply()
+        _uiState.update { it.copy(subjectMode = mode) }
+        showBannerMessage("Subject focus set to ${mode.label}")
+    }
+
+    fun setDualVerifyEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(MainActivity.PREF_KEY_DUAL_VERIFY, enabled).apply()
+        _uiState.update { it.copy(dualVerifyEnabled = enabled) }
+    }
+
+    fun setTranslateToEnglish(enabled: Boolean) {
+        prefs.edit().putBoolean(MainActivity.PREF_KEY_TRANSLATE_ENGLISH, enabled).apply()
+        _uiState.update { it.copy(translateToEnglish = enabled) }
     }
 
     fun clearHistory() {
+        prefs.edit().remove("PREF_SOLVE_HISTORY").apply()
         _uiState.update { it.copy(historyEntries = emptyList()) }
-        showBannerMessage("Recent solved history cleared")
+        showBannerMessage("Local recent history cleared")
     }
 
     fun updateCustomPracticeInput(text: String) {
@@ -518,6 +774,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 sample.options.forEach { appendLine(it) }
             }
         }
+        val effectiveSubject = if (isCustom) state.subjectMode else sample.subjectMode
 
         _uiState.update {
             it.copy(
@@ -529,62 +786,157 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         viewModelScope.launch {
-            val resolvedKey = GeminiVisionClient.resolveApiKey(state.customApiKey)
+            var resolvedModel: AnswerModel? = null
             var finalLetter = sample.correctLetter
             var finalExplanation = sample.explanation
-            var sourceBadge = "Instant Study Walkthrough"
+            var sourceBadge = "Cloud Gemini • ${state.geminiModel}"
 
-            if (resolvedKey != null) {
-                try {
-                    val result = geminiClient.analyzeMCQText(
-                        extractedText = fullQuestionText,
-                        apiKey = resolvedKey,
-                        modelName = state.geminiModel
-                    )
-                    finalLetter = result.correctChoice
-                    finalExplanation = if (isCustom) {
-                        "Solved live using ${state.geminiModel}. Option $finalLetter best matches your question."
-                    } else {
-                        sample.explanation
+            try {
+                val appContext = getApplication<Application>()
+                val aiAnswer = when (state.solverMethod) {
+                    SolverMethod.API_KEYS -> {
+                        if (MultiProviderApiSolver.hasAnyConfiguredKey(appContext)) {
+                            MultiProviderApiSolver.solveWithFailover(
+                                context = appContext,
+                                extractedText = fullQuestionText,
+                                subjectMode = effectiveSubject
+                            )
+                        } else if (state.autoFailoverEnabled) {
+                            geminiClient.analyzeMCQText(
+                                extractedText = fullQuestionText,
+                                modelName = state.geminiModel,
+                                subjectMode = effectiveSubject,
+                                dualVerify = state.dualVerifyEnabled,
+                                translateToEnglish = state.translateToEnglish
+                            )
+                        } else {
+                            throw IllegalStateException("Enter at least one local API key (NVIDIA, OpenRouter, Gemini, or OpenAI) in Settings.")
+                        }
                     }
-                    sourceBadge = "Solved Live via Gemini AI"
-                } catch (e: Exception) {
+
+                    SolverMethod.FIREBASE_SERVER,
+                    SolverMethod.BACKGROUND_GEMINI,
+                    SolverMethod.OVERLAPPING_GOOGLE -> {
+                        try {
+                            geminiClient.analyzeMCQText(
+                                extractedText = fullQuestionText,
+                                modelName = state.geminiModel,
+                                subjectMode = effectiveSubject,
+                                dualVerify = state.dualVerifyEnabled,
+                                translateToEnglish = state.translateToEnglish
+                            )
+                        } catch (cloudEx: Exception) {
+                            if (state.autoFailoverEnabled && MultiProviderApiSolver.hasAnyConfiguredKey(appContext)) {
+                                MultiProviderApiSolver.solveWithFailover(
+                                    context = appContext,
+                                    extractedText = fullQuestionText,
+                                    subjectMode = effectiveSubject
+                                )
+                            } else {
+                                throw cloudEx
+                            }
+                        }
+                    }
+                }
+                resolvedModel = aiAnswer
+                finalLetter = aiAnswer.correctChoice
+                finalExplanation = buildString {
+                    if (aiAnswer.shortAnswer.isNotBlank()) {
+                        append(aiAnswer.shortAnswer)
+                        if (aiAnswer.explanation.isNotBlank()) append(" — ")
+                    }
+                    if (aiAnswer.explanation.isNotBlank()) {
+                        append(aiAnswer.explanation)
+                    } else if (!isCustom) {
+                        append(sample.explanation)
+                    } else {
+                        append("Solved live via ${aiAnswer.engineLabel}.")
+                    }
+                    if (aiAnswer.translatedQuestion.isNotBlank()) {
+                        append("\nTranslation: ${aiAnswer.translatedQuestion}")
+                    }
+                }
+                sourceBadge = aiAnswer.engineLabel
+            } catch (ce: CancellationException) {
+                if (ce is TimeoutCancellationException) {
                     if (isCustom) {
                         _uiState.update {
                             it.copy(
                                 isPracticeScanning = false,
-                                practiceStatusNote = "Could not reach Gemini AI (${e.message ?: "check API key in AI & History"})."
+                                practiceStatusNote = "AI request timed out. Check your connection or switch AI method."
                             )
                         }
                         return@launch
                     }
-                    delay(420)
+                } else {
+                    throw ce
                 }
-            } else {
+            } catch (e: Exception) {
                 if (isCustom) {
                     _uiState.update {
                         it.copy(
                             isPracticeScanning = false,
-                            practiceStatusNote = "Add a Gemini API key in AI & History (or AI Studio Secrets) to solve custom typed questions."
+                            practiceStatusNote = e.localizedMessage ?: "Could not solve right now. Try adding a free NVIDIA/OpenRouter key."
                         )
                     }
                     return@launch
                 }
-                delay(480)
+                sourceBadge = "Offline Walkthrough"
+                delay(320)
             }
 
-            val newSolvedCount = _uiState.value.solvedCount + 1
-            prefs.edit().putInt("PREF_SOLVED_COUNT", newSolvedCount).apply()
+            // Persist to Cloud Firestore if signed in with Google
+            val appCtx = getApplication<Application>()
+            val signedInUid = try {
+                if (FirebaseApp.getApps(appCtx).isNotEmpty()) Firebase.auth.currentUser?.uid else null
+            } catch (_: Exception) {
+                null
+            }
+            if (!signedInUid.isNullOrBlank()) {
+                val answerForCloud = resolvedModel ?: AnswerModel(
+                    correctChoice = finalLetter,
+                    shortAnswer = "",
+                    explanation = finalExplanation,
+                    subject = effectiveSubject.id
+                )
+                try {
+                    val repo = SolvedQuestionRepository(appCtx)
+                    repo.saveSolvedQuestion(
+                        SolvedQuestionRecord.fromAnswerModel(
+                            userId = signedInUid,
+                            questionText = fullQuestionText,
+                            answer = answerForCloud
+                        )
+                    )
+                } catch (_: Exception) {
+                }
+            }
 
-            val timeLabel = SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date())
+            val nowMs = System.currentTimeMillis()
+            val newSolvedCount = _uiState.value.solvedCount + 1
+            val timeLabel = SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(nowMs))
             val previewTitle = if (isCustom) {
-                fullQuestionText.lineSequence().firstOrNull()?.take(60) ?: "Custom Practice Question"
+                fullQuestionText.lineSequence().firstOrNull()?.take(60) ?: "Custom Question"
             } else {
                 sample.question.take(60)
             }
 
+            try {
+                val existing = prefs.getString("PREF_SOLVE_HISTORY", "") ?: ""
+                val entryLine = "$nowMs||$finalLetter||$previewTitle"
+                val merged = (listOf(entryLine) + existing.split("\n").filter { it.isNotBlank() })
+                    .take(25)
+                    .joinToString("\n")
+                prefs.edit()
+                    .putInt("PREF_SOLVED_COUNT", newSolvedCount)
+                    .putString("PREF_SOLVE_HISTORY", merged)
+                    .apply()
+            } catch (_: Exception) {
+                prefs.edit().putInt("PREF_SOLVED_COUNT", newSolvedCount).apply()
+            }
+
             val newEntry = SolvedHistoryEntry(
-                id = System.currentTimeMillis(),
+                id = nowMs,
                 questionPreview = previewTitle,
                 answerLetter = finalLetter,
                 sourceLabel = sourceBadge,

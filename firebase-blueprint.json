@@ -1,0 +1,92 @@
+{
+  "entities": {
+    "SolvedQuestion": {
+      "title": "SolvedQuestion",
+      "description": "A solved quiz or study question with structured AI answer badge, concise explanation, subject tag, confidence score, and flashcard bookmark state. Clients must submit FieldValue.serverTimestamp() for createdAt and updatedAt.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Authenticated Firebase UID of the question owner."
+        },
+        "questionText": {
+          "type": "string",
+          "description": "Extracted or typed question text (1..4000 characters)."
+        },
+        "answerBadge": {
+          "type": "string",
+          "description": "Concise answer badge shown in the floating Dynamic Island (e.g. 'B', 'A, C', 'True', '42.5', '1-C, 2-A')."
+        },
+        "shortAnswer": {
+          "type": "string",
+          "description": "Short answer phrase shown in Split Pill and Flashcards (0..300 characters)."
+        },
+        "explanation": {
+          "type": "string",
+          "description": "Concise 2-line step-by-step explanation or formula breakdown (0..2000 characters)."
+        },
+        "questionType": {
+          "type": "string",
+          "enum": ["MCQ", "MULTI_SELECT", "TRUE_FALSE", "FILL_BLANK", "MATCHING"],
+          "description": "Detected question format."
+        },
+        "subject": {
+          "type": "string",
+          "enum": ["GENERAL", "MATH", "SCIENCE", "CODING", "MEDICAL", "LAW"],
+          "description": "Subject domain used for solving and filtering."
+        },
+        "confidence": {
+          "type": "integer",
+          "description": "AI confidence percentage from 0 to 100."
+        },
+        "language": {
+          "type": "string",
+          "description": "Detected language of the source question (e.g. 'English', 'Hindi', 'Spanish')."
+        },
+        "translatedQuestion": {
+          "type": "string",
+          "description": "Optional English translation when source question is in another language."
+        },
+        "bookmarked": {
+          "type": "boolean",
+          "description": "Whether the user starred this question for quick study review."
+        },
+        "mistakeDeck": {
+          "type": "boolean",
+          "description": "Whether this item is included in the active Liquid Glass Mistake Flashcard Deck."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Immutable creation timestamp set via FieldValue.serverTimestamp()."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last modification timestamp set via FieldValue.serverTimestamp()."
+        }
+      },
+      "required": [
+        "userId",
+        "questionText",
+        "answerBadge",
+        "shortAnswer",
+        "explanation",
+        "questionType",
+        "subject",
+        "confidence",
+        "language",
+        "bookmarked",
+        "mistakeDeck",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/solvedQuestions/{questionId}": {
+      "schema": "SolvedQuestion",
+      "description": "Per-user private collection of solved questions, explanations, bookmarks, and mistake flashcards."
+    }
+  }
+}

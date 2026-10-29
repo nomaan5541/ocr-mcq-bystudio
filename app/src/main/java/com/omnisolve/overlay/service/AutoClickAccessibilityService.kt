@@ -165,35 +165,42 @@ class AutoClickAccessibilityService : AccessibilityService() {
     private fun scrapeCurrentWindow(): Pair<String, List<Pair<String, Rect>>>? {
         val candidateRoots = mutableListOf<AccessibilityNodeInfo>()
 
+        fun isIgnoredPackage(pkg: String): Boolean {
+            if (pkg.isBlank()) return true
+            val lower = pkg.lowercase()
+            return pkg == packageName ||
+                lower == "com.android.systemui" ||
+                lower.contains("inputmethod") ||
+                lower.contains("keyboard") ||
+                lower.contains("permissioncontroller")
+        }
+
         // 1. Try querying windows list (requires flagRetrieveInteractiveWindows)
         try {
             val windowList = windows
             if (!windowList.isNullOrEmpty()) {
-                // Traverse in reverse order or application type to find the foreground quiz app
                 for (w in windowList) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP &&
+                        w.type != AccessibilityWindowInfo.TYPE_APPLICATION
+                    ) {
+                        continue
+                    }
                     val wRoot = try { w.root } catch (_: Exception) { null } ?: continue
                     val pkg = wRoot.packageName?.toString() ?: ""
-                    if (pkg == packageName) continue // Skip OmniSolve overlay windows
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                        if (w.type == AccessibilityWindowInfo.TYPE_APPLICATION || w.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD) {
-                            candidateRoots.add(wRoot)
-                        } else {
-                            candidateRoots.add(wRoot)
-                        }
-                    } else {
-                        candidateRoots.add(wRoot)
-                    }
+                    if (isIgnoredPackage(pkg)) continue
+                    candidateRoots.add(wRoot)
                 }
             }
         } catch (e: Exception) {
             Log.w(TAG, "Error accessing windows list: ${e.message}")
         }
 
-        // 2. Fallback to rootInActiveWindow if no windows found
+        // 2. Fallback to rootInActiveWindow if no application windows found
         if (candidateRoots.isEmpty()) {
             try {
                 val root = rootInActiveWindow
-                if (root != null && root.packageName?.toString() != packageName) {
+                val pkg = root?.packageName?.toString() ?: ""
+                if (root != null && !isIgnoredPackage(pkg)) {
                     candidateRoots.add(root)
                 }
             } catch (e: Exception) {
@@ -221,13 +228,14 @@ class AutoClickAccessibilityService : AccessibilityService() {
             val desc = node.contentDescription?.toString()?.lowercase() ?: ""
             val text = node.text?.toString()?.lowercase() ?: ""
 
-            // Explicit browser navigation/search IDs
+            // Explicit browser navigation/search IDs & system bar IDs
             if (viewId.contains("url_bar") || viewId.contains("location_bar") ||
                 viewId.contains("search_box") || viewId.contains("omnibox") ||
                 viewId.contains("toolbar") || viewId.contains("address_bar") ||
                 viewId.contains("tab_switcher") || viewId.contains("menu_button") ||
                 viewId.contains("home_button") || viewId.contains("action_bar_root") ||
-                viewId.contains("control_container")
+                viewId.contains("control_container") || viewId.contains("status_bar") ||
+                viewId.contains("navigation_bar")
             ) {
                 return true
             }
@@ -345,8 +353,14 @@ class AutoClickAccessibilityService : AccessibilityService() {
             val windowList = windows
             if (!windowList.isNullOrEmpty()) {
                 for (w in windowList) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP &&
+                        w.type != AccessibilityWindowInfo.TYPE_APPLICATION
+                    ) {
+                        continue
+                    }
                     val wRoot = try { w.root } catch (_: Exception) { null } ?: continue
-                    if (wRoot.packageName?.toString() != packageName) {
+                    val pkg = wRoot.packageName?.toString() ?: ""
+                    if (pkg != packageName && pkg != "com.android.systemui") {
                         candidateRoots.add(wRoot)
                     }
                 }
@@ -356,7 +370,8 @@ class AutoClickAccessibilityService : AccessibilityService() {
         if (candidateRoots.isEmpty()) {
             try {
                 val root = rootInActiveWindow
-                if (root != null && root.packageName?.toString() != packageName) {
+                val pkg = root?.packageName?.toString() ?: ""
+                if (root != null && pkg != packageName && pkg != "com.android.systemui") {
                     candidateRoots.add(root)
                 }
             } catch (_: Exception) {}

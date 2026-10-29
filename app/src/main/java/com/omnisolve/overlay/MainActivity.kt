@@ -20,16 +20,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.slideOutVertically
-import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -51,8 +42,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -60,19 +50,24 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
+import com.google.firebase.FirebaseApp
+import com.omnisolve.overlay.data.GoogleAuthManager
+import com.omnisolve.overlay.data.GoogleSignInOutcome
+import com.omnisolve.overlay.firebase.configureAppCheck
 import com.omnisolve.overlay.service.OverlayService
 import com.omnisolve.overlay.ui.MainUiState
 import com.omnisolve.overlay.ui.MainViewModel
@@ -82,13 +77,11 @@ import com.omnisolve.overlay.ui.physics.GlassMaterialStrength
 import com.omnisolve.overlay.ui.physics.LiquidAtmosphericBackdrop
 import com.omnisolve.overlay.ui.physics.LocalReducedMotion
 import com.omnisolve.overlay.ui.physics.livingGlassSurface
-import com.omnisolve.overlay.ui.physics.rememberSystemReducedMotion
-import com.omnisolve.overlay.ui.screens.AccountScreen
-import com.omnisolve.overlay.ui.screens.ControlsScreen
 import com.omnisolve.overlay.ui.screens.HomeScreen
-import com.omnisolve.overlay.ui.screens.PracticeScreen
+import com.omnisolve.overlay.ui.screens.SettingsScreen
 import com.omnisolve.overlay.ui.theme.LocalWhiteGlassPalette
 import com.omnisolve.overlay.ui.theme.WhiteGlassTheme
+import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
 
@@ -119,11 +112,18 @@ class MainActivity : AppCompatActivity() {
         const val PREF_KEY_COMPANION_HOST = "PREF_COMPANION_HOST"
         const val PREF_KEY_COMPANION_PORT = "PREF_COMPANION_PORT"
         const val PREF_KEY_GEMINI_API_KEY = "PREF_KEY_GEMINI_API_KEY"
+        const val PREF_KEY_NVIDIA_API_KEY = "PREF_KEY_NVIDIA_API_KEY"
+        const val PREF_KEY_OPENROUTER_API_KEY = "PREF_KEY_OPENROUTER_API_KEY"
+        const val PREF_KEY_OPENAI_API_KEY = "PREF_KEY_OPENAI_API_KEY"
+        const val PREF_KEY_SOLVER_METHOD = "PREF_SOLVER_METHOD"
+        const val PREF_KEY_AUTO_FAILOVER = "PREF_AUTO_FAILOVER"
         const val PREF_KEY_GEMINI_MODEL = "PREF_GEMINI_MODEL"
+        const val PREF_KEY_SUBJECT_MODE = "PREF_SUBJECT_MODE"
+        const val PREF_KEY_DUAL_VERIFY = "PREF_DUAL_VERIFY"
+        const val PREF_KEY_TRANSLATE_ENGLISH = "PREF_TRANSLATE_ENGLISH"
     }
 
     private val viewModel: MainViewModel by viewModels()
-    private val prefs by lazy { getSharedPreferences("OmniSolvePrefs", Context.MODE_PRIVATE) }
 
     private val loginLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -142,6 +142,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        configureAppCheck(this, intent)
+
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.light(
                 AndroidColor.TRANSPARENT,
@@ -152,21 +156,26 @@ class MainActivity : AppCompatActivity() {
                 AndroidColor.TRANSPARENT
             )
         )
-        super.onCreate(savedInstanceState)
 
         handleIncomingDeepLink(intent)
 
         setContent {
             WhiteGlassTheme {
-                val reducedMotion = rememberSystemReducedMotion()
-                CompositionLocalProvider(LocalReducedMotion provides reducedMotion) {
+                CompositionLocalProvider(LocalReducedMotion provides true) {
                     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+
+                    LaunchedEffect(Unit) {
+                        if (FirebaseApp.getApps(this@MainActivity).isNotEmpty()) {
+                            GoogleAuthManager.trySilentRestore(this@MainActivity)
+                            viewModel.refreshSystemStatuses()
+                        }
+                    }
 
                     BackHandler(enabled = uiState.selectedTab != AppTab.Home) {
                         viewModel.selectTab(AppTab.Home)
                     }
 
-                    MainLivingGlassApp(
+                    MainInstantApp(
                         state = uiState,
                         viewModel = viewModel,
                         onSelectTab = { tab ->
@@ -183,15 +192,44 @@ class MainActivity : AppCompatActivity() {
                         },
                         onRequestOverlayPermission = ::openOverlayPermissionScreen,
                         onOpenAccessibilitySettings = ::openAccessibilitySettingsScreen,
+                        onSignInGoogle = ::performInteractiveGoogleSignIn,
+                        onSignOutGoogle = ::performGoogleSignOut,
                         onOpenGoogleLogin = {
                             loginLauncher.launch(Intent(this, LoginActivity::class.java))
                         },
                         onTestVibration = ::testPocketHapticPulse,
-                        onSyncRunningService = ::notifyServiceConfigChanged,
-                        onOpenGithub = ::openProjectGithub
+                        onSyncRunningService = ::notifyServiceConfigChanged
                     )
                 }
             }
+        }
+    }
+
+    private fun performInteractiveGoogleSignIn() {
+        viewModel.setGoogleSignInLoading(true)
+        lifecycleScope.launch {
+            try {
+                when (val outcome = GoogleAuthManager.signInInteractive(this@MainActivity)) {
+                    is GoogleSignInOutcome.Success -> {
+                        viewModel.refreshSystemStatuses()
+                        viewModel.showBannerMessage("Signed in as ${outcome.user.email ?: outcome.user.displayName ?: "Google user"}")
+                    }
+                    is GoogleSignInOutcome.Cancelled -> Unit
+                    is GoogleSignInOutcome.Error -> {
+                        viewModel.showBannerMessage(outcome.userMessage)
+                    }
+                }
+            } finally {
+                viewModel.setGoogleSignInLoading(false)
+            }
+        }
+    }
+
+    private fun performGoogleSignOut() {
+        lifecycleScope.launch {
+            GoogleAuthManager.signOut(this@MainActivity)
+            viewModel.refreshSystemStatuses()
+            viewModel.showBannerMessage("Signed out of Server")
         }
     }
 
@@ -208,7 +246,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun openOverlayPermissionScreen() {
         if (Settings.canDrawOverlays(this)) {
-            viewModel.showBannerMessage("Floating display permission is already allowed")
+            viewModel.showBannerMessage("Overlay permission is already allowed")
             return
         }
         try {
@@ -219,7 +257,7 @@ class MainActivity : AppCompatActivity() {
             startActivity(intent)
             Toast.makeText(
                 this,
-                "Allow 'Display over other apps' for OCR MCQ Solver, then return here",
+                "Allow 'Display over other apps' for Prism AI, then return here",
                 Toast.LENGTH_LONG
             ).show()
         } catch (_: Exception) {
@@ -232,24 +270,11 @@ class MainActivity : AppCompatActivity() {
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
             Toast.makeText(
                 this,
-                "Find 'OCR MCQ Solver' in Installed Services and turn it on",
+                "Find 'Prism AI' in Installed Services and turn it on",
                 Toast.LENGTH_LONG
             ).show()
         } catch (_: Exception) {
             viewModel.showBannerMessage("Could not open Accessibility settings")
-        }
-    }
-
-    private fun openProjectGithub() {
-        try {
-            startActivity(
-                Intent(
-                    Intent.ACTION_VIEW,
-                    Uri.parse("https://github.com/nomaan5541/ocr-mcq-solver")
-                )
-            )
-        } catch (_: Exception) {
-            viewModel.showBannerMessage("Could not open browser")
         }
     }
 
@@ -283,6 +308,7 @@ class MainActivity : AppCompatActivity() {
             putExtra(OverlayService.EXTRA_COMPANION_HOST, state.companionHost)
             putExtra(OverlayService.EXTRA_COMPANION_PORT, state.companionPort)
             putExtra(OverlayService.EXTRA_COMPANION_SYNC_ENABLED, state.companionSyncEnabled)
+            putExtra(OverlayService.EXTRA_SOLVER_METHOD, state.solverMethod.id)
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -292,18 +318,18 @@ class MainActivity : AppCompatActivity() {
         }
 
         viewModel.setOverlayServiceState(running = true, captureAuthorized = true)
-        viewModel.showBannerMessage("Floating solver active! Open any quiz and tap the top pill.")
+        viewModel.showBannerMessage("Floating overlay started")
     }
 
     private fun stopOverlayForegroundService() {
         stopService(Intent(this, OverlayService::class.java))
         viewModel.setOverlayServiceState(running = false)
-        viewModel.showBannerMessage("Floating solver stopped")
+        viewModel.showBannerMessage("Floating overlay stopped")
     }
 
     private fun notifyServiceConfigChanged() {
         val state = viewModel.uiState.value
-        if (!state.isOverlayRunning) return
+        if (!state.isOverlayRunning || !OverlayService.isServiceRunning()) return
 
         val updateIntent = Intent(this, OverlayService::class.java).apply {
             action = OverlayService.ACTION_UPDATE_CONFIG
@@ -323,6 +349,7 @@ class MainActivity : AppCompatActivity() {
             putExtra(OverlayService.EXTRA_COMPANION_HOST, state.companionHost)
             putExtra(OverlayService.EXTRA_COMPANION_PORT, state.companionPort)
             putExtra(OverlayService.EXTRA_COMPANION_SYNC_ENABLED, state.companionSyncEnabled)
+            putExtra(OverlayService.EXTRA_SOLVER_METHOD, state.solverMethod.id)
         }
         try {
             startService(updateIntent)
@@ -366,7 +393,7 @@ class MainActivity : AppCompatActivity() {
                 @Suppress("DEPRECATION")
                 vibrator.vibrate(longArrayOf(0, 100, 120, 100), -1)
             }
-            viewModel.showBannerMessage("Played 2 gentle buzzes (signals Option B)")
+            viewModel.showBannerMessage("Played 2 buzzes (Option B)")
         } catch (_: Exception) {
         }
     }
@@ -390,41 +417,25 @@ class MainActivity : AppCompatActivity() {
 }
 
 @Composable
-private fun MainLivingGlassApp(
+private fun MainInstantApp(
     state: MainUiState,
     viewModel: MainViewModel,
     onSelectTab: (AppTab) -> Unit,
     onToggleOverlay: () -> Unit,
     onRequestOverlayPermission: () -> Unit,
     onOpenAccessibilitySettings: () -> Unit,
+    onSignInGoogle: () -> Unit,
+    onSignOutGoogle: () -> Unit,
     onOpenGoogleLogin: () -> Unit,
     onTestVibration: () -> Unit,
-    onSyncRunningService: () -> Unit,
-    onOpenGithub: () -> Unit
+    onSyncRunningService: () -> Unit
 ) {
     val palette = LocalWhiteGlassPalette.current
-    val reducedMotion = LocalReducedMotion.current
-
     val homeListState = rememberLazyListState()
-    val practiceListState = rememberLazyListState()
-    val controlsListState = rememberLazyListState()
-    val accountListState = rememberLazyListState()
-
-    val activeScrollOffsetPx by remember(state.selectedTab) {
-        derivedStateOf {
-            val activeList = when (state.selectedTab) {
-                AppTab.Home -> homeListState
-                AppTab.Practice -> practiceListState
-                AppTab.Controls -> controlsListState
-                AppTab.Account -> accountListState
-            }
-            activeList.firstVisibleItemIndex * 260f + activeList.firstVisibleItemScrollOffset
-        }
-    }
+    val settingsListState = rememberLazyListState()
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // Multi-layer Daylight White Liquid Glass backdrop with parallax light orbs
-        LiquidAtmosphericBackdrop(scrollOffsetPx = activeScrollOffsetPx)
+        LiquidAtmosphericBackdrop()
 
         Scaffold(
             containerColor = Color.Transparent,
@@ -432,8 +443,12 @@ private fun MainLivingGlassApp(
             topBar = {
                 WhiteGlassTopHeader(
                     isOverlayRunning = state.isOverlayRunning,
-                    isAiReady = state.hasSecretApiKey || state.customApiKey.isNotBlank() || state.isGoogleWebLoggedIn,
-                    onJumpToAccount = { onSelectTab(AppTab.Account) }
+                    selectedTab = state.selectedTab,
+                    onToggleSettings = {
+                        onSelectTab(
+                            if (state.selectedTab == AppTab.Settings) AppTab.Home else AppTab.Settings
+                        )
+                    }
                 )
             },
             bottomBar = {
@@ -453,134 +468,101 @@ private fun MainLivingGlassApp(
                     .fillMaxSize()
                     .widthIn(max = 680.dp)
 
-                AnimatedContent(
-                    targetState = state.selectedTab,
-                    transitionSpec = {
-                        if (reducedMotion) {
-                            fadeIn(tween(80)) togetherWith fadeOut(tween(80))
-                        } else {
-                            val forward = targetState.ordinal >= initialState.ordinal
-                            val enterSlide = slideInHorizontally(tween(240)) { w ->
-                                if (forward) w / 9 else -w / 9
-                            } + fadeIn(tween(220))
-                            val exitSlide = slideOutHorizontally(tween(200)) { w ->
-                                if (forward) -w / 12 else w / 12
-                            } + fadeOut(tween(160))
-                            enterSlide togetherWith exitSlide
-                        }
-                    },
-                    label = "tabTransition",
-                    modifier = contentMod
-                ) { tab ->
-                    when (tab) {
-                        AppTab.Home -> HomeScreen(
-                            state = state,
-                            listState = homeListState,
-                            onToggleOverlay = onToggleOverlay,
-                            onRequestOverlayPermission = onRequestOverlayPermission,
-                            onOpenAccessibilitySettings = onOpenAccessibilitySettings,
-                            onApplyPreset = { preset ->
-                                viewModel.applyStudyPreset(preset, onSyncRunningService)
-                            },
-                            onSelectEngine = { engine ->
-                                viewModel.setExtractionEngine(engine, onSyncRunningService)
-                            },
-                            onToggleOcrFallback = { enabled ->
-                                viewModel.setNativeFallbackOcr(enabled, onSyncRunningService)
-                            }
-                        )
+                // Zero-delay direct screen swap for instant Frame-1 load & tab switching
+                when (state.selectedTab) {
+                    AppTab.Home -> HomeScreen(
+                        state = state,
+                        listState = homeListState,
+                        onToggleOverlay = onToggleOverlay,
+                        onRequestOverlayPermission = onRequestOverlayPermission,
+                        onSelectSolverMethod = { method ->
+                            viewModel.selectSolverMethod(method, onSyncRunningService)
+                        },
+                        onToggleChargingFormat = { enabled ->
+                            viewModel.setBatteryCamouflage(enabled, onSyncRunningService)
+                        },
+                        onOpenSettings = { onSelectTab(AppTab.Settings) },
+                        onSignInServer = onSignInGoogle,
+                        onOpenGeminiLogin = onOpenGoogleLogin,
+                        modifier = contentMod
+                    )
 
-                        AppTab.Practice -> PracticeScreen(
-                            state = state,
-                            sample = viewModel.samples[state.currentSampleIndex],
-                            listState = practiceListState,
-                            onSolveQuestion = viewModel::solvePracticeQuestion,
-                            onNextSample = viewModel::nextSampleQuestion,
-                            onCustomQuestionChange = viewModel::updateCustomPracticeInput,
-                            onToggleInstantDetect = { enabled ->
-                                viewModel.setInstantTrigger(enabled, onSyncRunningService)
-                            },
-                            onScanIntervalChange = { sec ->
-                                viewModel.setScanIntervalSec(sec, onSyncRunningService)
-                            },
-                            onToggleClipboardCopy = { enabled ->
-                                viewModel.setAutoCopyClipboard(enabled, onSyncRunningService)
-                            }
-                        )
-
-                        AppTab.Controls -> ControlsScreen(
-                            state = state,
-                            listState = controlsListState,
-                            onSelectHudStyle = { style ->
-                                viewModel.setHudStyle(style, onSyncRunningService)
-                            },
-                            onSelectOpacityIndex = { idx ->
-                                viewModel.setIslandOpacityIndex(idx, onSyncRunningService)
-                            },
-                            onSelectDisplayMode = { mode ->
-                                viewModel.setDisplayMode(mode, onSyncRunningService)
-                            },
-                            onToggleAutoClick = { enabled ->
-                                viewModel.setAutoClick(
-                                    enabled = enabled,
-                                    onRequireAccessibility = {
-                                        viewModel.showBannerMessage("Enable Screen Text Helper on Home first to use Auto-Tap")
-                                        onOpenAccessibilitySettings()
-                                    },
-                                    onSyncService = onSyncRunningService
-                                )
-                            },
-                            onToggleAutoNext = { enabled ->
-                                viewModel.setAfkAutoAdvance(
-                                    enabled = enabled,
-                                    onRequireAccessibility = {
-                                        viewModel.showBannerMessage("Enable Screen Text Helper on Home first to use Auto-Next")
-                                        onOpenAccessibilitySettings()
-                                    },
-                                    onSyncService = onSyncRunningService
-                                )
-                            },
-                            onToggleNaturalTiming = { enabled ->
-                                viewModel.setNaturalTiming(enabled, onSyncRunningService)
-                            },
-                            onChangeNextDelayMs = { ms ->
-                                viewModel.setNextDelayMs(ms, onSyncRunningService)
-                            },
-                            onToggleHaptics = { enabled ->
-                                viewModel.setHapticEnabled(enabled, onSyncRunningService)
-                            },
-                            onTestVibration = onTestVibration,
-                            onToggleBatteryCamo = { enabled ->
-                                viewModel.setBatteryCamouflage(enabled, onSyncRunningService)
-                            },
-                            onUpdateCompanionSync = { enabled, host, port ->
-                                viewModel.updateCompanionConnection(enabled, host, port, onSyncRunningService)
-                            }
-                        )
-
-                        AppTab.Account -> AccountScreen(
-                            state = state,
-                            listState = accountListState,
-                            onOpenGoogleLogin = onOpenGoogleLogin,
-                            onSaveApiKey = viewModel::saveCustomApiKey,
-                            onSelectModel = viewModel::selectGeminiModel,
-                            onClearHistory = viewModel::clearHistory,
-                            onOpenProjectRepo = onOpenGithub
-                        )
-                    }
+                    AppTab.Settings -> SettingsScreen(
+                        state = state,
+                        sample = viewModel.samples[state.currentSampleIndex],
+                        listState = settingsListState,
+                        onSaveApiKeys = { nvidia, openRouter, gemini, openAi ->
+                            viewModel.saveMultiProviderApiKeys(
+                                nvidiaKey = nvidia,
+                                openRouterKey = openRouter,
+                                geminiKey = gemini,
+                                openAiKey = openAi,
+                                onSyncService = onSyncRunningService
+                            )
+                        },
+                        onClearApiKeys = {
+                            viewModel.clearLocalApiKeys(onSyncRunningService)
+                        },
+                        onToggleAutoFailover = { enabled ->
+                            viewModel.setAutoFailoverEnabled(enabled, onSyncRunningService)
+                        },
+                        onToggleChargingCamo = { enabled ->
+                            viewModel.setBatteryCamouflage(enabled, onSyncRunningService)
+                        },
+                        onSignInGoogle = onSignInGoogle,
+                        onSignOutGoogle = onSignOutGoogle,
+                        onOpenGeminiWebLogin = onOpenGoogleLogin,
+                        onRequestOverlayPermission = onRequestOverlayPermission,
+                        onOpenAccessibilitySettings = onOpenAccessibilitySettings,
+                        onSelectHudStyle = { style ->
+                            viewModel.setHudStyle(style, onSyncRunningService)
+                        },
+                        onSelectOpacityIndex = { idx ->
+                            viewModel.setIslandOpacityIndex(idx, onSyncRunningService)
+                        },
+                        onToggleHaptics = { enabled ->
+                            viewModel.setHapticEnabled(enabled, onSyncRunningService)
+                        },
+                        onTestVibration = onTestVibration,
+                        onToggleInstantDetect = { enabled ->
+                            viewModel.setInstantTrigger(enabled, onSyncRunningService)
+                        },
+                        onToggleAutoClick = { enabled ->
+                            viewModel.setAutoClick(
+                                enabled = enabled,
+                                onRequireAccessibility = {
+                                    viewModel.showBannerMessage("Enable Auto-Tap helper first")
+                                    onOpenAccessibilitySettings()
+                                },
+                                onSyncService = onSyncRunningService
+                            )
+                        },
+                        onToggleAutoNext = { enabled ->
+                            viewModel.setAfkAutoAdvance(
+                                enabled = enabled,
+                                onRequireAccessibility = {
+                                    viewModel.showBannerMessage("Enable Auto-Tap helper first")
+                                    onOpenAccessibilitySettings()
+                                },
+                                onSyncService = onSyncRunningService
+                            )
+                        },
+                        onSolvePractice = viewModel::solvePracticeQuestion,
+                        onNextPractice = viewModel::nextSampleQuestion,
+                        onClearHistory = viewModel::clearHistory,
+                        onSelectSolverMethod = { method ->
+                            viewModel.selectSolverMethod(method, onSyncRunningService)
+                        },
+                        modifier = contentMod
+                    )
                 }
 
-                // Floating Daylight Glass Notification Pill
-                AnimatedVisibility(
-                    visible = state.statusBannerMessage != null,
-                    enter = slideInVertically { -it } + fadeIn(),
-                    exit = slideOutVertically { -it } + fadeOut(),
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .padding(horizontal = 24.dp, vertical = 6.dp)
-                ) {
+                // Instant status notification capsule
+                if (state.statusBannerMessage != null) {
                     Box(
                         modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .padding(horizontal = 24.dp, vertical = 6.dp)
                             .livingGlassSurface(
                                 strength = GlassMaterialStrength.FloatingDock,
                                 cornerRadius = 999.dp
@@ -588,8 +570,9 @@ private fun MainLivingGlassApp(
                             .padding(horizontal = 18.dp, vertical = 10.dp)
                     ) {
                         Text(
-                            text = state.statusBannerMessage ?: "",
+                            text = state.statusBannerMessage,
                             style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
                             color = palette.inkPrimary
                         )
                     }
@@ -602,8 +585,8 @@ private fun MainLivingGlassApp(
 @Composable
 private fun WhiteGlassTopHeader(
     isOverlayRunning: Boolean,
-    isAiReady: Boolean,
-    onJumpToAccount: () -> Unit
+    selectedTab: AppTab,
+    onToggleSettings: () -> Unit
 ) {
     val palette = LocalWhiteGlassPalette.current
 
@@ -611,7 +594,7 @@ private fun WhiteGlassTopHeader(
         modifier = Modifier
             .fillMaxWidth()
             .statusBarsPadding()
-            .padding(horizontal = 18.dp, vertical = 10.dp),
+            .padding(horizontal = 18.dp, vertical = 8.dp),
         contentAlignment = Alignment.Center
     ) {
         Row(
@@ -620,9 +603,9 @@ private fun WhiteGlassTopHeader(
                 .widthIn(max = 680.dp)
                 .livingGlassSurface(
                     strength = GlassMaterialStrength.FloatingDock,
-                    cornerRadius = 22.dp
+                    cornerRadius = 20.dp
                 )
-                .padding(horizontal = 16.dp, vertical = 12.dp)
+                .padding(horizontal = 16.dp, vertical = 10.dp)
                 .testTag("top_glass_header"),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
@@ -631,16 +614,15 @@ private fun WhiteGlassTopHeader(
                 Box(
                     modifier = Modifier
                         .size(40.dp)
-                        .clip(RoundedCornerShape(13.dp))
-                        .background(palette.accentSkyContainer)
-                        .border(1.dp, Color(0x660284C7), RoundedCornerShape(13.dp)),
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color(0xFFF0F9FF))
+                        .border(1.dp, Color(0xFFBAE6FD), RoundedCornerShape(12.dp)),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        imageVector = Icons.Filled.AutoAwesome,
+                    Image(
+                        painter = painterResource(id = R.drawable.ic_prism_orb),
                         contentDescription = null,
-                        tint = palette.accentSky,
-                        modifier = Modifier.size(21.dp)
+                        modifier = Modifier.size(26.dp)
                     )
                 }
                 Spacer(modifier = Modifier.width(12.dp))
@@ -659,15 +641,21 @@ private fun WhiteGlassTopHeader(
                 }
             }
 
-            // Account / AI Status Quick Pill
             Row(
                 modifier = Modifier
                     .minimumInteractiveComponentSize()
                     .clip(RoundedCornerShape(999.dp))
-                    .background(if (isAiReady) palette.accentMintContainer else palette.accentSkyContainer)
+                    .background(
+                        if (selectedTab == AppTab.Settings) Color(0xFFE0F2FE) else Color(0xFFF1F5F9)
+                    )
+                    .border(
+                        width = 1.dp,
+                        color = if (selectedTab == AppTab.Settings) palette.accentSky else Color(0xFFCBD5E1),
+                        shape = RoundedCornerShape(999.dp)
+                    )
                     .clickable(
                         role = Role.Button,
-                        onClick = onJumpToAccount
+                        onClick = onToggleSettings
                     )
                     .padding(horizontal = 12.dp, vertical = 8.dp)
                     .testTag("btn_header_account"),
@@ -677,20 +665,21 @@ private fun WhiteGlassTopHeader(
                     modifier = Modifier
                         .size(8.dp)
                         .clip(CircleShape)
-                        .background(
-                            when {
-                                isOverlayRunning -> palette.accentMint
-                                isAiReady -> palette.accentSky
-                                else -> palette.warningAmber
-                            }
-                        )
+                        .background(if (isOverlayRunning) Color(0xFF10B981) else palette.accentSky)
                 )
                 Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = if (selectedTab == AppTab.Settings) "Home" else "Settings",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = palette.inkPrimary
+                )
+                Spacer(modifier = Modifier.width(5.dp))
                 Icon(
-                    imageVector = Icons.Filled.Person,
-                    contentDescription = "AI and Account settings",
-                    tint = if (isAiReady) palette.accentMint else palette.accentSky,
-                    modifier = Modifier.size(18.dp)
+                    imageVector = Icons.Filled.Settings,
+                    contentDescription = "Open Settings",
+                    tint = palette.accentSky,
+                    modifier = Modifier.size(16.dp)
                 )
             }
         }

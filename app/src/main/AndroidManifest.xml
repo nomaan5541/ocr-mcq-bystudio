@@ -75,6 +75,19 @@
                 android:resource="@xml/accessibility_service_config" />
         </service>
 
+        <!-- Android Pull-Down Quick Settings Tile Service -->
+        <service
+            android:name=".service.PrismQuickSettingsTileService"
+            android:enabled="true"
+            android:exported="true"
+            android:icon="@drawable/ic_prism_orb"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
         <!-- OEM App Install Verification Provider -->
         <provider
             android:name="androidx.core.content.FileProvider"

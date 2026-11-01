@@ -19,33 +19,49 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BatteryChargingFull
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.DocumentScanner
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Layers
+import androidx.compose.material.icons.filled.Opacity
 import androidx.compose.material.icons.filled.OpenInFull
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.omnisolve.overlay.MainActivity
 import com.omnisolve.overlay.R
+import com.omnisolve.overlay.model.QuestionSolveMode
 import com.omnisolve.overlay.model.SolverMethod
 import com.omnisolve.overlay.ui.MainUiState
 import com.omnisolve.overlay.ui.components.LivingOptionChoiceCard
@@ -54,6 +70,7 @@ import com.omnisolve.overlay.ui.components.LivingSecondaryButton
 import com.omnisolve.overlay.ui.physics.GlassMaterialStrength
 import com.omnisolve.overlay.ui.physics.livingGlassSurface
 import com.omnisolve.overlay.ui.theme.LocalWhiteGlassPalette
+import kotlin.math.roundToInt
 
 @Composable
 fun HomeScreen(
@@ -62,6 +79,8 @@ fun HomeScreen(
     onToggleOverlay: () -> Unit,
     onRequestOverlayPermission: () -> Unit,
     onSelectSolverMethod: (SolverMethod) -> Unit,
+    onSetCustomOpacityPct: (Int) -> Unit,
+    onSelectQuestionSolveMode: (QuestionSolveMode) -> Unit,
     onToggleChargingFormat: (Boolean) -> Unit,
     onOpenSettings: () -> Unit,
     onSignInServer: () -> Unit,
@@ -69,6 +88,10 @@ fun HomeScreen(
     modifier: Modifier = Modifier
 ) {
     val palette = LocalWhiteGlassPalette.current
+    val focusManager = LocalFocusManager.current
+    var opacityTextInput by remember(state.customOpacityPct) {
+        mutableStateOf(state.customOpacityPct.toString())
+    }
 
     LazyColumn(
         state = listState,
@@ -78,7 +101,7 @@ fun HomeScreen(
         contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 8.dp, bottom = 104.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        // 1. Instant Start / Stop Floating Overlay Card
+        // 1. Instant Start / Stop Floating Overlay + Start-Time 20%–100% Opacity Input & Slider
         item(key = "overlay_launcher_card") {
             Column(
                 modifier = Modifier
@@ -112,15 +135,21 @@ fun HomeScreen(
                         )
                     }
 
+                    val badgeLabel = when {
+                        state.advNetSpeedDisguiseEnabled -> "MB/s"
+                        state.batteryCamouflage -> "91–94%"
+                        else -> "ABCD"
+                    }
+                    val badgeActive = state.batteryCamouflage || state.advNetSpeedDisguiseEnabled
                     Text(
-                        text = if (state.batteryCamouflage) "91–94%" else "ABCD",
+                        text = badgeLabel,
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Bold,
-                        color = if (state.batteryCamouflage) Color(0xFF047857) else Color(0xFF0369A1),
+                        color = if (badgeActive) palette.accentEmerald else palette.accentSky,
                         modifier = Modifier
                             .clip(RoundedCornerShape(999.dp))
                             .background(
-                                if (state.batteryCamouflage) Color(0xFFD1FAE5) else Color(0xFFE0F2FE)
+                                if (badgeActive) palette.accentEmeraldContainer else palette.accentSkyContainer
                             )
                             .padding(horizontal = 10.dp, vertical = 4.dp)
                     )
@@ -128,7 +157,7 @@ fun HomeScreen(
 
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
-                    text = "Tap the floating pill over any quiz screen to solve immediately. Tap again anytime to restart.",
+                    text = "Tap the Dynamic Island to solve immediately, swipe down on it to loop between methods, or tap the Orb for 2-view & scroll capture.",
                     style = MaterialTheme.typography.bodySmall,
                     color = palette.inkSecondary
                 )
@@ -139,8 +168,8 @@ fun HomeScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(14.dp))
-                            .background(Color(0xFFFEF3C7))
-                            .border(1.dp, Color(0xFFF59E0B), RoundedCornerShape(14.dp))
+                            .background(palette.accentAmberContainer)
+                            .border(1.dp, palette.accentAmber, RoundedCornerShape(14.dp))
                             .padding(horizontal = 12.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
@@ -150,12 +179,12 @@ fun HomeScreen(
                                 text = "Overlay Permission Needed",
                                 style = MaterialTheme.typography.labelLarge,
                                 fontWeight = FontWeight.Bold,
-                                color = Color(0xFF92400E)
+                                color = palette.accentAmber
                             )
                             Text(
                                 text = "Allow Display over other apps once to launch.",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = Color(0xFF78350F)
+                                color = palette.inkPrimary
                             )
                         }
                         Spacer(modifier = Modifier.width(8.dp))
@@ -169,6 +198,144 @@ fun HomeScreen(
                 }
 
                 Spacer(modifier = Modifier.height(14.dp))
+
+                // Start-Time Customizable Visibility / Opacity (20% to 100% Slider + Direct Numeric Input)
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(if (palette.isDarkObsidian) Color(0xFF141D2E) else Color(0xFFF8FAFC))
+                        .border(1.dp, palette.cardHairlineBorder, RoundedCornerShape(16.dp))
+                        .padding(horizontal = 12.dp, vertical = 10.dp)
+                        .testTag("section_home_opacity")
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Opacity,
+                                contentDescription = null,
+                                tint = palette.accentSky,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column {
+                                Text(
+                                    text = "Overlay Visibility (${state.customOpacityPct}%)",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = palette.inkPrimary
+                                )
+                                Text(
+                                    text = "Slide or type exact % from 20% to 100%",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = palette.inkSecondary
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.width(10.dp))
+
+                        OutlinedTextField(
+                            value = opacityTextInput,
+                            onValueChange = { raw ->
+                                val digits = raw.filter { it.isDigit() }.take(3)
+                                opacityTextInput = digits
+                                val parsed = digits.toIntOrNull()
+                                if (parsed != null && parsed in 20..100) {
+                                    onSetCustomOpacityPct(parsed)
+                                }
+                            },
+                            singleLine = true,
+                            suffix = {
+                                Text(
+                                    text = "%",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = palette.inkSecondary
+                                )
+                            },
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Number,
+                                imeAction = ImeAction.Done
+                            ),
+                            keyboardActions = KeyboardActions(
+                                onDone = {
+                                    val clamped = (opacityTextInput.toIntOrNull() ?: state.customOpacityPct).coerceIn(20, 100)
+                                    opacityTextInput = clamped.toString()
+                                    onSetCustomOpacityPct(clamped)
+                                    focusManager.clearFocus()
+                                }
+                            ),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = palette.accentSky,
+                                unfocusedBorderColor = palette.cardHairlineBorder,
+                                focusedTextColor = palette.inkPrimary,
+                                unfocusedTextColor = palette.inkPrimary
+                            ),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .width(88.dp)
+                                .testTag("input_home_opacity_pct")
+                        )
+                    }
+
+                    Slider(
+                        value = state.customOpacityPct.toFloat(),
+                        onValueChange = { newVal ->
+                            val rounded = newVal.roundToInt().coerceIn(20, 100)
+                            opacityTextInput = rounded.toString()
+                            onSetCustomOpacityPct(rounded)
+                        },
+                        valueRange = 20f..100f,
+                        colors = SliderDefaults.colors(
+                            thumbColor = palette.accentSky,
+                            activeTrackColor = palette.accentSky
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("slider_home_opacity_pct")
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Quick Question Mode Selector (Standard / Match the Following / Complicated Math+)
+                Text(
+                    text = "Question Solving Mode",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = palette.inkSecondary
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    QuestionSolveMode.entries.forEach { mode ->
+                        LivingSecondaryButton(
+                            text = when (mode) {
+                                QuestionSolveMode.STANDARD -> "Standard"
+                                QuestionSolveMode.MATCH_FOLLOWING -> "Match Pairs"
+                                QuestionSolveMode.COMPLEX_MATH -> "Math+ Deep"
+                            },
+                            selected = state.questionSolveMode == mode,
+                            onClick = { onSelectQuestionSolveMode(mode) },
+                            testTag = "btn_home_mode_${mode.id.lowercase()}",
+                            modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 10.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
                 LivingPrimaryButton(
                     text = if (state.isOverlayRunning) {
                         stringResource(R.string.cta_stop_solver)
@@ -203,7 +370,7 @@ fun HomeScreen(
                 )
                 Spacer(modifier = Modifier.height(3.dp))
                 Text(
-                    text = stringResource(R.string.home_methods_subtitle),
+                    text = "Pick here or swipe DOWN on the Dynamic Island anytime to scroll-loop between 1) Server Sol, 2) OCR Text, and 3) API Key.",
                     style = MaterialTheme.typography.bodySmall,
                     color = palette.inkSecondary
                 )
@@ -259,7 +426,7 @@ fun HomeScreen(
 
                 // Method 3: API Key (Local Storage)
                 val keyBadge = if (state.configuredKeyCount > 0) {
-                    "${state.configuredKeyCount} Local Key(s)"
+                    "${state.configuredKeyCount} Key(s) Ready"
                 } else {
                     "Set in Settings"
                 }
@@ -290,7 +457,7 @@ fun HomeScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(14.dp))
-                            .background(Color(0xFFE0F2FE))
+                            .background(palette.accentSkyContainer)
                             .border(1.4.dp, palette.accentSky, RoundedCornerShape(14.dp))
                             .padding(12.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -307,7 +474,7 @@ fun HomeScreen(
                                 text = "Overlapping Google Completely (Active)",
                                 style = MaterialTheme.typography.labelLarge,
                                 fontWeight = FontWeight.Bold,
-                                color = Color(0xFF0C4A6E)
+                                color = palette.inkPrimary
                             )
                             Text(
                                 text = "Enabled from Settings. Tap 1, 2, or 3 above anytime to switch back.",
@@ -358,36 +525,56 @@ fun HomeScreen(
                     value = state.solverMethod.shortName
                 )
                 Spacer(modifier = Modifier.height(8.dp))
+                val pctVal = state.customOpacityPct
+                val shapeName = when (state.hudStyle) {
+                    MainActivity.HUD_STYLE_TOP_STRIP -> "Ultra-Thin Top Strip ($pctVal%)"
+                    MainActivity.HUD_STYLE_EDGE_TAB -> "Edge-Docked Mini Tab ($pctVal%)"
+                    MainActivity.HUD_STYLE_BUBBLE -> "Mini Bubble ($pctVal%)"
+                    else -> "Top Dynamic Pill ($pctVal%)"
+                }
                 SummaryStatusRow(
                     label = "Overlay Shape",
-                    value = if (state.hudStyle == MainActivity.HUD_STYLE_ISLAND) {
-                        "Top Dynamic Pill (${listOf(100, 90, 50, 25)[state.islandOpacityIndex.coerceIn(0, 3)]}%)"
-                    } else {
-                        "Mini Bubble (${listOf(100, 90, 50, 25)[state.islandOpacityIndex.coerceIn(0, 3)]}%)"
-                    }
+                    value = shapeName
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 SummaryStatusRow(
-                    label = "Local API Keys",
+                    label = "Question Mode",
+                    value = state.questionSolveMode.fullLabel
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                SummaryStatusRow(
+                    label = "API Keys",
                     value = if (state.configuredKeyCount > 0) {
-                        "${state.configuredKeyCount} saved on device"
+                        "${state.configuredKeyCount} active (Instant Failover)"
                     } else {
                         "None saved"
                     }
                 )
 
                 Spacer(modifier = Modifier.height(12.dp))
+                HorizontalDivider(color = palette.cardHairlineBorder)
+                Spacer(modifier = Modifier.height(12.dp))
 
-                // Quick 1-tap Answer Format Toggle (ABCD <-> Charging 91, 92, 93, 94)
+                val toggleBg = when {
+                    state.batteryCamouflage && palette.isDarkObsidian -> Color(0xFF0A2E26)
+                    state.batteryCamouflage -> Color(0xFFECFDF5)
+                    palette.isDarkObsidian -> Color(0xFF141D2E)
+                    else -> Color(0xFFF1F5F9)
+                }
+                val toggleBorder = when {
+                    state.batteryCamouflage -> palette.accentEmerald
+                    palette.isDarkObsidian -> Color(0xFF334155)
+                    else -> Color(0xFFCBD5E1)
+                }
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .minimumInteractiveComponentSize()
                         .clip(RoundedCornerShape(14.dp))
-                        .background(if (state.batteryCamouflage) Color(0xFFECFDF5) else Color(0xFFF1F5F9))
+                        .background(toggleBg)
                         .border(
                             width = 1.dp,
-                            color = if (state.batteryCamouflage) Color(0xFF10B981) else Color(0xFFCBD5E1),
+                            color = toggleBorder,
                             shape = RoundedCornerShape(14.dp)
                         )
                         .clickable(
@@ -406,7 +593,7 @@ fun HomeScreen(
                         Icon(
                             imageVector = Icons.Filled.BatteryChargingFull,
                             contentDescription = null,
-                            tint = if (state.batteryCamouflage) Color(0xFF047857) else palette.accentSky,
+                            tint = if (state.batteryCamouflage) palette.accentEmerald else palette.accentSky,
                             modifier = Modifier.size(20.dp)
                         )
                         Spacer(modifier = Modifier.width(10.dp))

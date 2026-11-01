@@ -72,10 +72,13 @@ import com.omnisolve.overlay.service.OverlayService
 import com.omnisolve.overlay.ui.MainUiState
 import com.omnisolve.overlay.ui.MainViewModel
 import com.omnisolve.overlay.ui.components.AppTab
+import com.omnisolve.overlay.ui.components.CompactSplitScreenSideRail
 import com.omnisolve.overlay.ui.components.LiquidMorphBottomDock
 import com.omnisolve.overlay.ui.physics.GlassMaterialStrength
 import com.omnisolve.overlay.ui.physics.LiquidAtmosphericBackdrop
 import com.omnisolve.overlay.ui.physics.LocalReducedMotion
+import com.omnisolve.overlay.ui.physics.LocalSpringPhysics
+import com.omnisolve.overlay.ui.physics.SpringPhysicsConfig
 import com.omnisolve.overlay.ui.physics.livingGlassSurface
 import com.omnisolve.overlay.ui.screens.HomeScreen
 import com.omnisolve.overlay.ui.screens.SettingsScreen
@@ -103,6 +106,8 @@ class MainActivity : AppCompatActivity() {
         const val MODE_WINDOW = "WINDOW"
         const val HUD_STYLE_ISLAND = "DYNAMIC_ISLAND"
         const val HUD_STYLE_BUBBLE = "BUBBLE"
+        const val HUD_STYLE_TOP_STRIP = "TOP_STRIP"
+        const val HUD_STYLE_EDGE_TAB = "EDGE_TAB"
         const val PREF_KEY_THEME_MODE = "PREF_THEME_MODE"
         const val THEME_DARK = "DARK"
         const val THEME_LIGHT = "LIGHT"
@@ -121,6 +126,31 @@ class MainActivity : AppCompatActivity() {
         const val PREF_KEY_SUBJECT_MODE = "PREF_SUBJECT_MODE"
         const val PREF_KEY_DUAL_VERIFY = "PREF_DUAL_VERIFY"
         const val PREF_KEY_TRANSLATE_ENGLISH = "PREF_TRANSLATE_ENGLISH"
+
+        // Advanced Options (All OFF by default)
+        const val PREF_KEY_ADV_CROP_TO_SCAN = "PREF_ADV_CROP_TO_SCAN"
+        const val PREF_KEY_ADV_ISLAND_GESTURES = "PREF_ADV_ISLAND_GESTURES"
+        const val PREF_KEY_ADV_SPLIT_PILL = "PREF_ADV_SPLIT_PILL"
+        const val PREF_KEY_ADV_MINIMAL_SHAPES = "PREF_ADV_MINIMAL_SHAPES"
+        const val PREF_KEY_ADV_NET_SPEED_DISGUISE = "PREF_ADV_NET_SPEED_DISGUISE"
+        const val PREF_KEY_ADV_AUTO_FADE_IDLE = "PREF_ADV_AUTO_FADE_IDLE"
+        const val PREF_KEY_ADV_FLASHCARDS_EXPORT = "PREF_ADV_FLASHCARDS_EXPORT"
+        const val PREF_KEY_ADV_DARK_OBSIDIAN = "PREF_ADV_DARK_OBSIDIAN"
+        const val PREF_KEY_ADV_SPRING_PHYSICS = "PREF_ADV_SPRING_PHYSICS"
+        const val PREF_KEY_SPRING_DAMPING = "PREF_SPRING_DAMPING"
+        const val PREF_KEY_SPRING_STIFFNESS = "PREF_SPRING_STIFFNESS"
+        const val PREF_KEY_ADV_SPLIT_SCREEN_RAIL = "PREF_ADV_SPLIT_SCREEN_RAIL"
+        const val PREF_KEY_ADV_QUICK_TILE_NOTIF = "PREF_ADV_QUICK_TILE_NOTIF"
+
+        // Start-Time Custom Opacity (20%..100%), Question Solve Mode & Dynamic Flow Bar Toggles
+        const val PREF_KEY_CUSTOM_OPACITY_PCT = "PREF_CUSTOM_OPACITY_PCT"
+        const val PREF_KEY_QUESTION_SOLVE_MODE = "PREF_QUESTION_SOLVE_MODE"
+        const val PREF_KEY_DF_TWO_PART_CAPTURE = "PREF_DF_TWO_PART_CAPTURE"
+        const val PREF_KEY_DF_SCROLL_TIMER = "PREF_DF_SCROLL_TIMER"
+        const val PREF_KEY_DF_COMPLEX_MODE = "PREF_DF_COMPLEX_MODE"
+        const val PREF_KEY_DF_DIAGRAM_VISION = "PREF_DF_DIAGRAM_VISION"
+        const val PREF_KEY_DF_QUICK_CROP = "PREF_DF_QUICK_CROP"
+        const val PREF_KEY_DF_SWIPE_METHOD_LOOP = "PREF_DF_SWIPE_METHOD_LOOP"
     }
 
     private val viewModel: MainViewModel by viewModels()
@@ -160,10 +190,38 @@ class MainActivity : AppCompatActivity() {
         handleIncomingDeepLink(intent)
 
         setContent {
-            WhiteGlassTheme {
-                CompositionLocalProvider(LocalReducedMotion provides true) {
-                    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+            val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
+            LaunchedEffect(uiState.advDarkObsidianEnabled) {
+                if (uiState.advDarkObsidianEnabled) {
+                    enableEdgeToEdge(
+                        statusBarStyle = SystemBarStyle.dark(AndroidColor.TRANSPARENT),
+                        navigationBarStyle = SystemBarStyle.dark(AndroidColor.TRANSPARENT)
+                    )
+                } else {
+                    enableEdgeToEdge(
+                        statusBarStyle = SystemBarStyle.light(
+                            AndroidColor.TRANSPARENT,
+                            AndroidColor.TRANSPARENT
+                        ),
+                        navigationBarStyle = SystemBarStyle.light(
+                            AndroidColor.TRANSPARENT,
+                            AndroidColor.TRANSPARENT
+                        )
+                    )
+                }
+            }
+
+            val springCfg = SpringPhysicsConfig(
+                dampingRatio = if (uiState.advSpringPhysicsEnabled) uiState.springDamping else 0.72f,
+                stiffness = if (uiState.advSpringPhysicsEnabled) uiState.springStiffness else 650f
+            )
+
+            WhiteGlassTheme(darkObsidian = uiState.advDarkObsidianEnabled) {
+                CompositionLocalProvider(
+                    LocalReducedMotion provides !uiState.advSpringPhysicsEnabled,
+                    LocalSpringPhysics provides springCfg
+                ) {
                     LaunchedEffect(Unit) {
                         if (FirebaseApp.getApps(this@MainActivity).isNotEmpty()) {
                             GoogleAuthManager.trySilentRestore(this@MainActivity)
@@ -303,8 +361,9 @@ class MainActivity : AppCompatActivity() {
             putExtra(OverlayService.EXTRA_CAMOUFLAGE, state.batteryCamouflage)
             putExtra(OverlayService.EXTRA_HAPTIC, state.hapticEnabled)
             putExtra(OverlayService.EXTRA_ANTI_CHEAT, state.naturalTimingEnabled)
-            putExtra(OverlayService.EXTRA_THEME_MODE, THEME_LIGHT)
+            putExtra(OverlayService.EXTRA_THEME_MODE, if (state.advDarkObsidianEnabled) THEME_DARK else THEME_LIGHT)
             putExtra(OverlayService.EXTRA_ISLAND_OPACITY_INDEX, state.islandOpacityIndex)
+            putExtra(OverlayService.EXTRA_CUSTOM_OPACITY_PCT, state.customOpacityPct)
             putExtra(OverlayService.EXTRA_COMPANION_HOST, state.companionHost)
             putExtra(OverlayService.EXTRA_COMPANION_PORT, state.companionPort)
             putExtra(OverlayService.EXTRA_COMPANION_SYNC_ENABLED, state.companionSyncEnabled)
@@ -344,8 +403,9 @@ class MainActivity : AppCompatActivity() {
             putExtra(OverlayService.EXTRA_CAMOUFLAGE, state.batteryCamouflage)
             putExtra(OverlayService.EXTRA_HAPTIC, state.hapticEnabled)
             putExtra(OverlayService.EXTRA_ANTI_CHEAT, state.naturalTimingEnabled)
-            putExtra(OverlayService.EXTRA_THEME_MODE, THEME_LIGHT)
+            putExtra(OverlayService.EXTRA_THEME_MODE, if (state.advDarkObsidianEnabled) THEME_DARK else THEME_LIGHT)
             putExtra(OverlayService.EXTRA_ISLAND_OPACITY_INDEX, state.islandOpacityIndex)
+            putExtra(OverlayService.EXTRA_CUSTOM_OPACITY_PCT, state.customOpacityPct)
             putExtra(OverlayService.EXTRA_COMPANION_HOST, state.companionHost)
             putExtra(OverlayService.EXTRA_COMPANION_PORT, state.companionPort)
             putExtra(OverlayService.EXTRA_COMPANION_SYNC_ENABLED, state.companionSyncEnabled)
@@ -452,129 +512,213 @@ private fun MainInstantApp(
                 )
             },
             bottomBar = {
-                LiquidMorphBottomDock(
-                    selectedTab = state.selectedTab,
-                    onSelectTab = onSelectTab
-                )
+                if (!state.advSplitScreenRailEnabled) {
+                    LiquidMorphBottomDock(
+                        selectedTab = state.selectedTab,
+                        onSelectTab = onSelectTab
+                    )
+                }
             }
         ) { innerPadding ->
-            BoxWithConstraints(
+            Row(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(top = innerPadding.calculateTopPadding()),
-                contentAlignment = Alignment.TopCenter
+                    .padding(top = innerPadding.calculateTopPadding())
             ) {
-                val contentMod = Modifier
-                    .fillMaxSize()
-                    .widthIn(max = 680.dp)
-
-                // Zero-delay direct screen swap for instant Frame-1 load & tab switching
-                when (state.selectedTab) {
-                    AppTab.Home -> HomeScreen(
-                        state = state,
-                        listState = homeListState,
-                        onToggleOverlay = onToggleOverlay,
-                        onRequestOverlayPermission = onRequestOverlayPermission,
-                        onSelectSolverMethod = { method ->
-                            viewModel.selectSolverMethod(method, onSyncRunningService)
-                        },
-                        onToggleChargingFormat = { enabled ->
-                            viewModel.setBatteryCamouflage(enabled, onSyncRunningService)
-                        },
-                        onOpenSettings = { onSelectTab(AppTab.Settings) },
-                        onSignInServer = onSignInGoogle,
-                        onOpenGeminiLogin = onOpenGoogleLogin,
-                        modifier = contentMod
-                    )
-
-                    AppTab.Settings -> SettingsScreen(
-                        state = state,
-                        sample = viewModel.samples[state.currentSampleIndex],
-                        listState = settingsListState,
-                        onSaveApiKeys = { nvidia, openRouter, gemini, openAi ->
-                            viewModel.saveMultiProviderApiKeys(
-                                nvidiaKey = nvidia,
-                                openRouterKey = openRouter,
-                                geminiKey = gemini,
-                                openAiKey = openAi,
-                                onSyncService = onSyncRunningService
-                            )
-                        },
-                        onClearApiKeys = {
-                            viewModel.clearLocalApiKeys(onSyncRunningService)
-                        },
-                        onToggleAutoFailover = { enabled ->
-                            viewModel.setAutoFailoverEnabled(enabled, onSyncRunningService)
-                        },
-                        onToggleChargingCamo = { enabled ->
-                            viewModel.setBatteryCamouflage(enabled, onSyncRunningService)
-                        },
-                        onSignInGoogle = onSignInGoogle,
-                        onSignOutGoogle = onSignOutGoogle,
-                        onOpenGeminiWebLogin = onOpenGoogleLogin,
-                        onRequestOverlayPermission = onRequestOverlayPermission,
-                        onOpenAccessibilitySettings = onOpenAccessibilitySettings,
-                        onSelectHudStyle = { style ->
-                            viewModel.setHudStyle(style, onSyncRunningService)
-                        },
-                        onSelectOpacityIndex = { idx ->
-                            viewModel.setIslandOpacityIndex(idx, onSyncRunningService)
-                        },
-                        onToggleHaptics = { enabled ->
-                            viewModel.setHapticEnabled(enabled, onSyncRunningService)
-                        },
-                        onTestVibration = onTestVibration,
-                        onToggleInstantDetect = { enabled ->
-                            viewModel.setInstantTrigger(enabled, onSyncRunningService)
-                        },
-                        onToggleAutoClick = { enabled ->
-                            viewModel.setAutoClick(
-                                enabled = enabled,
-                                onRequireAccessibility = {
-                                    viewModel.showBannerMessage("Enable Auto-Tap helper first")
-                                    onOpenAccessibilitySettings()
-                                },
-                                onSyncService = onSyncRunningService
-                            )
-                        },
-                        onToggleAutoNext = { enabled ->
-                            viewModel.setAfkAutoAdvance(
-                                enabled = enabled,
-                                onRequireAccessibility = {
-                                    viewModel.showBannerMessage("Enable Auto-Tap helper first")
-                                    onOpenAccessibilitySettings()
-                                },
-                                onSyncService = onSyncRunningService
-                            )
-                        },
-                        onSolvePractice = viewModel::solvePracticeQuestion,
-                        onNextPractice = viewModel::nextSampleQuestion,
-                        onClearHistory = viewModel::clearHistory,
-                        onSelectSolverMethod = { method ->
-                            viewModel.selectSolverMethod(method, onSyncRunningService)
-                        },
-                        modifier = contentMod
+                if (state.advSplitScreenRailEnabled) {
+                    CompactSplitScreenSideRail(
+                        selectedTab = state.selectedTab,
+                        onSelectTab = onSelectTab
                     )
                 }
 
-                // Instant status notification capsule
-                if (state.statusBannerMessage != null) {
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.TopCenter)
-                            .padding(horizontal = 24.dp, vertical = 6.dp)
-                            .livingGlassSurface(
-                                strength = GlassMaterialStrength.FloatingDock,
-                                cornerRadius = 999.dp
-                            )
-                            .padding(horizontal = 18.dp, vertical = 10.dp)
-                    ) {
-                        Text(
-                            text = state.statusBannerMessage,
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = palette.inkPrimary
+                BoxWithConstraints(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxSize(),
+                    contentAlignment = Alignment.TopCenter
+                ) {
+                    val contentMod = Modifier
+                        .fillMaxSize()
+                        .widthIn(max = 680.dp)
+
+                    // Zero-delay direct screen swap for instant Frame-1 load & tab switching
+                    when (state.selectedTab) {
+                        AppTab.Home -> HomeScreen(
+                            state = state,
+                            listState = homeListState,
+                            onToggleOverlay = onToggleOverlay,
+                            onRequestOverlayPermission = onRequestOverlayPermission,
+                            onSelectSolverMethod = { method ->
+                                viewModel.selectSolverMethod(method, onSyncRunningService)
+                            },
+                            onSetCustomOpacityPct = { pct ->
+                                viewModel.setCustomOpacityPct(pct, onSyncRunningService)
+                            },
+                            onSelectQuestionSolveMode = { mode ->
+                                viewModel.setQuestionSolveMode(mode, onSyncRunningService)
+                            },
+                            onToggleChargingFormat = { enabled ->
+                                viewModel.setBatteryCamouflage(enabled, onSyncRunningService)
+                            },
+                            onOpenSettings = { onSelectTab(AppTab.Settings) },
+                            onSignInServer = onSignInGoogle,
+                            onOpenGeminiLogin = onOpenGoogleLogin,
+                            modifier = contentMod
                         )
+
+                        AppTab.Settings -> SettingsScreen(
+                            state = state,
+                            sample = viewModel.samples[state.currentSampleIndex],
+                            listState = settingsListState,
+                            onSaveApiKeys = { nvidia, openRouter, gemini, openAi ->
+                                viewModel.saveMultiProviderApiKeys(
+                                    nvidiaKey = nvidia,
+                                    openRouterKey = openRouter,
+                                    geminiKey = gemini,
+                                    openAiKey = openAi,
+                                    onSyncService = onSyncRunningService
+                                )
+                            },
+                            onTestApiKeys = { nvidia, openRouter, gemini, openAi ->
+                                viewModel.testSavedApiKeys(
+                                    nvidiaKey = nvidia,
+                                    openRouterKey = openRouter,
+                                    geminiKey = gemini,
+                                    openAiKey = openAi,
+                                    onSyncService = onSyncRunningService
+                                )
+                            },
+                            onClearApiKeys = {
+                                viewModel.clearLocalApiKeys(onSyncRunningService)
+                            },
+                            onToggleAutoFailover = { enabled ->
+                                viewModel.setAutoFailoverEnabled(enabled, onSyncRunningService)
+                            },
+                            onToggleChargingCamo = { enabled ->
+                                viewModel.setBatteryCamouflage(enabled, onSyncRunningService)
+                            },
+                            onSignInGoogle = onSignInGoogle,
+                            onSignOutGoogle = onSignOutGoogle,
+                            onOpenGeminiWebLogin = onOpenGoogleLogin,
+                            onRequestOverlayPermission = onRequestOverlayPermission,
+                            onOpenAccessibilitySettings = onOpenAccessibilitySettings,
+                            onSelectHudStyle = { style ->
+                                viewModel.setHudStyle(style, onSyncRunningService)
+                            },
+                            onSetCustomOpacityPct = { pct ->
+                                viewModel.setCustomOpacityPct(pct, onSyncRunningService)
+                            },
+                            onToggleDfTwoPartCapture = { enabled ->
+                                viewModel.setDfTwoPartCapture(enabled, onSyncRunningService)
+                            },
+                            onToggleDfScrollTimer = { enabled ->
+                                viewModel.setDfScrollTimer(enabled, onSyncRunningService)
+                            },
+                            onToggleDfComplexMode = { enabled ->
+                                viewModel.setDfComplexMode(enabled, onSyncRunningService)
+                            },
+                            onToggleDfDiagramVision = { enabled ->
+                                viewModel.setDfDiagramVision(enabled, onSyncRunningService)
+                            },
+                            onToggleDfQuickCrop = { enabled ->
+                                viewModel.setDfQuickCrop(enabled, onSyncRunningService)
+                            },
+                            onToggleDfSwipeMethodLoop = { enabled ->
+                                viewModel.setDfSwipeMethodLoop(enabled, onSyncRunningService)
+                            },
+                            onToggleHaptics = { enabled ->
+                                viewModel.setHapticEnabled(enabled, onSyncRunningService)
+                            },
+                            onTestVibration = onTestVibration,
+                            onToggleInstantDetect = { enabled ->
+                                viewModel.setInstantTrigger(enabled, onSyncRunningService)
+                            },
+                            onToggleAutoClick = { enabled ->
+                                viewModel.setAutoClick(
+                                    enabled = enabled,
+                                    onRequireAccessibility = {
+                                        viewModel.showBannerMessage("Enable Auto-Tap helper first")
+                                        onOpenAccessibilitySettings()
+                                    },
+                                    onSyncService = onSyncRunningService
+                                )
+                            },
+                            onToggleAutoNext = { enabled ->
+                                viewModel.setAfkAutoAdvance(
+                                    enabled = enabled,
+                                    onRequireAccessibility = {
+                                        viewModel.showBannerMessage("Enable Auto-Tap helper first")
+                                        onOpenAccessibilitySettings()
+                                    },
+                                    onSyncService = onSyncRunningService
+                                )
+                            },
+                            onSolvePractice = viewModel::solvePracticeQuestion,
+                            onNextPractice = viewModel::nextSampleQuestion,
+                            onClearHistory = viewModel::clearHistory,
+                            onSelectSolverMethod = { method ->
+                                viewModel.selectSolverMethod(method, onSyncRunningService)
+                            },
+                            onToggleAdvCropToScan = { enabled ->
+                                viewModel.setAdvCropToScan(enabled, onSyncRunningService)
+                            },
+                            onToggleAdvIslandGestures = { enabled ->
+                                viewModel.setAdvIslandGestures(enabled, onSyncRunningService)
+                            },
+                            onToggleAdvSplitPill = { enabled ->
+                                viewModel.setAdvSplitPill(enabled, onSyncRunningService)
+                            },
+                            onToggleAdvMinimalShapes = { enabled ->
+                                viewModel.setAdvMinimalShapes(enabled, onSyncRunningService)
+                            },
+                            onToggleAdvNetSpeedDisguise = { enabled ->
+                                viewModel.setAdvNetSpeedDisguise(enabled, onSyncRunningService)
+                            },
+                            onToggleAdvAutoFadeIdle = { enabled ->
+                                viewModel.setAdvAutoFadeIdle(enabled, onSyncRunningService)
+                            },
+                            onToggleAdvFlashcardsExport = viewModel::setAdvFlashcardsExport,
+                            onToggleAdvDarkObsidian = { enabled ->
+                                viewModel.setAdvDarkObsidian(enabled, onSyncRunningService)
+                            },
+                            onToggleAdvSpringPhysics = viewModel::setAdvSpringPhysics,
+                            onUpdateSpringPhysics = viewModel::updateSpringPhysics,
+                            onToggleAdvSplitScreenRail = viewModel::setAdvSplitScreenRail,
+                            onToggleAdvQuickTileNotif = { enabled ->
+                                viewModel.setAdvQuickTileNotif(enabled, onSyncRunningService)
+                            },
+                            onToggleDualVerify = { enabled ->
+                                viewModel.setDualVerifyEnabled(enabled, onSyncRunningService)
+                            },
+                            onFlashcardSearchChange = viewModel::updateFlashcardSearch,
+                            onFlashcardSubjectFilterChange = viewModel::updateFlashcardSubjectFilter,
+                            onToggleFlashcardBookmarkedOnly = viewModel::setFlashcardBookmarkedOnly,
+                            onToggleBookmarkEntry = viewModel::toggleBookmarkHistoryEntry,
+                            onShowBannerMessage = viewModel::showBannerMessage,
+                            modifier = contentMod
+                        )
+                    }
+
+                    // Instant status notification capsule
+                    if (state.statusBannerMessage != null) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.TopCenter)
+                                .padding(horizontal = 24.dp, vertical = 6.dp)
+                                .livingGlassSurface(
+                                    strength = GlassMaterialStrength.FloatingDock,
+                                    cornerRadius = 999.dp
+                                )
+                                .padding(horizontal = 18.dp, vertical = 10.dp)
+                        ) {
+                            Text(
+                                text = state.statusBannerMessage,
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = palette.inkPrimary
+                            )
+                        }
                     }
                 }
             }
@@ -589,6 +733,19 @@ private fun WhiteGlassTopHeader(
     onToggleSettings: () -> Unit
 ) {
     val palette = LocalWhiteGlassPalette.current
+    val logoBoxBg = if (palette.isDarkObsidian) Color(0xFF0E2A47) else Color(0xFFF0F9FF)
+    val logoBoxBorder = if (palette.isDarkObsidian) Color(0xFF0284C7) else Color(0xFFBAE6FD)
+    val chipBg = when {
+        selectedTab == AppTab.Settings && palette.isDarkObsidian -> Color(0xFF0E2A47)
+        selectedTab == AppTab.Settings -> Color(0xFFE0F2FE)
+        palette.isDarkObsidian -> Color(0xFF151F32)
+        else -> Color(0xFFF1F5F9)
+    }
+    val chipBorder = when {
+        selectedTab == AppTab.Settings -> palette.accentSky
+        palette.isDarkObsidian -> Color(0xFF334155)
+        else -> Color(0xFFCBD5E1)
+    }
 
     Box(
         modifier = Modifier
@@ -615,8 +772,8 @@ private fun WhiteGlassTopHeader(
                     modifier = Modifier
                         .size(40.dp)
                         .clip(RoundedCornerShape(12.dp))
-                        .background(Color(0xFFF0F9FF))
-                        .border(1.dp, Color(0xFFBAE6FD), RoundedCornerShape(12.dp)),
+                        .background(logoBoxBg)
+                        .border(1.dp, logoBoxBorder, RoundedCornerShape(12.dp)),
                     contentAlignment = Alignment.Center
                 ) {
                     Image(
@@ -645,12 +802,10 @@ private fun WhiteGlassTopHeader(
                 modifier = Modifier
                     .minimumInteractiveComponentSize()
                     .clip(RoundedCornerShape(999.dp))
-                    .background(
-                        if (selectedTab == AppTab.Settings) Color(0xFFE0F2FE) else Color(0xFFF1F5F9)
-                    )
+                    .background(chipBg)
                     .border(
                         width = 1.dp,
-                        color = if (selectedTab == AppTab.Settings) palette.accentSky else Color(0xFFCBD5E1),
+                        color = chipBorder,
                         shape = RoundedCornerShape(999.dp)
                     )
                     .clickable(

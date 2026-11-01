@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -94,18 +95,18 @@ fun LiquidMorphBottomDock(
             tabs.forEach { tab ->
                 val isSelected = tab == selectedTab
                 val pillShape = RoundedCornerShape(26.dp)
+                val selectedBg = if (palette.isDarkObsidian) Color(0xFF0C2D48) else Color(0xFFE0F2FE)
+                val selectedText = if (palette.isDarkObsidian) Color(0xFFE0F2FE) else Color(0xFF0C4A6E)
                 Row(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxHeight()
                         .minimumInteractiveComponentSize()
                         .clip(pillShape)
-                        .background(
-                            if (isSelected) Color(0xFFE0F2FE) else Color.Transparent
-                        )
+                        .background(if (isSelected) selectedBg else Color.Transparent)
                         .border(
                             width = if (isSelected) 1.2.dp else 0.dp,
-                            color = if (isSelected) Color(0xFF38BDF8) else Color.Transparent,
+                            color = if (isSelected) palette.accentSky else Color.Transparent,
                             shape = pillShape
                         )
                         .selectable(
@@ -128,11 +129,80 @@ fun LiquidMorphBottomDock(
                         text = stringResource(tab.labelRes),
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.Bold,
-                        color = if (isSelected) Color(0xFF0C4A6E) else palette.inkPrimary,
+                        color = if (isSelected) selectedText else palette.inkPrimary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                 }
+            }
+        }
+    }
+}
+
+/**
+ * Compact Side-Rail navigation optimized for Android Split-Screen / Tablet multi-window mode
+ * alongside a PDF reader or browser.
+ */
+@Composable
+fun CompactSplitScreenSideRail(
+    selectedTab: AppTab,
+    onSelectTab: (AppTab) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val palette = LocalWhiteGlassPalette.current
+    val tabs = AppTab.entries
+
+    Column(
+        modifier = modifier
+            .width(74.dp)
+            .fillMaxHeight()
+            .padding(start = 8.dp, top = 8.dp, bottom = 16.dp)
+            .livingGlassSurface(
+                strength = GlassMaterialStrength.FloatingDock,
+                cornerRadius = 24.dp
+            )
+            .padding(vertical = 12.dp, horizontal = 6.dp)
+            .testTag("side_navigation_rail"),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.Top)
+    ) {
+        tabs.forEach { tab ->
+            val isSelected = tab == selectedTab
+            val selectedBg = if (palette.isDarkObsidian) Color(0xFF0C2D48) else Color(0xFFE0F2FE)
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .minimumInteractiveComponentSize()
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(if (isSelected) selectedBg else Color.Transparent)
+                    .border(
+                        width = if (isSelected) 1.2.dp else 0.dp,
+                        color = if (isSelected) palette.accentSky else Color.Transparent,
+                        shape = RoundedCornerShape(16.dp)
+                    )
+                    .selectable(
+                        selected = isSelected,
+                        onClick = { onSelectTab(tab) },
+                        role = Role.Tab
+                    )
+                    .padding(vertical = 10.dp, horizontal = 4.dp)
+                    .testTag(tab.testTag),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Icon(
+                    imageVector = if (isSelected) tab.selectedIcon else tab.unselectedIcon,
+                    contentDescription = stringResource(tab.labelRes),
+                    tint = if (isSelected) palette.accentSky else palette.inkSecondary,
+                    modifier = Modifier.size(22.dp)
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = stringResource(tab.labelRes),
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = if (isSelected) palette.accentSky else palette.inkPrimary,
+                    maxLines = 1
+                )
             }
         }
     }
@@ -202,9 +272,22 @@ fun LivingSecondaryButton(
     contentPadding: PaddingValues = PaddingValues(horizontal = 14.dp, vertical = 11.dp)
 ) {
     val palette = LocalWhiteGlassPalette.current
-    val bgColor = if (selected) Color(0xFFE0F2FE) else Color(0xFFF8FAFC)
-    val borderColor = if (selected) palette.accentSky else Color(0xFFCBD5E1)
-    val textColor = if (selected) Color(0xFF0C4A6E) else palette.inkPrimary
+    val bgColor = when {
+        selected && palette.isDarkObsidian -> Color(0xFF0C2D48)
+        selected -> Color(0xFFE0F2FE)
+        palette.isDarkObsidian -> Color(0xFF151F32)
+        else -> Color(0xFFF8FAFC)
+    }
+    val borderColor = when {
+        selected -> palette.accentSky
+        palette.isDarkObsidian -> Color(0xFF334155)
+        else -> Color(0xFFCBD5E1)
+    }
+    val textColor = when {
+        selected && palette.isDarkObsidian -> Color(0xFFE0F2FE)
+        selected -> Color(0xFF0C4A6E)
+        else -> palette.inkPrimary
+    }
 
     Box(
         modifier = modifier
@@ -258,15 +341,17 @@ fun LivingSwitchRow(
     modifier: Modifier = Modifier
 ) {
     val palette = LocalWhiteGlassPalette.current
+    val idleCircleBg = if (palette.isDarkObsidian) Color(0xFF1E293B) else Color(0xFFE2E8F0)
 
     Row(
         modifier = modifier
             .fillMaxWidth()
             .minimumInteractiveComponentSize()
             .clip(RoundedCornerShape(14.dp))
-            .clickable(
+            .toggleable(
+                value = checked,
                 role = Role.Switch,
-                onClick = { onCheckedChange(!checked) }
+                onValueChange = onCheckedChange
             )
             .padding(vertical = 8.dp, horizontal = 4.dp)
             .testTag(testTag),
@@ -277,7 +362,7 @@ fun LivingSwitchRow(
                 modifier = Modifier
                     .size(38.dp)
                     .clip(CircleShape)
-                    .background(if (checked) palette.accentSkyContainer else Color(0xFFE2E8F0)),
+                    .background(if (checked) palette.accentSkyContainer else idleCircleBg),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
@@ -311,7 +396,7 @@ fun LivingSwitchRow(
                 checkedThumbColor = Color.White,
                 checkedTrackColor = palette.accentSky,
                 uncheckedThumbColor = Color.White,
-                uncheckedTrackColor = Color(0xFF94A3B8),
+                uncheckedTrackColor = if (palette.isDarkObsidian) Color(0xFF475569) else Color(0xFF94A3B8),
                 uncheckedBorderColor = Color.Transparent
             )
         )
@@ -330,8 +415,18 @@ fun LivingOptionChoiceCard(
     modifier: Modifier = Modifier
 ) {
     val palette = LocalWhiteGlassPalette.current
-    val borderColor = if (selected) palette.accentSky else Color(0xFFCBD5E1)
-    val bgColor = if (selected) Color(0xFFEFF6FF) else Color(0xFFF8FAFC)
+    val borderColor = when {
+        selected -> palette.accentSky
+        palette.isDarkObsidian -> Color(0xFF334155)
+        else -> Color(0xFFCBD5E1)
+    }
+    val bgColor = when {
+        selected && palette.isDarkObsidian -> Color(0xFF0E2A47)
+        selected -> Color(0xFFEFF6FF)
+        palette.isDarkObsidian -> Color(0xFF141D2E)
+        else -> Color(0xFFF8FAFC)
+    }
+    val iconIdleBg = if (palette.isDarkObsidian) Color(0xFF1E293B) else Color(0xFFE2E8F0)
 
     Row(
         modifier = modifier
@@ -353,7 +448,7 @@ fun LivingOptionChoiceCard(
             modifier = Modifier
                 .size(40.dp)
                 .clip(CircleShape)
-                .background(if (selected) palette.accentSky else Color(0xFFE2E8F0)),
+                .background(if (selected) palette.accentSky else iconIdleBg),
             contentAlignment = Alignment.Center
         ) {
             Icon(
@@ -376,14 +471,26 @@ fun LivingOptionChoiceCard(
                     color = palette.inkPrimary
                 )
                 if (!badgeText.isNullOrBlank()) {
+                    val badgeBg = when {
+                        selected && palette.isDarkObsidian -> Color(0xFF0369A1)
+                        selected -> Color(0xFFBAE6FD)
+                        palette.isDarkObsidian -> Color(0xFF1E293B)
+                        else -> Color(0xFFE2E8F0)
+                    }
+                    val badgeFg = when {
+                        selected && palette.isDarkObsidian -> Color(0xFFE0F2FE)
+                        selected -> Color(0xFF0369A1)
+                        palette.isDarkObsidian -> Color(0xFF94A3B8)
+                        else -> Color(0xFF475569)
+                    }
                     Text(
                         text = badgeText,
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,
-                        color = if (selected) Color(0xFF0369A1) else Color(0xFF475569),
+                        color = badgeFg,
                         modifier = Modifier
                             .clip(RoundedCornerShape(6.dp))
-                            .background(if (selected) Color(0xFFBAE6FD) else Color(0xFFE2E8F0))
+                            .background(badgeBg)
                             .padding(horizontal = 6.dp, vertical = 2.dp)
                     )
                 }

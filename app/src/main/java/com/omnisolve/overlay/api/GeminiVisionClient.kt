@@ -91,7 +91,26 @@ class GeminiVisionClient {
             throw Exception("PARSE_ERROR")
         }
 
-        // 4a. Multi-select, True/False, or numerical FINAL_ANSWER tags (e.g., "FINAL_ANSWER: A, C" or "FINAL_ANSWER: True" or "FINAL_ANSWER: 42.5")
+        // 4a. Match-the-Following explicit pairings (e.g., "FINAL_ANSWER: A-2, B-4, C-1, D-3" or "1-C, 2-A, 3-D, 4-B")
+        val matchFollowingExplicit = Regex(
+            """(?:FINAL[\s_]*ANSWER|CORRECT[\s_]*MATCH(?:ING)?)\s*[:=\-]\s*((?:[A-Za-z1-9ivxIVX]+\s*[-–→:]\s*[A-Za-z1-9ivxIVX]+)(?:\s*[,;/]\s*[A-Za-z1-9ivxIVX]+\s*[-–→:]\s*[A-Za-z1-9ivxIVX]+)+)""",
+            RegexOption.IGNORE_CASE
+        ).findAll(cleaned).toList()
+        if (matchFollowingExplicit.isNotEmpty()) {
+            val formattedPairs = matchFollowingExplicit.last().groupValues[1]
+                .replace(Regex("\\s*[-–→:]\\s*"), "-")
+                .split(Regex("[,;/]+"))
+                .map { it.trim().uppercase() }
+                .filter { it.isNotEmpty() }
+                .joinToString(", ")
+                .take(38)
+            return AnswerModel(
+                correctChoice = formattedPairs,
+                questionType = AnswerModel.QUESTION_TYPE_MATCHING
+            )
+        }
+
+        // 4b. Multi-select, True/False, or numerical FINAL_ANSWER tags (e.g., "FINAL_ANSWER: A, C" or "FINAL_ANSWER: True" or "FINAL_ANSWER: 42.5")
         val multiSelectExplicit = Regex(
             """(?:FINAL[\s_]*ANSWER|CORRECT[\s_]*OPTIONS?)\s*[:=\-]\s*([A-Fa-f](?:\s*,\s*[A-Fa-f])+)(?:\b|$)""",
             RegexOption.IGNORE_CASE
@@ -119,7 +138,7 @@ class GeminiVisionClient {
             return AnswerModel(correctChoice = formattedVal)
         }
 
-        // 4b. High-confidence explicit single-letter answer patterns (supports A-F)
+        // 4c. High-confidence explicit single-letter answer patterns (supports A-F)
         val explicitPatterns = listOf(
             Regex("""FINAL[\s_]*ANSWER\s*[:=\-]?\s*\(?([A-Fa-f])\)?(?:\b|$)""", RegexOption.IGNORE_CASE),
             Regex("""CORRECT[\s_]*OPTION\s*[:=\-]?\s*\(?([A-Fa-f])\)?(?:\b|$)""", RegexOption.IGNORE_CASE),

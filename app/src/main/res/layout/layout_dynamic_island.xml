@@ -13,7 +13,7 @@
     android:clipToPadding="false"
     android:clipChildren="false">
 
-    <!-- Top Primary Dynamic Island Row -->
+    <!-- Top Primary Dynamic Island Row (Core Instant-Solve Bar) -->
     <LinearLayout
         android:id="@+id/island_top_row"
         android:layout_width="wrap_content"
@@ -21,7 +21,7 @@
         android:orientation="horizontal"
         android:gravity="center_vertical">
 
-        <!-- Island Leading Icon (Prism Orb / Battery Disguise) -->
+        <!-- Island Leading Icon (Tap to toggle Dynamic Flow Helper Chips; Drag to reposition) -->
         <FrameLayout
             android:id="@+id/island_icon_container"
             android:layout_width="36dp"
@@ -29,7 +29,7 @@
             android:background="@drawable/bg_floating_bubble"
             android:clickable="true"
             android:focusable="true"
-            android:contentDescription="Tap to expand Prism AI controls">
+            android:contentDescription="Tap to open Dynamic Flow options">
 
             <ImageView
                 android:id="@+id/iv_island_icon"
@@ -41,7 +41,7 @@
                 android:contentDescription="@null" />
         </FrameLayout>
 
-        <!-- Main Dynamic Island Content (Tap anywhere here to instant-solve) -->
+        <!-- Main Dynamic Island Body: Tap to Instant-Solve; Swipe Down for Looping 3-Method Switcher -->
         <LinearLayout
             android:id="@+id/ll_island_body"
             android:layout_width="wrap_content"
@@ -51,7 +51,6 @@
             android:layout_marginStart="8dp"
             android:layout_marginEnd="4dp">
 
-            <!-- Status / Camouflage Label -->
             <TextView
                 android:id="@+id/tv_island_title"
                 android:layout_width="wrap_content"
@@ -60,16 +59,15 @@
                 android:textColor="#020617"
                 android:textSize="12.5sp"
                 android:textStyle="bold"
-                android:maxWidth="130dp"
+                android:maxWidth="136dp"
                 android:ellipsize="end"
                 android:maxLines="1" />
 
-            <!-- Prominent Answer / Camouflage Badge (Tap to expand 2-line explanation) -->
             <TextView
                 android:id="@+id/tv_island_answer"
                 android:layout_width="wrap_content"
                 android:minWidth="36dp"
-                android:maxWidth="128dp"
+                android:maxWidth="172dp"
                 android:layout_height="34dp"
                 android:layout_marginStart="8dp"
                 android:paddingStart="10dp"
@@ -85,7 +83,7 @@
 
         </LinearLayout>
 
-        <!-- Expandable Controls Tray -->
+        <!-- Dynamic Flow Helper Chips (Play, Eye, Bot & Opacity% Removed; Helpful Capture & Mode Tools Only) -->
         <LinearLayout
             android:id="@+id/island_expanded_controls"
             android:layout_width="wrap_content"
@@ -95,92 +93,180 @@
             android:visibility="gone"
             android:layout_marginStart="4dp">
 
-            <!-- Scan / Play Action -->
-            <FrameLayout
-                android:id="@+id/btn_island_scan"
-                android:layout_width="36dp"
-                android:layout_height="36dp"
-                android:layout_marginStart="4dp"
-                android:background="@drawable/bg_scan_button"
-                android:clickable="true"
-                android:focusable="true"
-                android:contentDescription="Solve visible question">
-
-                <ImageView
-                    android:id="@+id/iv_island_scan_icon"
-                    android:layout_width="18dp"
-                    android:layout_height="18dp"
-                    android:layout_gravity="center"
-                    android:src="@android:drawable/ic_media_play"
-                    android:tint="#FFFFFF"
-                    android:contentDescription="@null" />
-            </FrameLayout>
-
-            <!-- Toggle Gemini Window -->
-            <ImageView
-                android:id="@+id/btn_island_toggle_window"
-                android:layout_width="36dp"
-                android:layout_height="36dp"
-                android:layout_marginStart="6dp"
-                android:padding="7dp"
-                android:background="@drawable/bg_chip_action"
-                android:src="@android:drawable/ic_menu_view"
-                android:tint="#0284C7"
-                android:clickable="true"
-                android:focusable="true"
-                android:contentDescription="Open Prism AI window" />
-
-            <!-- Bot Toggle Button -->
-            <ImageView
-                android:id="@+id/btn_island_bot_toggle"
-                android:layout_width="36dp"
-                android:layout_height="36dp"
-                android:layout_marginStart="6dp"
-                android:padding="7dp"
-                android:background="@drawable/bg_chip_action"
-                android:src="@android:drawable/ic_menu_myplaces"
-                android:tint="#0F172A"
-                android:clickable="true"
-                android:focusable="true"
-                android:contentDescription="Toggle Auto-Tap Answer" />
-
-            <!-- Opacity / Visibility Toggle Button -->
+            <!-- 1st Input: Capture Question & Diagram -->
             <TextView
-                android:id="@+id/btn_island_opacity"
+                android:id="@+id/btn_df_part1"
                 android:layout_width="wrap_content"
-                android:minWidth="38dp"
-                android:layout_height="36dp"
-                android:layout_marginStart="6dp"
-                android:paddingStart="8dp"
-                android:paddingEnd="8dp"
+                android:minWidth="34dp"
+                android:layout_height="32dp"
+                android:layout_marginStart="4dp"
+                android:paddingStart="7dp"
+                android:paddingEnd="7dp"
                 android:gravity="center"
                 android:background="@drawable/bg_chip_action"
-                android:text="100%"
-                android:textColor="#020617"
+                android:text="1st"
+                android:textColor="#0284C7"
                 android:textSize="11sp"
                 android:textStyle="bold"
                 android:clickable="true"
                 android:focusable="true"
-                android:contentDescription="Change pill transparency" />
+                android:contentDescription="Capture Part 1 question and diagram" />
 
-            <!-- Close / Minimize Tray Button -->
+            <!-- 2nd Input: Capture Options & Solve Combined -->
+            <TextView
+                android:id="@+id/btn_df_part2"
+                android:layout_width="wrap_content"
+                android:minWidth="36dp"
+                android:layout_height="32dp"
+                android:layout_marginStart="5dp"
+                android:paddingStart="7dp"
+                android:paddingEnd="7dp"
+                android:gravity="center"
+                android:background="@drawable/bg_chip_action"
+                android:text="2nd"
+                android:textColor="#047857"
+                android:textSize="11sp"
+                android:textStyle="bold"
+                android:clickable="true"
+                android:focusable="true"
+                android:contentDescription="Capture Part 2 options and solve" />
+
+            <!-- 2-Second Scroll-Capture Timer -->
+            <TextView
+                android:id="@+id/btn_df_scroll_2s"
+                android:layout_width="wrap_content"
+                android:minWidth="36dp"
+                android:layout_height="32dp"
+                android:layout_marginStart="5dp"
+                android:paddingStart="7dp"
+                android:paddingEnd="7dp"
+                android:gravity="center"
+                android:background="@drawable/bg_chip_action"
+                android:text="2s↓"
+                android:textColor="#0F172A"
+                android:textSize="11sp"
+                android:textStyle="bold"
+                android:clickable="true"
+                android:focusable="true"
+                android:contentDescription="Capture now then scroll for 2 seconds to capture options" />
+
+            <!-- Question Mode: STD -> MATCH (Match the Following) -> MATH+ (Complicated Math) -->
+            <TextView
+                android:id="@+id/btn_df_question_mode"
+                android:layout_width="wrap_content"
+                android:minWidth="42dp"
+                android:layout_height="32dp"
+                android:layout_marginStart="5dp"
+                android:paddingStart="8dp"
+                android:paddingEnd="8dp"
+                android:gravity="center"
+                android:background="@drawable/bg_chip_action"
+                android:text="STD"
+                android:textColor="#020617"
+                android:textSize="10.5sp"
+                android:textStyle="bold"
+                android:clickable="true"
+                android:focusable="true"
+                android:contentDescription="Switch Standard, Match the Following, or Complicated Math mode" />
+
+            <!-- Diagram Vision Boost -->
+            <TextView
+                android:id="@+id/btn_df_diagram"
+                android:layout_width="wrap_content"
+                android:minWidth="36dp"
+                android:layout_height="32dp"
+                android:layout_marginStart="5dp"
+                android:paddingStart="7dp"
+                android:paddingEnd="7dp"
+                android:gravity="center"
+                android:background="@drawable/bg_chip_action"
+                android:text="IMG"
+                android:textColor="#0F172A"
+                android:textSize="10.5sp"
+                android:textStyle="bold"
+                android:visibility="gone"
+                android:clickable="true"
+                android:focusable="true"
+                android:contentDescription="Toggle Diagram Vision attachment" />
+
+            <!-- Quick Region Box Snip -->
+            <TextView
+                android:id="@+id/btn_df_crop"
+                android:layout_width="wrap_content"
+                android:minWidth="36dp"
+                android:layout_height="32dp"
+                android:layout_marginStart="5dp"
+                android:paddingStart="7dp"
+                android:paddingEnd="7dp"
+                android:gravity="center"
+                android:background="@drawable/bg_chip_action"
+                android:text="Box"
+                android:textColor="#0F172A"
+                android:textSize="10.5sp"
+                android:textStyle="bold"
+                android:visibility="gone"
+                android:clickable="true"
+                android:focusable="true"
+                android:contentDescription="Select region box to scan" />
+
+            <!-- Collapse Dynamic Flow Bar -->
             <ImageView
                 android:id="@+id/btn_island_close"
-                android:layout_width="32dp"
-                android:layout_height="32dp"
-                android:layout_marginStart="6dp"
+                android:layout_width="30dp"
+                android:layout_height="30dp"
+                android:layout_marginStart="5dp"
                 android:padding="4dp"
                 android:src="@android:drawable/ic_menu_close_clear_cancel"
                 android:tint="#020617"
                 android:clickable="true"
                 android:focusable="true"
-                android:contentDescription="Collapse toolbar" />
+                android:contentDescription="Collapse Dynamic Flow bar" />
 
         </LinearLayout>
 
     </LinearLayout>
 
-    <!-- Collapsible Step-by-Step 2-Line Explanation & Confidence Drawer -->
+    <!-- Swipe-Down Looping 3-Method Scroll Selector (Server Sol ↻ OCR Text ↻ API Key) -->
+    <LinearLayout
+        android:id="@+id/ll_island_method_loop_drawer"
+        android:layout_width="252dp"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:visibility="gone"
+        android:paddingStart="6dp"
+        android:paddingEnd="4dp"
+        android:paddingTop="6dp"
+        android:paddingBottom="4dp">
+
+        <TextView
+            android:id="@+id/tv_method_loop_hint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="↻ Scroll &amp; Tap to Switch Method"
+            android:textColor="#0284C7"
+            android:textSize="10.5sp"
+            android:textStyle="bold"
+            android:paddingBottom="4dp" />
+
+        <ScrollView
+            android:id="@+id/sv_island_method_loop"
+            android:layout_width="match_parent"
+            android:layout_height="96dp"
+            android:scrollbars="vertical"
+            android:fadeScrollbars="false"
+            android:overScrollMode="always">
+
+            <LinearLayout
+                android:id="@+id/ll_island_method_loop_items"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
+
+        </ScrollView>
+
+    </LinearLayout>
+
+    <!-- Collapsible Step-by-Step Explanation & Confidence Drawer -->
     <LinearLayout
         android:id="@+id/ll_island_explanation_drawer"
         android:layout_width="276dp"

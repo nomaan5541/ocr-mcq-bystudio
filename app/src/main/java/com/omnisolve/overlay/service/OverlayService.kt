@@ -10,6 +10,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.Rect
@@ -53,6 +54,7 @@ import com.omnisolve.overlay.data.SolvedQuestionRecord
 import com.omnisolve.overlay.data.SolvedQuestionRepository
 import com.omnisolve.overlay.firebase.configureAppCheck
 import com.omnisolve.overlay.model.AnswerModel
+import com.omnisolve.overlay.model.QuestionSolveMode
 import com.omnisolve.overlay.model.SolverMethod
 import com.omnisolve.overlay.model.SubjectMode
 import kotlin.coroutines.cancellation.CancellationException
@@ -87,6 +89,7 @@ class OverlayService : Service() {
         const val EXTRA_ANTI_CHEAT = "EXTRA_ANTI_CHEAT"
         const val EXTRA_THEME_MODE = "EXTRA_THEME_MODE"
         const val EXTRA_ISLAND_OPACITY_INDEX = "EXTRA_ISLAND_OPACITY_INDEX"
+        const val EXTRA_CUSTOM_OPACITY_PCT = "EXTRA_CUSTOM_OPACITY_PCT"
         const val ACTION_UPDATE_CONFIG = "com.omnisolve.overlay.ACTION_UPDATE_CONFIG"
         const val ACTION_COMPANION_SYNC = "com.omnisolve.overlay.ACTION_COMPANION_SYNC"
         const val EXTRA_COMPANION_HOST = "EXTRA_COMPANION_HOST"
@@ -119,6 +122,51 @@ class OverlayService : Service() {
                 }
             }
             return true
+        }
+
+        const val ACTION_NOTIF_SOLVE_NOW = "com.omnisolve.overlay.ACTION_NOTIF_SOLVE_NOW"
+        const val ACTION_NOTIF_TOGGLE_STEALTH = "com.omnisolve.overlay.ACTION_NOTIF_TOGGLE_STEALTH"
+        const val ACTION_NOTIF_STOP = "com.omnisolve.overlay.ACTION_NOTIF_STOP"
+
+        /**
+         * Converts an answer badge (A..F, multi-select "A, C", True/False) into Network Speed Disguise:
+         * 0.91 MB/s = A, 0.92 MB/s = B, 0.93 MB/s = C, 0.94 MB/s = D, 0.95 MB/s = E, 0.96 MB/s = F.
+         * Idle/loading states safely return "0.48 MB/s" so "?" or "ERR" never leaks on screen.
+         */
+        internal fun formatNetworkSpeedDisguise(rawBadge: String?): Pair<String, Boolean> {
+            val idleFallback = "0.48 MB/s"
+            val cleaned = rawBadge
+                ?.trim()
+                ?.removePrefix("(")
+                ?.removeSuffix(")")
+                ?.trim()
+                .orEmpty()
+            if (cleaned.isEmpty()) return idleFallback to false
+
+            val upper = cleaned.uppercase()
+            if (upper in setOf("?", "...", "SCAN", "ERR", "RETRY", "LOGIN", "KEY", "EMPTY", "WAIT", "CAP", "TXT")) {
+                return idleFallback to false
+            }
+            if (upper == "TRUE") return "0.91 MB/s" to true
+            if (upper == "FALSE") return "0.92 MB/s" to true
+
+            if (upper.length == 1 && upper[0] in 'A'..'F') {
+                val code = 91 + (upper[0] - 'A')
+                return "0.${code} MB/s" to true
+            }
+
+            val parts = upper.split(Regex("[,/&\\s]+")).filter { it.isNotBlank() }
+            if (parts.size >= 2 && parts.all { it.length == 1 && it[0] in 'A'..'F' }) {
+                val firstCode = 91 + (parts[0][0] - 'A')
+                val restCodes = parts.drop(1).joinToString("/") { (91 + (it[0] - 'A')).toString() }
+                return "0.${firstCode}/${restCodes} MB/s" to true
+            }
+
+            if (cleaned.matches(Regex("^[+-]?\\d+(?:\\.\\d+)?$"))) {
+                return "$cleaned MB/s" to true
+            }
+
+            return idleFallback to false
         }
 
         /**
@@ -204,49 +252,215 @@ class OverlayService : Service() {
             .take(70)
     }
 
-    // Dynamic Island specific view references
+    // Dynamic Island & Dynamic Flow Bar view references
     private var tvIslandTitle: TextView? = null
     private var ivIslandIcon: ImageView? = null
-    private var btnIslandOpacity: TextView? = null
+    private var ivBubbleIcon: ImageView? = null
     private var llIslandExplanationDrawer: View? = null
     private var tvIslandMeta: TextView? = null
     private var tvIslandExplanation: TextView? = null
+    private var btnDfPart1: TextView? = null
+    private var btnDfPart2: TextView? = null
+    private var btnDfScroll2s: TextView? = null
+    private var btnDfQuestionMode: TextView? = null
+    private var btnDfDiagram: TextView? = null
+    private var btnDfCrop: TextView? = null
+    private var llMethodLoopDrawer: LinearLayout? = null
+    private var svMethodLoop: ScrollView? = null
+    private var llMethodLoopItems: LinearLayout? = null
 
-    // Dynamic Island Visibility / Opacity Presets: 100%, 90%, 50%, 25%
-    private var currentIslandOpacityIndex = 0
-    private val islandOpacityLevels = floatArrayOf(1.0f, 0.90f, 0.50f, 0.25f)
-    private val islandOpacityLabels = arrayOf("100%", "90%", "50%", "25%")
+    // Start-Time Custom Opacity (20% to 100%, configured on Home Screen & Settings)
+    private var customOpacityPct: Int = 100
 
-    private fun applyIslandOpacity(index: Int, showToast: Boolean = true) {
-        currentIslandOpacityIndex = (index + islandOpacityLevels.size) % islandOpacityLevels.size
-        val targetAlpha = islandOpacityLevels[currentIslandOpacityIndex]
-        val label = islandOpacityLabels[currentIslandOpacityIndex]
+    // Dynamic Flow 2-View Split Capture & 2s Scroll-Capture State
+    @Volatile
+    private var pendingPartOneText: String? = null
+    @Volatile
+    private var pendingPartOneBitmap: Bitmap? = null
+    private var scrollCaptureTimerJob: Job? = null
+    private var forceDiagramVisionActive: Boolean = false
+
+    private fun applyCustomOpacityPct(pct: Int) {
+        customOpacityPct = pct.coerceIn(20, 100)
+        val targetAlpha = (customOpacityPct / 100f).coerceIn(0.20f, 1.0f)
 
         bubbleView?.animate()?.cancel()
         bubbleView?.animate()
             ?.alpha(targetAlpha)
-            ?.setDuration(240)
+            ?.setDuration(200)
             ?.setInterpolator(DecelerateInterpolator())
             ?.start()
 
-        btnIslandOpacity?.text = label
-
         try {
             getSharedPreferences("OmniSolvePrefs", Context.MODE_PRIVATE)
-                .edit().putInt("PREF_ISLAND_OPACITY_INDEX", currentIslandOpacityIndex).apply()
+                .edit().putInt(MainActivity.PREF_KEY_CUSTOM_OPACITY_PCT, customOpacityPct).apply()
         } catch (_: Exception) {}
-
-        if (showToast) {
-            val pct = (targetAlpha * 100).toInt()
-            Toast.makeText(this, "Floating pill brightness: $pct%", Toast.LENGTH_SHORT).show()
-        }
     }
 
     // Bubble overlay (Small stealth HUD)
     private var bubbleView: View? = null
     private lateinit var bubbleParams: WindowManager.LayoutParams
     private var tvAnswerDisplay: TextView? = null
-    private var ivScanIcon: ImageView? = null
+
+    // Advanced Overlay State (Crop-to-Scan, Swipe History, Auto-Fade Idle)
+    private var cropOverlayView: CropRegionOverlayView? = null
+    private var historyBrowseIndex: Int = -1
+    private val idleFadeRunnable = Runnable { applyIdleFadeNow() }
+
+    private fun isAdvEnabled(prefKey: String): Boolean {
+        return try {
+            getSharedPreferences("OmniSolvePrefs", Context.MODE_PRIVATE).getBoolean(prefKey, false)
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun isDfEnabled(prefKey: String, defaultValue: Boolean): Boolean {
+        return try {
+            getSharedPreferences("OmniSolvePrefs", Context.MODE_PRIVATE).getBoolean(prefKey, defaultValue)
+        } catch (_: Exception) {
+            defaultValue
+        }
+    }
+
+    private fun applyIdleFadeNow() {
+        if (!isAdvEnabled(MainActivity.PREF_KEY_ADV_AUTO_FADE_IDLE) || isScanning) return
+        val target = bubbleView ?: return
+        target.animate().cancel()
+        target.animate()
+            .alpha(0.16f)
+            .setDuration(320L)
+            .setInterpolator(DecelerateInterpolator())
+            .start()
+    }
+
+    private fun wakeAndScheduleIdleFade() {
+        mainHandler.removeCallbacks(idleFadeRunnable)
+        val target = bubbleView
+        if (target != null) {
+            val normalAlpha = (customOpacityPct.coerceIn(20, 100) / 100f)
+            if (target.alpha < normalAlpha - 0.04f || target.alpha > normalAlpha + 0.04f) {
+                target.animate().cancel()
+                target.animate()
+                    .alpha(normalAlpha)
+                    .setDuration(160L)
+                    .start()
+            }
+        }
+        if (isAdvEnabled(MainActivity.PREF_KEY_ADV_AUTO_FADE_IDLE) && !isScanning) {
+            mainHandler.postDelayed(idleFadeRunnable, 4500L)
+        }
+    }
+
+    private fun showCropRegionSelector() {
+        dismissCropRegionSelector()
+        val layoutFlag = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+        } else {
+            @Suppress("DEPRECATION")
+            WindowManager.LayoutParams.TYPE_PHONE
+        }
+        val params = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.MATCH_PARENT,
+            layoutFlag,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            PixelFormat.TRANSLUCENT
+        )
+        val view = CropRegionOverlayView(
+            context = this,
+            onRegionSelected = { selectedRect ->
+                dismissCropRegionSelector()
+                triggerSolveFlow(autoClickMode = false, cropScreenRect = selectedRect)
+            },
+            onCancelled = {
+                dismissCropRegionSelector()
+            }
+        )
+        cropOverlayView = view
+        try {
+            windowManager.addView(view, params)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to show CropRegionOverlayView", e)
+            cropOverlayView = null
+            triggerSolveFlow(autoClickMode = false, cropScreenRect = null)
+        }
+    }
+
+    private fun dismissCropRegionSelector() {
+        val view = cropOverlayView ?: return
+        cropOverlayView = null
+        try {
+            windowManager.removeView(view)
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun browseSolvedHistoryOnPill(delta: Int) {
+        val prefs = getSharedPreferences("OmniSolvePrefs", Context.MODE_PRIVATE)
+        val raw = prefs.getString("PREF_SOLVE_HISTORY", "")?.trim().orEmpty()
+        val entries = raw.lines().mapNotNull { line ->
+            val parts = line.split("||")
+            if (parts.size >= 3) {
+                val badge = parts[1].trim()
+                val snippet = parts[2].trim()
+                if (badge.isNotEmpty()) badge to snippet else null
+            } else null
+        }
+        if (entries.isEmpty()) {
+            Toast.makeText(this, "No solved history yet", Toast.LENGTH_SHORT).show()
+            return
+        }
+        historyBrowseIndex = if (historyBrowseIndex < 0) {
+            0
+        } else {
+            (historyBrowseIndex + delta + entries.size) % entries.size
+        }
+        val (badge, snippet) = entries[historyBrowseIndex]
+        val rankNumber = entries.size - historyBrowseIndex
+        tvIslandTitle?.text = "#$rankNumber: ${snippet.take(12)}"
+        setAnswerUI(
+            text = badge,
+            colorHex = "#047857",
+            loading = false,
+            triggerFeedback = false,
+            preserveIslandTitle = true
+        )
+    }
+
+    private fun cycleSubjectOrEngineOnLongPress() {
+        val prefs = getSharedPreferences("OmniSolvePrefs", Context.MODE_PRIVATE)
+        val currentSubj = SubjectMode.fromId(
+            prefs.getString(MainActivity.PREF_KEY_SUBJECT_MODE, SubjectMode.GENERAL.id)
+        )
+        val allSubjects = SubjectMode.entries
+        val nextIdx = (allSubjects.indexOf(currentSubj) + 1) % allSubjects.size
+        val nextSubj = allSubjects[nextIdx]
+
+        // When wrapping back to General and Accessibility is active, also toggle Direct Text vs Vision OCR
+        var engineSuffix = "OCR"
+        if (AutoClickAccessibilityService.isServiceRunning() && nextIdx == 0) {
+            extractionEngine = if (extractionEngine == MainActivity.ENGINE_OCR) {
+                MainActivity.ENGINE_NATIVE
+            } else {
+                MainActivity.ENGINE_OCR
+            }
+            prefs.edit().putString(MainActivity.PREF_KEY_EXTRACTION_ENGINE, extractionEngine).apply()
+        }
+        engineSuffix = if (extractionEngine == MainActivity.ENGINE_NATIVE) "Direct" else "OCR"
+
+        prefs.edit().putString(MainActivity.PREF_KEY_SUBJECT_MODE, nextSubj.id).apply()
+        tvIslandTitle?.text = "${nextSubj.label} • $engineSuffix"
+        if (isHapticFeedbackEnabled) {
+            triggerHapticFeedback("A")
+        }
+        Toast.makeText(
+            this,
+            "Subject Mode: ${nextSubj.label} ($engineSuffix)",
+            Toast.LENGTH_SHORT
+        ).show()
+    }
 
     private fun getDeviceBatteryPercentage(): Int {
         return try {
@@ -297,8 +511,8 @@ class OverlayService : Service() {
 
     private fun isValidAnswerBadge(badge: String?): Boolean {
         val clean = badge?.trim().orEmpty()
-        if (clean.isEmpty() || clean.length > 24) return false
-        return clean.uppercase() !in setOf("?", "...", "ERR", "CAP", "TXT", "KEY", "NET", "RETRY", "LOGIN")
+        if (clean.isEmpty() || clean.length > 42) return false
+        return clean.uppercase() !in setOf("?", "...", "ERR", "CAP", "TXT", "KEY", "NET", "RETRY", "LOGIN", "1/2", "2S", "1S")
     }
 
     @Volatile
@@ -422,13 +636,47 @@ class OverlayService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_UPDATE_CONFIG || intent?.action == ACTION_COMPANION_SYNC) {
-            if (!isForegroundStarted) {
+        when (intent?.action) {
+            ACTION_NOTIF_STOP -> {
                 stopSelf()
                 return START_NOT_STICKY
             }
-            applyUpdatedConfig(intent)
-            return START_NOT_STICKY
+            ACTION_NOTIF_SOLVE_NOW -> {
+                if (isForegroundStarted) {
+                    onUserTapSolve()
+                } else {
+                    stopSelf()
+                }
+                return START_NOT_STICKY
+            }
+            ACTION_NOTIF_TOGGLE_STEALTH -> {
+                if (isForegroundStarted) {
+                    isCamouflageEnabled = !isCamouflageEnabled
+                    getSharedPreferences("OmniSolvePrefs", Context.MODE_PRIVATE)
+                        .edit()
+                        .putBoolean(MainActivity.PREF_KEY_CAMOUFLAGE, isCamouflageEnabled)
+                        .apply()
+                    if (!isScanning) {
+                        if (isValidAnswerBadge(latestCachedAnswer)) {
+                            setAnswerUI(latestCachedAnswer, "#047857", triggerFeedback = false)
+                        } else {
+                            setAnswerUI("?", "#0F172A", triggerFeedback = false)
+                        }
+                    }
+                    refreshOngoingNotification()
+                } else {
+                    stopSelf()
+                }
+                return START_NOT_STICKY
+            }
+            ACTION_UPDATE_CONFIG, ACTION_COMPANION_SYNC -> {
+                if (!isForegroundStarted) {
+                    stopSelf()
+                    return START_NOT_STICKY
+                }
+                applyUpdatedConfig(intent)
+                return START_NOT_STICKY
+            }
         }
 
         val resultCode = intent?.getIntExtra(EXTRA_RESULT_CODE, Activity.RESULT_CANCELED)
@@ -495,9 +743,11 @@ class OverlayService : Service() {
             ?: prefs.getString(MainActivity.PREF_KEY_THEME_MODE, MainActivity.THEME_DARK)
             ?: MainActivity.THEME_DARK
 
-        val opacityIdx = intent?.getIntExtra(EXTRA_ISLAND_OPACITY_INDEX, -1) ?: -1
-        if (opacityIdx in islandOpacityLevels.indices) {
-            currentIslandOpacityIndex = opacityIdx
+        val passedOpacityPct = intent?.getIntExtra(EXTRA_CUSTOM_OPACITY_PCT, -1) ?: -1
+        customOpacityPct = if (passedOpacityPct in 20..100) {
+            passedOpacityPct
+        } else {
+            prefs.getInt(MainActivity.PREF_KEY_CUSTOM_OPACITY_PCT, 100).coerceIn(20, 100)
         }
 
         // Companion Pocket Sync Initialization
@@ -598,11 +848,16 @@ class OverlayService : Service() {
             }
         }
 
-        if (intent.hasExtra(EXTRA_ISLAND_OPACITY_INDEX)) {
-            val opacityIdx = intent.getIntExtra(EXTRA_ISLAND_OPACITY_INDEX, currentIslandOpacityIndex)
-            if (opacityIdx in islandOpacityLevels.indices) {
-                applyIslandOpacity(opacityIdx, showToast = false)
-            }
+        if (intent.hasExtra(EXTRA_CUSTOM_OPACITY_PCT)) {
+            val pct = intent.getIntExtra(EXTRA_CUSTOM_OPACITY_PCT, customOpacityPct)
+            applyCustomOpacityPct(pct)
+        } else {
+            applyCustomOpacityPct(prefs.getInt(MainActivity.PREF_KEY_CUSTOM_OPACITY_PCT, customOpacityPct))
+        }
+
+        refreshDynamicFlowChipsUI()
+        if (!isDfEnabled(MainActivity.PREF_KEY_DF_SWIPE_METHOD_LOOP, true)) {
+            closeMethodLoopDrawer()
         }
 
         if (intent.hasExtra(EXTRA_CAMOUFLAGE)) {
@@ -664,6 +919,17 @@ class OverlayService : Service() {
                 stopCompanionSync()
             }
         }
+
+        // Refresh pill display & notification actions whenever Advanced Settings change
+        if (!isScanning) {
+            if (isValidAnswerBadge(latestCachedAnswer)) {
+                setAnswerUI(latestCachedAnswer, "#047857", triggerFeedback = false)
+            } else {
+                setAnswerUI("?", "#0F172A", triggerFeedback = false)
+            }
+        }
+        wakeAndScheduleIdleFade()
+        refreshOngoingNotification()
     }
 
     private fun startCompanionSync(host: String, port: Int) {
@@ -733,6 +999,10 @@ class OverlayService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        mainHandler.removeCallbacks(idleFadeRunnable)
+        scrollCaptureTimerJob?.cancel()
+        clearPendingPartOne()
+        dismissCropRegionSelector()
         currentSolveFlowJob?.cancel()
         activeSolvePollJob?.cancel()
         highRamSyncJob?.cancel()
@@ -785,10 +1055,13 @@ class OverlayService : Service() {
 
     // ─── 1. Setup Floating Bubble (Stealth HUD) ───────────────────────────────
 
+    @SuppressLint("ClickableViewAccessibility")
     private fun setupFloatingBubble() {
         if (bubbleView != null) return
 
-        val isIsland = (hudStyle == MainActivity.HUD_STYLE_ISLAND)
+        val isTopStrip = (hudStyle == MainActivity.HUD_STYLE_TOP_STRIP)
+        val isEdgeTab = (hudStyle == MainActivity.HUD_STYLE_EDGE_TAB)
+        val isIsland = (hudStyle == MainActivity.HUD_STYLE_ISLAND || isTopStrip)
         val layoutRes = if (isIsland) R.layout.layout_dynamic_island else R.layout.layout_floating_bubble
 
         bubbleView = LayoutInflater.from(this).inflate(layoutRes, null)
@@ -806,39 +1079,63 @@ class OverlayService : Service() {
             PixelFormat.TRANSLUCENT
         ).apply {
             val statusBarH = getStatusBarHeight()
-            if (isIsland) {
-                gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-                x = 0
-                y = statusBarH + dpToPx(8)
-            } else {
-                gravity = Gravity.TOP or Gravity.START
-                x = 24
-                y = statusBarH + dpToPx(80)
+            when {
+                isTopStrip -> {
+                    gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+                    x = 0
+                    y = statusBarH + dpToPx(2)
+                }
+                isIsland -> {
+                    gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+                    x = 0
+                    y = statusBarH + dpToPx(8)
+                }
+                isEdgeTab -> {
+                    gravity = Gravity.TOP or Gravity.END
+                    x = 0
+                    y = (resources.displayMetrics.heightPixels / 3).coerceAtLeast(statusBarH + dpToPx(40))
+                }
+                else -> {
+                    gravity = Gravity.TOP or Gravity.START
+                    x = 24
+                    y = statusBarH + dpToPx(80)
+                }
             }
         }
 
         val bubbleContainer: View
         val expandedToolbar: View
-        val btnScan: View
-        val btnToggleWindow: View?
         val btnClose: View
 
         if (isIsland) {
             bubbleContainer = bubbleView!!.findViewById(R.id.island_icon_container)
             expandedToolbar = bubbleView!!.findViewById(R.id.island_expanded_controls)
-            btnScan         = bubbleView!!.findViewById(R.id.btn_island_scan)
             tvAnswerDisplay = bubbleView!!.findViewById(R.id.tv_island_answer)
-            ivScanIcon      = bubbleView!!.findViewById(R.id.iv_island_scan_icon)
-            btnToggleWindow = bubbleView!!.findViewById(R.id.btn_island_toggle_window)
-            btnBotToggle    = bubbleView!!.findViewById(R.id.btn_island_bot_toggle)
             btnClose        = bubbleView!!.findViewById(R.id.btn_island_close)
             tvIslandTitle   = bubbleView!!.findViewById(R.id.tv_island_title)
             ivIslandIcon    = bubbleView!!.findViewById(R.id.iv_island_icon)
+            ivBubbleIcon    = null
             llIslandExplanationDrawer = bubbleView!!.findViewById(R.id.ll_island_explanation_drawer)
             tvIslandMeta    = bubbleView!!.findViewById(R.id.tv_island_meta)
             tvIslandExplanation = bubbleView!!.findViewById(R.id.tv_island_explanation)
+            llMethodLoopDrawer = bubbleView!!.findViewById(R.id.ll_island_method_loop_drawer)
+            svMethodLoop    = bubbleView!!.findViewById(R.id.sv_island_method_loop)
+            llMethodLoopItems = bubbleView!!.findViewById(R.id.ll_island_method_loop_items)
 
-            if (isCamouflageEnabled) {
+            if (isTopStrip) {
+                bubbleView!!.scaleX = 0.86f
+                bubbleView!!.scaleY = 0.82f
+            }
+
+            if (isAdvEnabled(MainActivity.PREF_KEY_ADV_NET_SPEED_DISGUISE)) {
+                ivIslandIcon?.setImageResource(R.drawable.ic_prism_orb)
+                tvIslandTitle?.text = "Net Speed"
+                val (netText, isSolved) = formatNetworkSpeedDisguise(latestCachedAnswer)
+                tvAnswerDisplay?.text = netText
+                tvAnswerDisplay?.textSize = 12f
+                tvAnswerDisplay?.setTextColor(Color.parseColor(if (isSolved) "#047857" else "#0F172A"))
+                llIslandExplanationDrawer?.visibility = View.GONE
+            } else if (isCamouflageEnabled) {
                 ivIslandIcon?.setImageResource(R.drawable.ic_battery_camouflage)
                 tvIslandTitle?.text = "Charging"
                 val (camoText, isSolved) = formatChargingCamouflage(latestCachedAnswer, getDeviceBatteryPercentage())
@@ -859,6 +1156,7 @@ class OverlayService : Service() {
 
             // Tapping explanation drawer collapses it cleanly
             llIslandExplanationDrawer?.setOnClickListener {
+                wakeAndScheduleIdleFade()
                 val group = bubbleView as? ViewGroup
                 if (group != null) {
                     TransitionManager.beginDelayedTransition(group, AutoTransition().apply { duration = 200 })
@@ -867,24 +1165,95 @@ class OverlayService : Service() {
                 try { windowManager.updateViewLayout(bubbleView, bubbleParams) } catch (_: Exception) {}
             }
 
-            // Tapping island body always scans & solves immediately (cancelling any stuck in-flight try)
-            bubbleView!!.findViewById<View>(R.id.ll_island_body)?.setOnClickListener {
-                onUserTapSolve()
-            }
+            // Island body supports:
+            // - Instant tap to Solve (core 1-tap continuous solving)
+            // - Swipe DOWN -> Looping 3-Method Scroll Switcher (Server Sol ↻ OCR Text ↻ API Key)
+            // - Swipe UP -> Collapse method switcher drawer if open
+            // - Swipe LEFT/RIGHT -> Browse solved history & Long-press -> Switch Subject/OCR (when Advanced Gestures ON)
+            val islandBody = bubbleView!!.findViewById<View>(R.id.ll_island_body)
+            islandBody?.setOnTouchListener(object : View.OnTouchListener {
+                private var downX = 0f
+                private var downY = 0f
+                private var consumedLongPress = false
+                private val longPressRunnable = Runnable {
+                    if (isAdvEnabled(MainActivity.PREF_KEY_ADV_ISLAND_GESTURES)) {
+                        consumedLongPress = true
+                        cycleSubjectOrEngineOnLongPress()
+                    }
+                }
+
+                override fun onTouch(v: View?, event: MotionEvent): Boolean {
+                    when (event.actionMasked) {
+                        MotionEvent.ACTION_DOWN -> {
+                            wakeAndScheduleIdleFade()
+                            downX = event.rawX
+                            downY = event.rawY
+                            consumedLongPress = false
+                            if (isAdvEnabled(MainActivity.PREF_KEY_ADV_ISLAND_GESTURES)) {
+                                mainHandler.postDelayed(longPressRunnable, 480L)
+                            }
+                        }
+                        MotionEvent.ACTION_MOVE -> {
+                            val dx = event.rawX - downX
+                            val dy = event.rawY - downY
+                            if (Math.abs(dx) > dpToPx(12) || Math.abs(dy) > dpToPx(12)) {
+                                mainHandler.removeCallbacks(longPressRunnable)
+                            }
+                        }
+                        MotionEvent.ACTION_UP -> {
+                            mainHandler.removeCallbacks(longPressRunnable)
+                            if (consumedLongPress) return true
+                            val dx = event.rawX - downX
+                            val dy = event.rawY - downY
+                            val gesturesOn = isAdvEnabled(MainActivity.PREF_KEY_ADV_ISLAND_GESTURES)
+                            val swipeLoopOn = isDfEnabled(MainActivity.PREF_KEY_DF_SWIPE_METHOD_LOOP, true)
+
+                            if (swipeLoopOn && dy > dpToPx(22) && Math.abs(dy) > Math.abs(dx)) {
+                                openMethodLoopDrawer()
+                            } else if (dy < -dpToPx(20) && Math.abs(dy) > Math.abs(dx) && llMethodLoopDrawer?.visibility == View.VISIBLE) {
+                                closeMethodLoopDrawer()
+                            } else if (gesturesOn && Math.abs(dx) > dpToPx(34) && Math.abs(dx) > Math.abs(dy)) {
+                                browseSolvedHistoryOnPill(if (dx < 0) +1 else -1)
+                            } else if (Math.abs(dx) < dpToPx(18) && Math.abs(dy) < dpToPx(18)) {
+                                if (llMethodLoopDrawer?.visibility == View.VISIBLE) {
+                                    closeMethodLoopDrawer()
+                                }
+                                onUserTapSolve()
+                            }
+                        }
+                        MotionEvent.ACTION_CANCEL -> {
+                            mainHandler.removeCallbacks(longPressRunnable)
+                        }
+                    }
+                    return true
+                }
+            })
         } else {
             llIslandExplanationDrawer = null
             tvIslandMeta = null
             tvIslandExplanation = null
+            tvIslandTitle = null
+            ivIslandIcon = null
+            llMethodLoopDrawer = null
+            svMethodLoop = null
+            llMethodLoopItems = null
             bubbleContainer = bubbleView!!.findViewById(R.id.bubble_icon_container)
             expandedToolbar = bubbleView!!.findViewById(R.id.expanded_toolbar)
-            btnScan         = bubbleView!!.findViewById(R.id.btn_scan)
             tvAnswerDisplay = bubbleView!!.findViewById(R.id.tv_answer_display)
-            ivScanIcon      = bubbleView!!.findViewById(R.id.iv_scan_icon)
-            btnToggleWindow = bubbleView!!.findViewById(R.id.btn_toggle_window)
-            btnBotToggle    = bubbleView!!.findViewById(R.id.btn_bot_toggle)
+            ivBubbleIcon    = bubbleView!!.findViewById(R.id.iv_bubble_icon)
             btnClose        = bubbleView!!.findViewById(R.id.btn_close_toolbar)
 
-            if (isCamouflageEnabled) {
+            if (isEdgeTab) {
+                bubbleView!!.scaleX = 0.86f
+                bubbleView!!.scaleY = 0.86f
+            }
+
+            if (isAdvEnabled(MainActivity.PREF_KEY_ADV_NET_SPEED_DISGUISE)) {
+                val (netText, isSolved) = formatNetworkSpeedDisguise(latestCachedAnswer)
+                tvAnswerDisplay?.text = netText
+                tvAnswerDisplay?.textSize = 11.5f
+                tvAnswerDisplay?.setTextColor(Color.parseColor(if (isSolved) "#047857" else "#0F172A"))
+            } else if (isCamouflageEnabled) {
                 val (camoText, isSolved) = formatChargingCamouflage(latestCachedAnswer, getDeviceBatteryPercentage())
                 tvAnswerDisplay?.text = camoText
                 tvAnswerDisplay?.textSize = 13f
@@ -896,35 +1265,78 @@ class OverlayService : Service() {
             }
         }
 
-        // Opacity / Visibility Toggle Button (100% -> 90% -> 50% -> 25%)
-        val btnOpacityView: TextView? = if (isIsland) {
-            bubbleView!!.findViewById(R.id.btn_island_opacity)
-        } else {
-            bubbleView!!.findViewById(R.id.btn_bubble_opacity)
+        // Bind Dynamic Flow Helper Chips (Play, Eye, Bot & Opacity% Removed)
+        btnDfPart1 = bubbleView!!.findViewById(R.id.btn_df_part1)
+        btnDfPart2 = bubbleView!!.findViewById(R.id.btn_df_part2)
+        btnDfScroll2s = bubbleView!!.findViewById(R.id.btn_df_scroll_2s)
+        btnDfQuestionMode = bubbleView!!.findViewById(R.id.btn_df_question_mode)
+        btnDfDiagram = bubbleView!!.findViewById(R.id.btn_df_diagram)
+        btnDfCrop = bubbleView!!.findViewById(R.id.btn_df_crop)
+        btnBotToggle = null
+
+        val savedPct = getSharedPreferences("OmniSolvePrefs", Context.MODE_PRIVATE)
+            .getInt(MainActivity.PREF_KEY_CUSTOM_OPACITY_PCT, customOpacityPct)
+            .coerceIn(20, 100)
+        bubbleView?.alpha = (savedPct / 100f).coerceIn(0.20f, 1.0f)
+        customOpacityPct = savedPct
+
+        refreshDynamicFlowChipsUI()
+
+        btnDfPart1?.setOnClickListener {
+            wakeAndScheduleIdleFade()
+            capturePartOneView()
         }
-        btnIslandOpacity = btnOpacityView
 
-        val savedOpacity = getSharedPreferences("OmniSolvePrefs", Context.MODE_PRIVATE)
-            .getInt("PREF_ISLAND_OPACITY_INDEX", currentIslandOpacityIndex)
-        applyIslandOpacity(savedOpacity, showToast = false)
-
-        btnOpacityView?.setOnClickListener {
-            applyIslandOpacity(currentIslandOpacityIndex + 1)
+        btnDfPart2?.setOnClickListener {
+            wakeAndScheduleIdleFade()
+            capturePartTwoAndSolve()
         }
 
-        // Update bot toggle icon state
-        updateBotToggleUI()
+        btnDfScroll2s?.setOnClickListener {
+            wakeAndScheduleIdleFade()
+            startTwoSecondScrollCaptureAndSolve()
+        }
 
-        // Single tap on orb icon toggles expanded toolbar;
-        // Double tap cycles pill visibility (100% -> 90% -> 50% -> 25%)
+        btnDfQuestionMode?.setOnClickListener {
+            wakeAndScheduleIdleFade()
+            cycleQuestionSolveModeChip()
+        }
+
+        btnDfDiagram?.setOnClickListener {
+            wakeAndScheduleIdleFade()
+            forceDiagramVisionActive = !forceDiagramVisionActive
+            refreshDynamicFlowChipsUI()
+            val statusTxt = if (forceDiagramVisionActive) "Diagram Vision: ON" else "Diagram Vision: Auto"
+            tvIslandTitle?.text = statusTxt
+            Toast.makeText(this, statusTxt, Toast.LENGTH_SHORT).show()
+        }
+
+        btnDfCrop?.setOnClickListener {
+            wakeAndScheduleIdleFade()
+            if (screenCaptureManager != null) {
+                showCropRegionSelector()
+            } else {
+                onUserTapSolve()
+            }
+        }
+
+        // Single tap on orb icon toggles Dynamic Flow helper chips; drag repositions pill
         bubbleContainer.setOnTouchListener(createDragAndTapListener(
             bubbleParams,
             { bubbleView },
             onSingleTap = {
+                refreshDynamicFlowChipsUI()
+                val hasAnyEnabledChip = listOfNotNull(
+                    btnDfPart1, btnDfPart2, btnDfScroll2s, btnDfQuestionMode, btnDfDiagram, btnDfCrop
+                ).any { it.visibility == View.VISIBLE }
+                if (!hasAnyEnabledChip) {
+                    onUserTapSolve()
+                    return@createDragAndTapListener
+                }
                 val group = bubbleView as? ViewGroup
                 if (group != null) {
                     val transition = AutoTransition().apply {
-                        duration = 240
+                        duration = 220
                         interpolator = OvershootInterpolator(1.2f)
                     }
                     TransitionManager.beginDelayedTransition(group, transition)
@@ -933,18 +1345,13 @@ class OverlayService : Service() {
                 try { windowManager.updateViewLayout(bubbleView, bubbleParams) } catch (_: Exception) {}
             },
             onDoubleTap = {
-                applyIslandOpacity(currentIslandOpacityIndex + 1)
+                if (isDfEnabled(MainActivity.PREF_KEY_DF_SWIPE_METHOD_LOOP, true) && isIsland) {
+                    if (llMethodLoopDrawer?.visibility == View.VISIBLE) closeMethodLoopDrawer() else openMethodLoopDrawer()
+                } else {
+                    onUserTapSolve()
+                }
             }
         ))
-
-        btnScan.setOnClickListener {
-            onUserTapSolve()
-        }
-
-        // Tapping the window toggle button opens/hides the floating Gemini window
-        btnToggleWindow?.setOnClickListener {
-            toggleGeminiWindow()
-        }
 
         tvAnswerDisplay?.setOnClickListener {
             val drawer = llIslandExplanationDrawer
@@ -965,39 +1372,6 @@ class OverlayService : Service() {
             }
         }
 
-        // Bot toggle button
-        btnBotToggle?.setOnClickListener {
-            isAutoClickEnabled = !isAutoClickEnabled
-            // Save preference
-            getSharedPreferences("OmniSolvePrefs", Context.MODE_PRIVATE)
-                .edit().putBoolean(MainActivity.PREF_KEY_AUTO_CLICK, isAutoClickEnabled).apply()
-            updateBotToggleUI()
-            if (isAutoClickEnabled) {
-                if (!AutoClickAccessibilityService.isServiceRunning()) {
-                    Toast.makeText(this@OverlayService, "Enable Screen Text Helper in Settings first to use Auto-Tap", Toast.LENGTH_LONG).show()
-                    isAutoClickEnabled = false
-                    updateBotToggleUI()
-                } else {
-                    startAutoClickBot()
-                    val modeMsg = if (isAfkAutoAdvanceEnabled) "Auto-Tap + Auto-Next ON" else "Auto-Tap ON"
-                    Toast.makeText(this@OverlayService, modeMsg, Toast.LENGTH_SHORT).show()
-                }
-            } else {
-                stopAutoClickBot()
-                Toast.makeText(this@OverlayService, "Auto-Tap OFF", Toast.LENGTH_SHORT).show()
-            }
-        }
-
-        // Long press bot button toggles AFK Auto-Advance mode on the fly
-        btnBotToggle?.setOnLongClickListener {
-            isAfkAutoAdvanceEnabled = !isAfkAutoAdvanceEnabled
-            getSharedPreferences("OmniSolvePrefs", Context.MODE_PRIVATE)
-                .edit().putBoolean(MainActivity.PREF_KEY_AFK_MODE, isAfkAutoAdvanceEnabled).apply()
-            val status = if (isAfkAutoAdvanceEnabled) "Auto-Move to Next Question: ON" else "Auto-Move to Next Question: OFF"
-            Toast.makeText(this@OverlayService, status, Toast.LENGTH_SHORT).show()
-            true
-        }
-
         btnClose.setOnClickListener {
             val group = bubbleView as? ViewGroup
             if (group != null) {
@@ -1007,6 +1381,7 @@ class OverlayService : Service() {
                 TransitionManager.beginDelayedTransition(group, transition)
             }
             expandedToolbar.visibility = View.GONE
+            closeMethodLoopDrawer()
             try { windowManager.updateViewLayout(bubbleView, bubbleParams) } catch (_: Exception) {}
         }
 
@@ -1014,6 +1389,424 @@ class OverlayService : Service() {
             windowManager.addView(bubbleView, bubbleParams)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to add floating bubble view", e)
+        }
+    }
+
+    // ─── Dynamic Flow Helper Tools & Swipe-Down 3-Method Loop Switcher ────────
+
+    private fun refreshDynamicFlowChipsUI() {
+        val prefs = getSharedPreferences("OmniSolvePrefs", Context.MODE_PRIVATE)
+        val twoPartOn = isDfEnabled(MainActivity.PREF_KEY_DF_TWO_PART_CAPTURE, true)
+        val scrollTimerOn = isDfEnabled(MainActivity.PREF_KEY_DF_SCROLL_TIMER, true)
+        val complexModeOn = isDfEnabled(MainActivity.PREF_KEY_DF_COMPLEX_MODE, true)
+        val diagramOn = isDfEnabled(MainActivity.PREF_KEY_DF_DIAGRAM_VISION, false)
+        val quickCropOn = isDfEnabled(MainActivity.PREF_KEY_DF_QUICK_CROP, false)
+
+        val solveMode = QuestionSolveMode.fromId(
+            prefs.getString(MainActivity.PREF_KEY_QUESTION_SOLVE_MODE, QuestionSolveMode.STANDARD.id)
+        )
+
+        btnDfPart1?.visibility = if (twoPartOn) View.VISIBLE else View.GONE
+        btnDfPart2?.visibility = if (twoPartOn) View.VISIBLE else View.GONE
+        val hasPart1 = !pendingPartOneText.isNullOrBlank() || pendingPartOneBitmap != null
+        btnDfPart1?.text = if (hasPart1) "1✓" else "1st"
+        btnDfPart1?.setTextColor(Color.parseColor(if (hasPart1) "#047857" else "#0284C7"))
+
+        btnDfScroll2s?.visibility = if (scrollTimerOn) View.VISIBLE else View.GONE
+
+        btnDfQuestionMode?.visibility = if (complexModeOn) View.VISIBLE else View.GONE
+        btnDfQuestionMode?.text = solveMode.chipLabel
+        btnDfQuestionMode?.setTextColor(
+            Color.parseColor(
+                when (solveMode) {
+                    QuestionSolveMode.STANDARD -> "#0F172A"
+                    QuestionSolveMode.MATCH_FOLLOWING -> "#0284C7"
+                    QuestionSolveMode.COMPLEX_MATH -> "#7C3AED"
+                }
+            )
+        )
+
+        btnDfDiagram?.visibility = if (diagramOn) View.VISIBLE else View.GONE
+        btnDfDiagram?.text = if (forceDiagramVisionActive) "IMG✓" else "IMG"
+        btnDfDiagram?.setTextColor(Color.parseColor(if (forceDiagramVisionActive) "#047857" else "#0F172A"))
+
+        btnDfCrop?.visibility = if (quickCropOn) View.VISIBLE else View.GONE
+    }
+
+    private fun cycleQuestionSolveModeChip() {
+        val prefs = getSharedPreferences("OmniSolvePrefs", Context.MODE_PRIVATE)
+        val current = QuestionSolveMode.fromId(
+            prefs.getString(MainActivity.PREF_KEY_QUESTION_SOLVE_MODE, QuestionSolveMode.STANDARD.id)
+        )
+        val modes = QuestionSolveMode.entries
+        val next = modes[(modes.indexOf(current) + 1) % modes.size]
+        prefs.edit().putString(MainActivity.PREF_KEY_QUESTION_SOLVE_MODE, next.id).apply()
+        refreshDynamicFlowChipsUI()
+        tvIslandTitle?.text = next.fullLabel
+        if (isHapticFeedbackEnabled) triggerHapticFeedback("A")
+        Toast.makeText(this, "Mode: ${next.fullLabel}", Toast.LENGTH_SHORT).show()
+        try { bubbleView?.let { windowManager.updateViewLayout(it, bubbleParams) } } catch (_: Exception) {}
+    }
+
+    private fun openMethodLoopDrawer() {
+        val drawer = llMethodLoopDrawer ?: return
+        val itemsContainer = llMethodLoopItems ?: return
+        val scrollView = svMethodLoop ?: return
+
+        val prefs = getSharedPreferences("OmniSolvePrefs", Context.MODE_PRIVATE)
+        val activeMethod = SolverMethod.fromId(
+            prefs.getString(MainActivity.PREF_KEY_SOLVER_METHOD, solverMethod.id)
+        )
+        solverMethod = activeMethod
+
+        val loopMethods = listOf(
+            SolverMethod.FIREBASE_SERVER to "1) Server Sol (Cloud Fast)",
+            SolverMethod.BACKGROUND_GEMINI to "2) OCR Text (Background Gemini)",
+            SolverMethod.API_KEYS to "3) API Key (NVIDIA/OR/Gemini)"
+        )
+
+        itemsContainer.removeAllViews()
+        val totalCycles = 7
+        val middleCycle = totalCycles / 2
+        var targetScrollRow: View? = null
+
+        for (cycle in 0 until totalCycles) {
+            for ((methodItem, label) in loopMethods) {
+                val isSelected = (methodItem == activeMethod)
+                val row = TextView(this).apply {
+                    text = if (isSelected) "● $label  ✓" else "○ $label"
+                    textSize = 11.5f
+                    setTypeface(typeface, if (isSelected) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
+                    setTextColor(Color.parseColor(if (isSelected) "#0284C7" else "#0F172A"))
+                    setPadding(dpToPx(10), dpToPx(7), dpToPx(10), dpToPx(7))
+                    background = android.graphics.drawable.GradientDrawable().apply {
+                        cornerRadius = dpToPx(9).toFloat()
+                        setColor(Color.parseColor(if (isSelected) "#E0F2FE" else "#F8FAFC"))
+                        setStroke(
+                            dpToPx(1),
+                            Color.parseColor(if (isSelected) "#38BDF8" else "#E2E8F0")
+                        )
+                    }
+                    val lp = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                    ).apply {
+                        bottomMargin = dpToPx(4)
+                    }
+                    layoutParams = lp
+                    isClickable = true
+                    isFocusable = true
+                    setOnClickListener {
+                        selectSolverMethodFromIslandLoop(methodItem)
+                    }
+                }
+                itemsContainer.addView(row)
+                if (cycle == middleCycle && isSelected) {
+                    targetScrollRow = row
+                }
+            }
+        }
+
+        llIslandExplanationDrawer?.visibility = View.GONE
+        val group = bubbleView as? ViewGroup
+        if (group != null) {
+            TransitionManager.beginDelayedTransition(group, AutoTransition().apply { duration = 180 })
+        }
+        drawer.visibility = View.VISIBLE
+        try { windowManager.updateViewLayout(bubbleView, bubbleParams) } catch (_: Exception) {}
+
+        scrollView.post {
+            val topY = targetScrollRow?.top ?: (itemsContainer.height / 3)
+            scrollView.scrollTo(0, (topY - dpToPx(24)).coerceAtLeast(0))
+        }
+    }
+
+    private fun closeMethodLoopDrawer() {
+        val drawer = llMethodLoopDrawer ?: return
+        if (drawer.visibility != View.VISIBLE) return
+        val group = bubbleView as? ViewGroup
+        if (group != null) {
+            TransitionManager.beginDelayedTransition(group, AutoTransition().apply { duration = 160 })
+        }
+        drawer.visibility = View.GONE
+        try { bubbleView?.let { windowManager.updateViewLayout(it, bubbleParams) } } catch (_: Exception) {}
+    }
+
+    private fun selectSolverMethodFromIslandLoop(chosen: SolverMethod) {
+        solverMethod = chosen
+        val prefs = getSharedPreferences("OmniSolvePrefs", Context.MODE_PRIVATE)
+        prefs.edit()
+            .putString(MainActivity.PREF_KEY_SOLVER_METHOD, chosen.id)
+            .putString(MainActivity.PREF_KEY_DISPLAY_MODE, MainActivity.MODE_STEALTH)
+            .apply()
+
+        if (chosen == SolverMethod.BACKGROUND_GEMINI && geminiWindowView == null) {
+            setupGeminiWindow()
+            bringFrontPillToTop()
+        } else if (chosen != SolverMethod.OVERLAPPING_GOOGLE && isWindowVisible) {
+            showGeminiWindow(false)
+        }
+
+        closeMethodLoopDrawer()
+        tvIslandTitle?.text = "${chosen.shortName} ✓"
+        if (isHapticFeedbackEnabled) triggerHapticFeedback("A")
+        Toast.makeText(
+            this,
+            "Active Method: ${chosen.title} — Tap Island to solve continuously",
+            Toast.LENGTH_SHORT
+        ).show()
+    }
+
+    private fun clearPendingPartOne() {
+        pendingPartOneText = null
+        try {
+            pendingPartOneBitmap?.let { if (!it.isRecycled) it.recycle() }
+        } catch (_: Exception) {}
+        pendingPartOneBitmap = null
+        mainHandler.post { refreshDynamicFlowChipsUI() }
+    }
+
+    private fun downscaleCaptureCopy(src: Bitmap, maxDim: Int = 920): Bitmap {
+        val w = src.width
+        val h = src.height
+        val longest = maxOf(w, h)
+        if (longest <= maxDim) return src.copy(Bitmap.Config.ARGB_8888, false)
+        val ratio = maxDim.toFloat() / longest.toFloat()
+        val tw = (w * ratio).toInt().coerceAtLeast(1)
+        val th = (h * ratio).toInt().coerceAtLeast(1)
+        return Bitmap.createScaledBitmap(src, tw, th, true)
+    }
+
+    private fun stitchBitmapsVertically(top: Bitmap?, bottom: Bitmap?): Bitmap? {
+        if (top == null && bottom == null) return null
+        if (top == null) return bottom?.let { downscaleCaptureCopy(it, 960) }
+        if (bottom == null) return downscaleCaptureCopy(top, 960)
+        return try {
+            val sTop = downscaleCaptureCopy(top, 800)
+            val sBot = downscaleCaptureCopy(bottom, 800)
+            val width = maxOf(sTop.width, sBot.width).coerceAtLeast(1)
+            val height = (sTop.height + sBot.height).coerceAtLeast(1)
+            val combined = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(combined)
+            canvas.drawColor(Color.WHITE)
+            canvas.drawBitmap(sTop, 0f, 0f, null)
+            canvas.drawBitmap(sBot, 0f, sTop.height.toFloat(), null)
+            if (sTop !== top && !sTop.isRecycled) sTop.recycle()
+            if (sBot !== bottom && !sBot.isRecycled) sBot.recycle()
+            combined
+        } catch (_: Exception) {
+            downscaleCaptureCopy(bottom, 960)
+        }
+    }
+
+    private fun capturePartOneView() {
+        if (screenCaptureManager == null && !AutoClickAccessibilityService.isServiceRunning()) {
+            Toast.makeText(this, "Screen capture not active yet.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        scrollCaptureTimerJob?.cancel()
+        currentSolveFlowJob?.cancel()
+        isScanning = true
+        setAnswerUI("...", "#0284C7", loading = true, triggerFeedback = false)
+        tvIslandTitle?.text = "Saving 1st View..."
+
+        serviceScope.launch {
+            try {
+                val captured = if (screenCaptureManager != null) {
+                    captureAndOcr()
+                } else {
+                    val scraped = withContext(Dispatchers.Default) {
+                        AutoClickAccessibilityService.extractScreenHierarchy()
+                    }
+                    if (scraped != null) Triple(scraped.first, scraped.second, null) else null
+                }
+
+                clearPendingPartOne()
+                if (captured == null) {
+                    setAnswerUI("CAP", "#B45309", loading = false, triggerFeedback = false)
+                    return@launch
+                }
+
+                pendingPartOneText = captured.first
+                pendingPartOneBitmap = captured.third?.let { bmp ->
+                    val copy = downscaleCaptureCopy(bmp, 860)
+                    try { if (copy !== bmp && !bmp.isRecycled) bmp.recycle() } catch (_: Exception) {}
+                    copy
+                }
+
+                withContext(Dispatchers.Main) {
+                    isScanning = false
+                    stopScanBreathingAnim()
+                    refreshDynamicFlowChipsUI()
+                    tvIslandTitle?.text = "Scroll ↓ Tap 2nd"
+                    tvAnswerDisplay?.text = "1/2"
+                    tvAnswerDisplay?.setTextColor(Color.parseColor("#0284C7"))
+                    Toast.makeText(
+                        this@OverlayService,
+                        "Part 1 (Question/Diagram) saved! Scroll to Options and tap '2nd'.",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    try { bubbleView?.let { windowManager.updateViewLayout(it, bubbleParams) } } catch (_: Exception) {}
+                }
+            } catch (_: Exception) {
+                isScanning = false
+                setAnswerUI("ERR", "#BE123C", loading = false, triggerFeedback = false)
+            }
+        }
+    }
+
+    private fun capturePartTwoAndSolve() {
+        val part1Txt = pendingPartOneText
+        val part1Bmp = pendingPartOneBitmap
+        if (part1Txt.isNullOrBlank() && part1Bmp == null) {
+            onUserTapSolve()
+            return
+        }
+
+        scrollCaptureTimerJob?.cancel()
+        currentSolveFlowJob?.cancel()
+        isScanning = true
+        setAnswerUI("...", "#0369A1", loading = true, triggerFeedback = false)
+        tvIslandTitle?.text = "Merging 1st + 2nd..."
+
+        serviceScope.launch {
+            val captured2 = if (screenCaptureManager != null) {
+                captureAndOcr()
+            } else {
+                val scraped = withContext(Dispatchers.Default) {
+                    AutoClickAccessibilityService.extractScreenHierarchy()
+                }
+                if (scraped != null) Triple(scraped.first, scraped.second, null) else null
+            }
+
+            if (captured2 == null) {
+                isScanning = false
+                setAnswerUI("CAP", "#B45309", loading = false, triggerFeedback = false)
+                return@launch
+            }
+
+            val mergedText = buildString {
+                if (!part1Txt.isNullOrBlank()) {
+                    append("View 1 (Question / Diagram): ")
+                    append(part1Txt.trim())
+                    append("  ")
+                }
+                if (captured2.first.isNotBlank()) {
+                    append("View 2 (Options / Continuation): ")
+                    append(captured2.first.trim())
+                }
+            }.trim()
+
+            val stitched = withContext(Dispatchers.Default) {
+                stitchBitmapsVertically(part1Bmp, captured2.third)
+            }
+            try {
+                if (captured2.third != null && captured2.third !== stitched && !captured2.third!!.isRecycled) {
+                    captured2.third!!.recycle()
+                }
+            } catch (_: Exception) {}
+            clearPendingPartOne()
+
+            withContext(Dispatchers.Main) {
+                triggerSolveFlow(
+                    autoClickMode = false,
+                    cropScreenRect = null,
+                    preCapturedData = Triple(mergedText, captured2.second, stitched),
+                    forceVisionOverride = stitched != null
+                )
+            }
+        }
+    }
+
+    private fun startTwoSecondScrollCaptureAndSolve() {
+        if (screenCaptureManager == null && !AutoClickAccessibilityService.isServiceRunning()) {
+            Toast.makeText(this, "Screen capture not active yet.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        scrollCaptureTimerJob?.cancel()
+        currentSolveFlowJob?.cancel()
+        activeSolvePollJob?.cancel()
+        isScanning = true
+        setAnswerUI("...", "#0284C7", loading = true, triggerFeedback = false)
+        tvIslandTitle?.text = "Capturing View 1..."
+
+        scrollCaptureTimerJob = serviceScope.launch {
+            val view1 = if (screenCaptureManager != null) {
+                captureAndOcr()
+            } else {
+                val scraped = withContext(Dispatchers.Default) {
+                    AutoClickAccessibilityService.extractScreenHierarchy()
+                }
+                if (scraped != null) Triple(scraped.first, scraped.second, null) else null
+            }
+
+            if (view1 == null) {
+                isScanning = false
+                setAnswerUI("CAP", "#B45309", loading = false, triggerFeedback = false)
+                return@launch
+            }
+
+            val bmp1Copy = view1.third?.let { bmp ->
+                val c = downscaleCaptureCopy(bmp, 860)
+                try { if (c !== bmp && !bmp.isRecycled) bmp.recycle() } catch (_: Exception) {}
+                c
+            }
+
+            // 2-Second interactive scroll window so user can scroll down to options!
+            withContext(Dispatchers.Main) {
+                stopScanBreathingAnim()
+                tvIslandTitle?.text = "Scroll ↓ Options"
+                tvAnswerDisplay?.text = "2s"
+                tvAnswerDisplay?.setTextColor(Color.parseColor("#0284C7"))
+                if (isHapticFeedbackEnabled) triggerHapticFeedback("A")
+            }
+            delay(1000L)
+            withContext(Dispatchers.Main) {
+                tvIslandTitle?.text = "Scroll ↓ Options"
+                tvAnswerDisplay?.text = "1s"
+            }
+            delay(1000L)
+
+            withContext(Dispatchers.Main) {
+                setAnswerUI("...", "#0369A1", loading = true, triggerFeedback = false)
+                tvIslandTitle?.text = "Solving 1+2..."
+            }
+
+            val view2 = if (screenCaptureManager != null) {
+                captureAndOcr()
+            } else {
+                val scraped = withContext(Dispatchers.Default) {
+                    AutoClickAccessibilityService.extractScreenHierarchy()
+                }
+                if (scraped != null) Triple(scraped.first, scraped.second, null) else null
+            }
+
+            val mergedText = buildString {
+                if (view1.first.isNotBlank()) {
+                    append("View 1 (Question / Diagram): ")
+                    append(view1.first.trim())
+                    append("  ")
+                }
+                if (view2 != null && view2.first.isNotBlank()) {
+                    append("View 2 (Scrolled Options): ")
+                    append(view2.first.trim())
+                }
+            }.trim()
+
+            val stitched = withContext(Dispatchers.Default) {
+                stitchBitmapsVertically(bmp1Copy, view2?.third)
+            }
+            try { bmp1Copy?.let { if (it !== stitched && !it.isRecycled) it.recycle() } } catch (_: Exception) {}
+            try { view2?.third?.let { if (it !== stitched && !it.isRecycled) it.recycle() } } catch (_: Exception) {}
+
+            withContext(Dispatchers.Main) {
+                triggerSolveFlow(
+                    autoClickMode = false,
+                    cropScreenRect = null,
+                    preCapturedData = Triple(mergedText, view2?.second ?: view1.second, stitched),
+                    forceVisionOverride = stitched != null
+                )
+            }
         }
     }
 
@@ -1481,36 +2274,51 @@ class OverlayService : Service() {
     /**
      * Handles any manual tap on the Floating Pill / Scan button / Answer badge.
      * If a previous solve is still running or stuck, immediately cancels it and starts a fresh try!
+     * When Crop-to-Scan is enabled in Advanced Settings, opens the glowing Liquid Glass region selector first.
      */
     private fun onUserTapSolve() {
         val now = System.currentTimeMillis()
         if (now - lastManualTapMs < 350L) return
         lastManualTapMs = now
+        historyBrowseIndex = -1
+        wakeAndScheduleIdleFade()
         if (isScanning) {
             Log.d(TAG, "User tapped pill while scanning — cancelling in-flight solve and starting a fresh attempt immediately")
             currentSolveFlowJob?.cancel()
             activeSolvePollJob?.cancel()
             isScanning = false
         }
-        triggerSolveFlow(autoClickMode = false)
+        if (isAdvEnabled(MainActivity.PREF_KEY_ADV_CROP_TO_SCAN) && screenCaptureManager != null) {
+            showCropRegionSelector()
+        } else {
+            triggerSolveFlow(autoClickMode = false, cropScreenRect = null)
+        }
     }
 
     /**
      * Core solve flow:
-     * 1. Captures screenshot and extracts full screen text via ML Kit OCR (with optional Native A11y mode).
-     * 2. Formats a strictly SINGLE-LINE prompt containing the full OCR question + options (zero newlines).
-     * 3. Routes to the user's chosen Answer Method:
-     *    - Method 1 (`FIREBASE_SERVER`): Logged-in Firebase Cloud Server
-     *    - Method 2 (`BACKGROUND_GEMINI`): Screenshot -> ML Kit OCR -> Built-in Background Gemini Flash
-     *    - Method 3 (`API_KEYS`): Multi-AI Keys (NVIDIA Free, OpenRouter Free, Gemini, OpenAI) with automatic quota shifting
+     * 1. Captures screenshot (or cropped Liquid Glass region) and extracts text via ML Kit OCR.
+     * 2. Routes strictly to the user's selected Answer Method without cross-jumping from Server Sol
+     *    into the slow Background Gemini WebView:
+     *    - Method 1 (`FIREBASE_SERVER`): Fast single-pass Firebase Cloud Server (`<2s`, zero double-solve).
+     *    - Method 2 (`BACKGROUND_GEMINI`): Screenshot -> ML Kit OCR -> Built-in Background Gemini Flash.
+     *    - Method 3 (`API_KEYS`): Local API Keys (NVIDIA Free, OpenRouter, Gemini, OpenAI) with automatic quota shifting.
      */
-    private fun triggerSolveFlow(autoClickMode: Boolean = false) {
+    private fun triggerSolveFlow(
+        autoClickMode: Boolean = false,
+        cropScreenRect: Rect? = null,
+        preCapturedData: Triple<String, List<Pair<String, Rect>>, Bitmap?>? = null,
+        forceVisionOverride: Boolean = false
+    ) {
         val prefs = getSharedPreferences("OmniSolvePrefs", Context.MODE_PRIVATE)
         val method = SolverMethod.fromId(
             prefs.getString(MainActivity.PREF_KEY_SOLVER_METHOD, solverMethod.id)
         )
         solverMethod = method
         val autoFailover = prefs.getBoolean(MainActivity.PREF_KEY_AUTO_FAILOVER, true)
+        val solveMode = QuestionSolveMode.fromId(
+            prefs.getString(MainActivity.PREF_KEY_QUESTION_SOLVE_MODE, QuestionSolveMode.STANDARD.id)
+        )
 
         val selectedModel = prefs.getString(
             MainActivity.PREF_KEY_GEMINI_MODEL,
@@ -1525,14 +2333,17 @@ class OverlayService : Service() {
         val currentEngine = prefs.getString(MainActivity.PREF_KEY_EXTRACTION_ENGINE, MainActivity.ENGINE_OCR)
             ?: MainActivity.ENGINE_OCR
         val a11yActive = AutoClickAccessibilityService.isServiceRunning()
-        // Screenshot + ML Kit OCR is always used for Method 2 (when screen capture is active) and as default
-        val useScreenOcr = (method == SolverMethod.BACKGROUND_GEMINI && screenCaptureManager != null) ||
-            currentEngine != MainActivity.ENGINE_NATIVE ||
-            !a11yActive
+        val hasCropSelection = cropScreenRect != null
+        val useScreenOcr = preCapturedData == null && (
+            hasCropSelection ||
+                (method == SolverMethod.BACKGROUND_GEMINI && screenCaptureManager != null) ||
+                currentEngine != MainActivity.ENGINE_NATIVE ||
+                !a11yActive
+            )
         val allowOcrFallback = prefs.getBoolean(MainActivity.PREF_KEY_NATIVE_FALLBACK_OCR, true)
         val autoCopyClipboard = prefs.getBoolean(MainActivity.PREF_KEY_AUTO_COPY_CLIPBOARD, false)
 
-        if (useScreenOcr && screenCaptureManager == null && !a11yActive) {
+        if (preCapturedData == null && useScreenOcr && screenCaptureManager == null && !a11yActive) {
             if (!autoClickMode) {
                 Toast.makeText(this, "Screen capture not ready. Tap Start Floating Pill inside Prism AI.", Toast.LENGTH_SHORT).show()
             }
@@ -1543,6 +2354,7 @@ class OverlayService : Service() {
         currentSolveFlowJob?.cancel()
         activeSolvePollJob?.cancel()
         isScanning = true
+        mainHandler.removeCallbacks(idleFadeRunnable)
 
         // Clear previous question's answer immediately so stale answers can NEVER reappear
         if (!autoClickMode) {
@@ -1563,8 +2375,24 @@ class OverlayService : Service() {
             try {
                 var extractedText = ""
                 var textBlocks = emptyList<Pair<String, Rect>>()
+                val forceVisionForSolve = hasCropSelection || forceVisionOverride || forceDiagramVisionActive
 
-                if (!useScreenOcr && a11yActive) {
+                if (preCapturedData != null) {
+                    extractedText = preCapturedData.first
+                    textBlocks = preCapturedData.second
+                    bitmapToRecycle = preCapturedData.third
+                } else if (hasCropSelection && screenCaptureManager != null) {
+                    val croppedOcr = captureAndOcrCropped(cropScreenRect!!)
+                    if (croppedOcr == null) {
+                        setAnswerUI("CAP", "#B45309", triggerFeedback = false)
+                        btnWindowScan?.text = "Solve"
+                        isScanning = false
+                        return@launch
+                    }
+                    extractedText = croppedOcr.first
+                    textBlocks = croppedOcr.second
+                    bitmapToRecycle = croppedOcr.third
+                } else if (!useScreenOcr && a11yActive) {
                     val scraped = withContext(Dispatchers.Default) {
                         AutoClickAccessibilityService.extractScreenHierarchy()
                     }
@@ -1577,7 +2405,7 @@ class OverlayService : Service() {
                             """\b(diagram|figure|fig|graph|image|chart|table|picture|shown|circuit|plot|map|triangle|angle)\b""",
                             RegexOption.IGNORE_CASE
                         ).containsMatchIn(extractedText)
-                        if (screenCaptureManager != null && mentionsVisual) {
+                        if (screenCaptureManager != null && (mentionsVisual || forceVisionForSolve)) {
                             bitmapToRecycle = captureFrameOnly()
                         }
                     } else if (allowOcrFallback && screenCaptureManager != null) {
@@ -1617,7 +2445,7 @@ class OverlayService : Service() {
                 }
 
                 val meaningfulCount = extractedText.count { it.isLetterOrDigit() }
-                if (meaningfulCount < 4) {
+                if (meaningfulCount < 4 && !(forceVisionForSolve && bitmapToRecycle != null)) {
                     Log.w(TAG, "OCR extracted insufficient text ($meaningfulCount chars) — aborting instead of sending empty prompt")
                     setAnswerUI("TXT", "#B45309", triggerFeedback = false)
                     btnWindowScan?.text = "Solve"
@@ -1655,8 +2483,9 @@ class OverlayService : Service() {
                     lastSolvedQuestionSignature = questionSignature
                 }
 
-                // Strictly SINGLE-LINE prompt containing the full OCR question + options (zero '\n' so Quill never submits early)
-                val promptText = MultiProviderApiSolver.buildSingleLineSolverPrompt(extractedText)
+                val safePromptInput = extractedText.ifBlank { "Solve the question or diagram shown in this captured image." }
+                // Strictly SINGLE-LINE prompt containing the full OCR question + options + solveMode instruction
+                val promptText = MultiProviderApiSolver.buildSingleLineSolverPrompt(safePromptInput, solveMode)
 
                 if (autoCopyClipboard) {
                     try {
@@ -1676,24 +2505,25 @@ class OverlayService : Service() {
                     } catch (_: Exception) {
                         null
                     }
-                    // Require Google Sign-In when user explicitly selected Method 1 (Firebase Server);
-                    // allow App Check-authenticated emergency failover when used as a secondary backup.
                     if (isPrimary && uid.isNullOrBlank()) {
                         failureBadge = "LOGIN"
-                        failureToast = "Log in with Google on the AI Engine tab to use Firebase Server."
+                        failureToast = "Log in to Server with Google first, or swipe down to switch method."
                         return false
                     }
                     withContext(Dispatchers.Main) {
-                        btnWindowScan?.text = if (dualVerify) "Verifying..." else "Firebase..."
+                        btnWindowScan?.text = if (dualVerify) "Verifying..." else "Server..."
                     }
                     return try {
                         val answerModel = PrismAiSolverEngine.solveQuestion(
-                            extractedText = extractedText,
+                            extractedText = safePromptInput,
                             screenBitmap = bitmapToRecycle,
                             requestedModel = selectedModel,
                             subjectMode = subjectMode,
                             dualVerify = dualVerify,
-                            translateToEnglish = translateToEnglish
+                            translateToEnglish = translateToEnglish,
+                            forceVisionBitmap = forceVisionForSolve,
+                            compactFastMode = !dualVerify && !translateToEnglish && solveMode == QuestionSolveMode.STANDARD,
+                            solveMode = solveMode
                         )
                         val resolvedBadge = answerModel.correctChoice.trim()
                         if (isValidAnswerBadge(resolvedBadge)) {
@@ -1703,7 +2533,7 @@ class OverlayService : Service() {
                                     rawLetter = resolvedBadge,
                                     isAutoClick = autoClickMode,
                                     solveId = currentSolveId,
-                                    questionPreview = extractedText,
+                                    questionPreview = safePromptInput,
                                     answerModel = answerModel
                                 )
                             }
@@ -1714,9 +2544,15 @@ class OverlayService : Service() {
                     } catch (ce: CancellationException) {
                         if (ce !is TimeoutCancellationException) throw ce
                         Log.w(TAG, "Firebase Server timed out: ${ce.message}")
+                        if (isPrimary) {
+                            failureToast = "Server timed out. Tap again or swipe down to switch method."
+                        }
                         false
                     } catch (e: Exception) {
                         Log.w(TAG, "Firebase Server failed: ${e.message}")
+                        if (isPrimary) {
+                            failureToast = "Server could not respond (${e.message?.take(60) ?: "check connection"})."
+                        }
                         false
                     }
                 }
@@ -1725,18 +2561,27 @@ class OverlayService : Service() {
                     if (!MultiProviderApiSolver.hasAnyConfiguredKey(this@OverlayService)) {
                         if (isPrimary) {
                             failureBadge = "KEY"
-                            failureToast = "Add a free NVIDIA, OpenRouter, Gemini, or OpenAI key in AI Engine."
+                            failureToast = "Enter your NVIDIA, OpenRouter, or Gemini key in Settings."
                         }
                         return false
                     }
                     withContext(Dispatchers.Main) {
                         btnWindowScan?.text = "API..."
                     }
+                    val attachBitmapForApi = if (forceVisionForSolve ||
+                        PrismAiSolverEngine.shouldAttachVisionBitmap(safePromptInput, bitmapToRecycle != null)
+                    ) {
+                        bitmapToRecycle
+                    } else {
+                        null
+                    }
                     return try {
                         val answerModel = MultiProviderApiSolver.solveWithFailover(
                             context = this@OverlayService,
-                            extractedText = extractedText,
-                            subjectMode = subjectMode
+                            extractedText = safePromptInput,
+                            subjectMode = subjectMode,
+                            solveMode = solveMode,
+                            screenBitmap = attachBitmapForApi
                         )
                         val resolvedBadge = answerModel.correctChoice.trim()
                         if (isValidAnswerBadge(resolvedBadge)) {
@@ -1746,7 +2591,7 @@ class OverlayService : Service() {
                                     rawLetter = resolvedBadge,
                                     isAutoClick = autoClickMode,
                                     solveId = currentSolveId,
-                                    questionPreview = extractedText,
+                                    questionPreview = safePromptInput,
                                     answerModel = answerModel
                                 )
                             }
@@ -1775,24 +2620,26 @@ class OverlayService : Service() {
                         promptText = promptText,
                         isAutoClick = autoClickMode,
                         solveId = currentSolveId,
-                        questionPreview = extractedText,
+                        questionPreview = safePromptInput,
                         isPrimaryMethod = isPrimary,
                         suppressFailureUi = true
                     )
                 }
 
+                // STRICT ENGINE ISOLATION:
+                // Method 1 (FIREBASE_SERVER) NEVER silently jumps into Background Gemini WebView ("Thinking..."),
+                // eliminating the 40-second double-solve stall completely.
                 val solved = when (method) {
                     SolverMethod.FIREBASE_SERVER -> {
                         tryFirebaseServer(isPrimary = true) ||
-                            (autoFailover && (tryApiKeys(isPrimary = false) || tryBackgroundGemini(isPrimary = false)))
+                            (autoFailover && MultiProviderApiSolver.hasAnyConfiguredKey(this@OverlayService) && tryApiKeys(isPrimary = false))
                     }
                     SolverMethod.BACKGROUND_GEMINI -> {
                         tryBackgroundGemini(isPrimary = true) ||
-                            (autoFailover && (tryApiKeys(isPrimary = false) || tryFirebaseServer(isPrimary = false)))
+                            (autoFailover && MultiProviderApiSolver.hasAnyConfiguredKey(this@OverlayService) && tryApiKeys(isPrimary = false))
                     }
                     SolverMethod.API_KEYS -> {
-                        tryApiKeys(isPrimary = true) ||
-                            (autoFailover && (tryFirebaseServer(isPrimary = false) || tryBackgroundGemini(isPrimary = false)))
+                        tryApiKeys(isPrimary = true)
                     }
                     SolverMethod.OVERLAPPING_GOOGLE -> {
                         withContext(Dispatchers.Main) {
@@ -1802,7 +2649,7 @@ class OverlayService : Service() {
                             }
                         }
                         tryBackgroundGemini(isPrimary = true) ||
-                            (autoFailover && (tryApiKeys(isPrimary = false) || tryFirebaseServer(isPrimary = false)))
+                            (autoFailover && MultiProviderApiSolver.hasAnyConfiguredKey(this@OverlayService) && tryApiKeys(isPrimary = false))
                     }
                 }
 
@@ -1866,6 +2713,44 @@ class OverlayService : Service() {
             bringFrontPillToTop()
         }
         return bitmap
+    }
+
+    /**
+     * Captures screen via MediaProjection, crops to the user's Liquid Glass region box,
+     * and extracts OCR text + bounding boxes (offset back to full-screen coordinates).
+     */
+    private suspend fun captureAndOcrCropped(cropScreenRect: Rect): Triple<String, List<Pair<String, Rect>>, Bitmap?>? {
+        val fullBitmap = captureFrameOnly() ?: return null
+        val metrics = resources.displayMetrics
+        val scaleX = fullBitmap.width.toFloat() / metrics.widthPixels.coerceAtLeast(1).toFloat()
+        val scaleY = fullBitmap.height.toFloat() / metrics.heightPixels.coerceAtLeast(1).toFloat()
+
+        val left = (cropScreenRect.left * scaleX).toInt().coerceIn(0, fullBitmap.width - 2)
+        val top = (cropScreenRect.top * scaleY).toInt().coerceIn(0, fullBitmap.height - 2)
+        val right = (cropScreenRect.right * scaleX).toInt().coerceIn(left + 1, fullBitmap.width)
+        val bottom = (cropScreenRect.bottom * scaleY).toInt().coerceIn(top + 1, fullBitmap.height)
+
+        val cropped = try {
+            Bitmap.createBitmap(fullBitmap, left, top, (right - left).coerceAtLeast(1), (bottom - top).coerceAtLeast(1))
+        } catch (_: Exception) {
+            fullBitmap
+        }
+        if (cropped !== fullBitmap && !fullBitmap.isRecycled) {
+            fullBitmap.recycle()
+        }
+
+        val ocrResult = withContext(Dispatchers.Default) {
+            ocrEngine.extractTextWithBounds(cropped)
+        }
+        val offsetBlocks = ocrResult.second.map { (txt, r) ->
+            txt to Rect(
+                r.left + cropScreenRect.left,
+                r.top + cropScreenRect.top,
+                r.right + cropScreenRect.left,
+                r.bottom + cropScreenRect.top
+            )
+        }
+        return Triple(ocrResult.first, offsetBlocks, cropped)
     }
 
     /**
@@ -1935,7 +2820,7 @@ class OverlayService : Service() {
         val formattedBadge = if (trimmed.length == 1 && trimmed[0].uppercaseChar() in 'A'..'F') {
             trimmed.uppercase()
         } else {
-            trimmed.take(24)
+            trimmed.take(40)
         }
 
         if (solveId > 0L && deliveredSolveId == solveId) return
@@ -1958,9 +2843,16 @@ class OverlayService : Service() {
                 val snippet = questionPreview.lines()
                     .map { it.trim() }
                     .firstOrNull { it.length >= 6 }
+                    ?.replace("||", " ")
                     ?.take(72) ?: "Screen Question"
+                val expSummary = listOfNotNull(
+                    answerModel?.shortAnswer?.trim()?.takeIf { it.isNotBlank() },
+                    answerModel?.explanation?.trim()?.takeIf { it.isNotBlank() }
+                ).joinToString(" — ").replace("\n", " ").replace("||", " ").take(120)
+                val subjId = prefs.getString(MainActivity.PREF_KEY_SUBJECT_MODE, SubjectMode.GENERAL.id)
+                    ?: SubjectMode.GENERAL.id
                 val existing = prefs.getString("PREF_SOLVE_HISTORY", "") ?: ""
-                val entry = "${System.currentTimeMillis()}||$formattedBadge||$snippet"
+                val entry = "${System.currentTimeMillis()}||$formattedBadge||$snippet||$expSummary||$subjId"
                 val merged = (listOf(entry) + existing.split("\n").filter { it.isNotBlank() })
                     .take(25)
                     .joinToString("\n")
@@ -2759,16 +3651,46 @@ class OverlayService : Service() {
         text: String,
         colorHex: String,
         loading: Boolean = false,
-        triggerFeedback: Boolean = true
+        triggerFeedback: Boolean = true,
+        preserveIslandTitle: Boolean = false
     ) {
         mainHandler.post {
             val normalized = text.trim()
-            if (isCamouflageEnabled) {
+            val netSpeedDisguise = isAdvEnabled(MainActivity.PREF_KEY_ADV_NET_SPEED_DISGUISE)
+            val splitPill = isAdvEnabled(MainActivity.PREF_KEY_ADV_SPLIT_PILL)
+
+            tvAnswerDisplay?.maxWidth = if (splitPill || netSpeedDisguise) dpToPx(210) else dpToPx(135)
+
+            if (netSpeedDisguise) {
+                ivIslandIcon?.setImageResource(R.drawable.ic_prism_orb)
+                llIslandExplanationDrawer?.visibility = View.GONE
+                if (!preserveIslandTitle) {
+                    tvIslandTitle?.text = "Net Speed"
+                }
+                if (loading) {
+                    val idleSpeed = "0.48 MB/s"
+                    tvAnswerDisplay?.text = idleSpeed
+                    tvAnswerDisplay?.textSize = 12f
+                    tvAnswerDisplay?.setTextColor(Color.parseColor("#0369A1"))
+                    tvWindowAnswerBadge?.text = idleSpeed
+                    tvWindowAnswerBadge?.setTextColor(Color.parseColor("#0369A1"))
+                } else {
+                    val (speedText, isResolved) = formatNetworkSpeedDisguise(normalized)
+                    tvAnswerDisplay?.text = speedText
+                    tvAnswerDisplay?.textSize = 12f
+                    val badgeColor = Color.parseColor(if (isResolved) "#047857" else "#0F172A")
+                    tvAnswerDisplay?.setTextColor(badgeColor)
+                    tvWindowAnswerBadge?.text = speedText
+                    tvWindowAnswerBadge?.setTextColor(badgeColor)
+                }
+            } else if (isCamouflageEnabled) {
                 ivIslandIcon?.setImageResource(R.drawable.ic_battery_camouflage)
                 llIslandExplanationDrawer?.visibility = View.GONE
                 val batteryNow = getDeviceBatteryPercentage()
-                if (loading) {
+                if (!preserveIslandTitle) {
                     tvIslandTitle?.text = "Charging"
+                }
+                if (loading) {
                     val loadingCamo = "${batteryNow}%"
                     tvAnswerDisplay?.text = loadingCamo
                     tvAnswerDisplay?.textSize = 13f
@@ -2777,7 +3699,6 @@ class OverlayService : Service() {
                     tvWindowAnswerBadge?.setTextColor(Color.parseColor("#0369A1"))
                 } else {
                     val (camoText, isResolved) = formatChargingCamouflage(normalized, batteryNow)
-                    tvIslandTitle?.text = "Charging"
                     tvAnswerDisplay?.text = camoText
                     tvAnswerDisplay?.textSize = if (camoText.length <= 4) 13.5f else 11.5f
                     val badgeColor = Color.parseColor(if (isResolved) "#047857" else "#0F172A")
@@ -2788,7 +3709,9 @@ class OverlayService : Service() {
             } else {
                 ivIslandIcon?.setImageResource(R.drawable.ic_prism_orb)
                 if (loading) {
-                    tvIslandTitle?.text = "Solving..."
+                    if (!preserveIslandTitle) {
+                        tvIslandTitle?.text = "Solving..."
+                    }
                     tvAnswerDisplay?.text = normalized
                     tvAnswerDisplay?.textSize = 14f
                     tvAnswerDisplay?.setTextColor(Color.parseColor(colorHex))
@@ -2796,20 +3719,33 @@ class OverlayService : Service() {
                     tvWindowAnswerBadge?.setTextColor(Color.parseColor(colorHex))
                 } else {
                     if (isValidAnswerBadge(normalized)) {
-                        val displayVal = if (normalized.length == 1) normalized.uppercase() else normalized
-                        val hasDrawerInfo = !tvIslandExplanation?.text.isNullOrBlank()
-                        tvIslandTitle?.text = if (hasDrawerInfo) "Answer • Info" else "Answer"
+                        val baseBadge = if (normalized.length == 1) normalized.uppercase() else normalized
+                        val shortAnswerTxt = latestAnswerModel?.shortAnswer?.trim().orEmpty()
+                        val displayVal = if (splitPill &&
+                            shortAnswerTxt.isNotBlank() &&
+                            !shortAnswerTxt.equals(baseBadge, ignoreCase = true)
+                        ) {
+                            "$baseBadge • ${shortAnswerTxt.take(18)}"
+                        } else {
+                            baseBadge
+                        }
+                        if (!preserveIslandTitle) {
+                            val hasDrawerInfo = !tvIslandExplanation?.text.isNullOrBlank()
+                            tvIslandTitle?.text = if (hasDrawerInfo) "Answer • Info" else "Answer"
+                        }
                         tvAnswerDisplay?.text = displayVal
                         tvAnswerDisplay?.textSize = when {
                             displayVal.length <= 2 -> 15f
-                            displayVal.length <= 7 -> 12.5f
-                            else -> 10.5f
+                            displayVal.length <= 8 -> 12.5f
+                            else -> 11f
                         }
                         tvAnswerDisplay?.setTextColor(Color.parseColor("#047857"))
                         tvWindowAnswerBadge?.text = displayVal
                         tvWindowAnswerBadge?.setTextColor(Color.parseColor("#047857"))
                     } else {
-                        tvIslandTitle?.text = "Tap to Solve"
+                        if (!preserveIslandTitle) {
+                            tvIslandTitle?.text = "Tap to Solve"
+                        }
                         tvAnswerDisplay?.text = normalized
                         tvAnswerDisplay?.textSize = 14f
                         tvAnswerDisplay?.setTextColor(Color.parseColor(colorHex))
@@ -2823,13 +3759,13 @@ class OverlayService : Service() {
                 startScanBreathingAnim()
             } else {
                 stopScanBreathingAnim()
-                ivScanIcon?.setImageResource(android.R.drawable.ic_media_play)
                 isScanning = false
                 if (triggerFeedback && isValidAnswerBadge(normalized)) {
                     animateAnswerPop(tvAnswerDisplay)
                     animateAnswerPop(tvWindowAnswerBadge)
                     triggerHapticFeedback(normalized)
                 }
+                wakeAndScheduleIdleFade()
             }
 
             try { bubbleView?.let { windowManager.updateViewLayout(it, bubbleParams) } } catch (_: Exception) {}
@@ -3311,12 +4247,12 @@ class OverlayService : Service() {
     private var scanBreathingAnimator: ObjectAnimator? = null
 
     private fun startScanBreathingAnim() {
-        val target = ivScanIcon ?: return
+        val target = ivIslandIcon ?: ivBubbleIcon ?: return
         if (scanBreathingAnimator?.isRunning == true) return
 
-        val scaleX = PropertyValuesHolder.ofFloat(View.SCALE_X, 1.0f, 1.25f, 1.0f)
-        val scaleY = PropertyValuesHolder.ofFloat(View.SCALE_Y, 1.0f, 1.25f, 1.0f)
-        val alpha = PropertyValuesHolder.ofFloat(View.ALPHA, 1.0f, 0.6f, 1.0f)
+        val scaleX = PropertyValuesHolder.ofFloat(View.SCALE_X, 1.0f, 1.18f, 1.0f)
+        val scaleY = PropertyValuesHolder.ofFloat(View.SCALE_Y, 1.0f, 1.18f, 1.0f)
+        val alpha = PropertyValuesHolder.ofFloat(View.ALPHA, 1.0f, 0.65f, 1.0f)
 
         scanBreathingAnimator = ObjectAnimator.ofPropertyValuesHolder(target, scaleX, scaleY, alpha).apply {
             duration = 750
@@ -3330,7 +4266,7 @@ class OverlayService : Service() {
     private fun stopScanBreathingAnim() {
         scanBreathingAnimator?.cancel()
         scanBreathingAnimator = null
-        ivScanIcon?.let {
+        (ivIslandIcon ?: ivBubbleIcon)?.let {
             it.scaleX = 1.0f
             it.scaleY = 1.0f
             it.alpha = 1.0f
@@ -3366,12 +4302,60 @@ class OverlayService : Service() {
         }
     }
 
-    private fun buildNotification(): Notification =
-        NotificationCompat.Builder(this, CHANNEL_ID)
+    private fun refreshOngoingNotification() {
+        if (!isForegroundStarted) return
+        try {
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+            nm?.notify(NOTIFICATION_ID, buildNotification())
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun buildNotification(): Notification {
+        val openAppIntent = PendingIntent.getActivity(
+            this,
+            100,
+            Intent(this, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Prism AI Island Active")
-            .setContentText("Auto-fresh Gemini solver ready. Tap the Dynamic Island to solve.")
+            .setContentText(
+                if (isCamouflageEnabled) "Stealth charging mode ready. Tap pill to solve."
+                else "Instant solver ready. Tap the Dynamic Island to solve."
+            )
             .setSmallIcon(R.drawable.ic_prism_orb)
+            .setContentIntent(openAppIntent)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setOngoing(true)
-            .build()
+
+        if (isAdvEnabled(MainActivity.PREF_KEY_ADV_QUICK_TILE_NOTIF)) {
+            val solvePi = PendingIntent.getService(
+                this,
+                101,
+                Intent(this, OverlayService::class.java).apply { action = ACTION_NOTIF_SOLVE_NOW },
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            val stealthPi = PendingIntent.getService(
+                this,
+                102,
+                Intent(this, OverlayService::class.java).apply { action = ACTION_NOTIF_TOGGLE_STEALTH },
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            val stopPi = PendingIntent.getService(
+                this,
+                103,
+                Intent(this, OverlayService::class.java).apply { action = ACTION_NOTIF_STOP },
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            builder.addAction(0, "Solve Now", solvePi)
+            builder.addAction(0, if (isCamouflageEnabled) "ABCD" else "Stealth", stealthPi)
+            builder.addAction(0, "Stop", stopPi)
+        }
+
+        return builder.build()
+    }
 }

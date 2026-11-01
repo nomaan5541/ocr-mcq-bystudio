@@ -25,6 +25,14 @@ import com.omnisolve.overlay.ui.theme.LocalWhiteGlassPalette
 
 val LocalReducedMotion = compositionLocalOf { true }
 
+data class SpringPhysicsConfig(
+    val enabled: Boolean = false,
+    val dampingRatio: Float = 0.72f,
+    val stiffness: Float = 650f
+)
+
+val LocalSpringPhysics = compositionLocalOf { SpringPhysicsConfig() }
+
 @Composable
 fun rememberSystemReducedMotion(): Boolean {
     val context = LocalContext.current
@@ -43,17 +51,27 @@ fun rememberSystemReducedMotion(): Boolean {
 }
 
 object MotionTokens {
-    fun <T> tactilePress(reducedMotion: Boolean = true): SpringSpec<T> =
-        spring(dampingRatio = 1f, stiffness = 3000f)
+    fun <T> tactilePress(
+        reducedMotion: Boolean = true,
+        config: SpringPhysicsConfig = SpringPhysicsConfig()
+    ): SpringSpec<T> =
+        if (!config.enabled || reducedMotion) spring(dampingRatio = 1f, stiffness = 3000f)
+        else spring(dampingRatio = config.dampingRatio.coerceIn(0.4f, 1f), stiffness = config.stiffness.coerceIn(180f, 2000f))
 
-    fun <T> liquidMorph(reducedMotion: Boolean = true): SpringSpec<T> =
-        spring(dampingRatio = 1f, stiffness = 3000f)
+    fun <T> liquidMorph(
+        reducedMotion: Boolean = true,
+        config: SpringPhysicsConfig = SpringPhysicsConfig()
+    ): SpringSpec<T> = tactilePress(reducedMotion, config)
 
-    fun <T> gentleSettle(reducedMotion: Boolean = true): SpringSpec<T> =
-        spring(dampingRatio = 1f, stiffness = 3000f)
+    fun <T> gentleSettle(
+        reducedMotion: Boolean = true,
+        config: SpringPhysicsConfig = SpringPhysicsConfig()
+    ): SpringSpec<T> = tactilePress(reducedMotion, config)
 
-    fun <T> counterSettle(reducedMotion: Boolean = true): SpringSpec<T> =
-        spring(dampingRatio = 1f, stiffness = 3000f)
+    fun <T> counterSettle(
+        reducedMotion: Boolean = true,
+        config: SpringPhysicsConfig = SpringPhysicsConfig()
+    ): SpringSpec<T> = tactilePress(reducedMotion, config)
 }
 
 enum class GlassMaterialStrength {
@@ -65,8 +83,7 @@ enum class GlassMaterialStrength {
 }
 
 /**
- * Lightweight, zero-lag surface modifier: renders crisp elevated daylight cards immediately on
- * Frame 1 without per-card gesture coroutines, 3D perspective shaders, or continuous redraws.
+ * Lightweight, zero-lag surface modifier supporting both Daylight White Glass and Dark Obsidian Liquid Glass.
  */
 fun Modifier.livingGlassSurface(
     strength: GlassMaterialStrength = GlassMaterialStrength.Card,
@@ -89,29 +106,29 @@ fun Modifier.livingGlassSurface(
     val borderColor: Color
     when (strength) {
         GlassMaterialStrength.FloatingDock -> {
-            topFill = Color(0xFFFFFFFF)
-            bottomFill = Color(0xFFF8FAFC)
-            borderColor = Color(0xFFCBD5E1)
+            topFill = palette.glassStrong
+            bottomFill = palette.glassMedium
+            borderColor = palette.rimHighlight
         }
         GlassMaterialStrength.Hero -> {
-            topFill = Color(0xFFFFFFFF)
-            bottomFill = Color(0xFFF0F9FF)
-            borderColor = Color(0xFFBAE6FD)
+            topFill = palette.glassStrong
+            bottomFill = palette.glassTintedSky
+            borderColor = palette.rimEdgeCool
         }
         GlassMaterialStrength.AccentMint -> {
-            topFill = Color(0xFFFFFFFF)
+            topFill = palette.glassStrong
             bottomFill = palette.glassTintedMint
-            borderColor = Color(0xFFA7F3D0)
+            borderColor = palette.rimEdgeMint
         }
         GlassMaterialStrength.AccentSky -> {
-            topFill = Color(0xFFFFFFFF)
+            topFill = palette.glassStrong
             bottomFill = palette.glassTintedSky
-            borderColor = Color(0xFFBAE6FD)
+            borderColor = palette.rimEdgeCool
         }
         GlassMaterialStrength.Card -> {
-            topFill = Color(0xFFFFFFFF)
-            bottomFill = Color(0xFFF8FAFC)
-            borderColor = Color(0xFFE2E8F0)
+            topFill = palette.glassStrong
+            bottomFill = palette.glassMedium
+            borderColor = palette.rimHighlight
         }
     }
 
@@ -119,8 +136,8 @@ fun Modifier.livingGlassSurface(
         .shadow(
             elevation = shadowElevation,
             shape = shape,
-            ambientColor = Color(0x140F172A),
-            spotColor = Color(0x1A0F172A)
+            ambientColor = if (palette.isDarkObsidian) Color(0x66000000) else Color(0x140F172A),
+            spotColor = if (palette.isDarkObsidian) Color(0x80000000) else Color(0x1A0F172A)
         )
         .clip(shape)
         .background(
@@ -135,7 +152,7 @@ fun Modifier.livingGlassSurface(
 }
 
 /**
- * Static, zero-CPU daylight backdrop — renders immediately on Frame 1 with zero animation overhead.
+ * Static, zero-CPU backdrop supporting both Daylight White Glass and Dark Obsidian Liquid Glass.
  */
 @Composable
 fun LiquidAtmosphericBackdrop(
@@ -143,6 +160,7 @@ fun LiquidAtmosphericBackdrop(
     modifier: Modifier = Modifier
 ) {
     val palette = LocalWhiteGlassPalette.current
+    val midColor = if (palette.isDarkObsidian) Color(0xFF0B1120) else Color(0xFFF1F5F9)
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -150,7 +168,7 @@ fun LiquidAtmosphericBackdrop(
                 brush = Brush.verticalGradient(
                     colors = listOf(
                         palette.canvasTop,
-                        Color(0xFFF1F5F9),
+                        midColor,
                         palette.canvasBottom
                     )
                 )
@@ -158,9 +176,6 @@ fun LiquidAtmosphericBackdrop(
     )
 }
 
-/**
- * Instant zero-delay section container (replaces staggered entrance animation so screens appear immediately).
- */
 @Composable
 fun ScrollRevealSection(
     index: Int = 0,

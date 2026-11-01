@@ -10,6 +10,7 @@ import com.google.firebase.ai.type.content
 import com.google.firebase.ai.type.generationConfig
 import com.google.gson.JsonParser
 import com.omnisolve.overlay.model.AnswerModel
+import com.omnisolve.overlay.model.QuestionSolveMode
 import com.omnisolve.overlay.model.SubjectMode
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.coroutines.cancellation.CancellationException
@@ -20,12 +21,10 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 
 /**
- * Primary Zero-Setup Cloud Gemini Solver powered by Firebase AI Logic (`Firebase.ai`).
- * - Works out-of-the-box with zero API key or WebView login.
- * - Supports Multimodal Vision (cropped diagrams, math equations, foreign scripts) + Text.
- * - Uses structured `Schema.obj(...)` JSON output for MCQ (A-F), Multi-Select, True/False,
- *   Fill-in-the-Blank / Numerical, and Matching pairs.
- * - Supports Subject-Specific prompt tuning and Dual-Check Verification mode.
+ * Single-Shot Ultra-Fast Cloud Gemini Solver powered by Firebase AI Logic (`Firebase.ai`).
+ * - Executes a single fast pass by default (never re-confirming or looping across slow retries).
+ * - Uses a compact 2-field JSON schema (`answerBadge` + `shortAnswer`) for rapid <2s responses
+ *   unless extended explanations or Dual-Check are explicitly enabled in Advanced Settings.
  */
 object PrismAiSolverEngine {
 
@@ -38,7 +37,18 @@ object PrismAiSolverEngine {
 
     private val modelCache = ConcurrentHashMap<String, GenerativeModel>()
 
-    private val answerResponseSchema = Schema.obj(
+    private val compactFastSchema = Schema.obj(
+        mapOf(
+            "answerBadge" to Schema.string(
+                "Final option letter A-F for MCQ (map 1-6 to A-F), 'A, C' for multi-select, 'True'/'False', or concise value."
+            ),
+            "shortAnswer" to Schema.string(
+                "Short winning option text (max 36 chars)."
+            )
+        )
+    )
+
+    private val fullAnswerSchema = Schema.obj(
         mapOf(
             "answerBadge" to Schema.string(
                 "Concise final answer for a compact badge: single letter A-F for MCQ (map 1-6 to A-F), " +
@@ -49,7 +59,7 @@ object PrismAiSolverEngine {
                 "Short text of the winning option or concise answer value (max 45 chars)."
             ),
             "explanation" to Schema.string(
-                "Clear, concise 1-to-2 sentence explanation or key formula showing why this answer is right."
+                "Clear, concise 1-sentence explanation showing why this answer is right."
             ),
             "questionType" to Schema.enumeration(
                 listOf(
@@ -65,10 +75,10 @@ object PrismAiSolverEngine {
                 "Confidence percentage from 0 to 100."
             ),
             "language" to Schema.string(
-                "Detected language of the question (e.g., English, Hindi, Spanish, Arabic, French, Chinese, Japanese)."
+                "Detected language of the question."
             ),
             "translatedQuestion" to Schema.string(
-                "English translation of the question if it is not in English, otherwise empty string."
+                "English translation of the question if non-English, else empty string."
             )
         )
     )
@@ -98,6 +108,10 @@ object PrismAiSolverEngine {
     internal fun isNonRetryableCloudFailure(error: Throwable): Boolean {
         val msg = "${error.javaClass.simpleName}: ${error.message.orEmpty()}".lowercase()
         return msg.contains("403") ||
+            msg.contains("401") ||
+            msg.contains("400") ||
+            msg.contains("429") ||
+            msg.contains("quota") ||
             msg.contains("appcheck") ||
             msg.contains("app check") ||
             msg.contains("permission_denied") ||
@@ -109,59 +123,62 @@ object PrismAiSolverEngine {
             msg.contains("unknownhostexception")
     }
 
-    private fun getOrCreateModel(modelName: String, subject: SubjectMode): GenerativeModel {
+    private fun getOrCreateModel(
+        modelName: String,
+        subject: SubjectMode,
+        compactMode: Boolean
+    ): GenerativeModel {
         val safeModel = normalizeCloudModel(modelName)
-        val cacheKey = "$safeModel:${subject.id}"
+        val modeTag = if (compactMode) "compact" else "full"
+        val cacheKey = "$safeModel:${subject.id}:$modeTag"
         return modelCache.getOrPut(cacheKey) {
             Firebase.ai.generativeModel(
                 modelName = safeModel,
                 generationConfig = generationConfig {
                     responseMimeType = "application/json"
-                    responseSchema = answerResponseSchema
+                    responseSchema = if (compactMode) compactFastSchema else fullAnswerSchema
                     temperature = 0.0f
-                    maxOutputTokens = 256
+                    maxOutputTokens = if (compactMode) 96 else 220
                 },
                 systemInstruction = content {
-                    text(buildSystemInstruction(subject))
+                    text(buildSystemInstruction(subject, compactMode))
                 }
             )
         }
     }
 
-    private fun buildSystemInstruction(subject: SubjectMode): String {
+    private fun buildSystemInstruction(subject: SubjectMode, compactMode: Boolean): String {
         val domainFocus = when (subject) {
-            SubjectMode.GENERAL ->
-                "Apply rigorous academic knowledge across general studies, humanities, sciences, and aptitude."
-            SubjectMode.MATH ->
-                "You are a Mathematics & Calculus olympiad specialist. Verify derivatives, integrals, limits, algebra, signs, and units carefully before selecting the final option."
-            SubjectMode.SCIENCE ->
-                "You are a Physics & Chemistry specialist. Check physical laws, dimensional analysis, vector directions, chemical equations, and stoichiometry."
-            SubjectMode.CODING ->
-                "You are a Computer Science, Algorithms & Software Engineering specialist. Trace code execution line-by-line, edge cases, off-by-one bounds, and exact Big-O time/space complexity."
-            SubjectMode.MEDICAL ->
-                "You are a Medical & Biological Sciences specialist. Correlate clinical symptoms, lab findings, pharmacology mechanisms, and cellular pathways accurately."
-            SubjectMode.LAW ->
-                "You are a Legal Reasoning, Verbal & Logical Aptitude specialist. Identify the exact legal principle, logical premise, and necessary vs. sufficient conditions."
+            SubjectMode.GENERAL -> "Solve general academic, science, humanities, and aptitude questions accurately."
+            SubjectMode.MATH -> "Mathematics & Calculus specialist: verify algebra, signs, derivatives, and units."
+            SubjectMode.SCIENCE -> "Physics & Chemistry specialist: check physical laws, formulas, and stoichiometry."
+            SubjectMode.CODING -> "Computer Science specialist: trace code execution, edge cases, and Big-O complexity."
+            SubjectMode.MEDICAL -> "Medical & Biology specialist: correlate clinical findings, pathways, and pharmacology."
+            SubjectMode.LAW -> "Legal & Logical Reasoning specialist: check exact premises and legal principles."
         }
-        return """
-            You are Prism AI, an ultra-accurate instant screen question solver.
-            $domainFocus
-            Rules:
-            1. Identify the primary question currently visible on the user's screen (ignore surrounding phone status bars, timers, browser tabs, or navigation chrome).
-            2. Support ALL question formats:
-               - Standard MCQ with 4 to 6 choices: output ONLY the uppercase letter (A, B, C, D, E, or F) in answerBadge. If choices are numbered 1..6, map 1=A, 2=B, 3=C, 4=D, 5=E, 6=F.
-               - Multi-Select ("Select all that apply"): output uppercase letters separated by commas, e.g. "A, C".
-               - True / False: output "True" or "False" (or the corresponding option letter if labeled A/B).
-               - Fill-in-the-blank or Numerical value: output the exact concise value/term in answerBadge (max 24 chars).
-               - Matching / Ordering: output compact pairs like "1-C, 2-A, 3-B".
-            3. Keep explanation concise (max 2 short sentences or key formula) so it fits cleanly inside a compact floating pill drawer.
-            4. If the question is in a non-English language (Hindi, Spanish, Arabic, French, Chinese, Japanese, etc.), solve it accurately and include a clear English translation in translatedQuestion.
-        """.trimIndent()
+        return if (compactMode) {
+            """
+            You are Prism AI, an instant single-pass quiz solver. $domainFocus
+            Identify the primary question on screen and output JSON immediately:
+            - Standard MCQ (A-F or 1-6): output uppercase A-F in answerBadge (1=A..6=F).
+            - Multi-select: output "A, C".
+            - True/False: output "True" or "False".
+            - Numerical/Fill-blank: output exact short value in answerBadge.
+            - Put the short option text (max 36 chars) in shortAnswer.
+            """.trimIndent()
+        } else {
+            """
+            You are Prism AI, an ultra-accurate instant screen question solver. $domainFocus
+            1. Identify the primary question on screen (ignore status bars or browser tabs).
+            2. Output uppercase A-F for MCQ (map 1-6 to A-F), "A, C" for multi-select, "True"/"False", or concise value in answerBadge.
+            3. Keep explanation to 1 concise sentence. Include English translation in translatedQuestion only if non-English.
+            """.trimIndent()
+        }
     }
 
     /**
-     * Solves a question using Firebase AI Logic (`Firebase.ai`) with optional screen/cropped Bitmap
-     * and optional Dual-Check Verification.
+     * Solves a question in a single fast pass via Firebase AI Logic (`Firebase.ai`).
+     * Never runs a second verification pass unless `dualVerify` is explicitly true.
      */
     suspend fun solveQuestion(
         extractedText: String,
@@ -169,70 +186,57 @@ object PrismAiSolverEngine {
         requestedModel: String? = MODEL_FLASH,
         subjectMode: SubjectMode = SubjectMode.GENERAL,
         dualVerify: Boolean = false,
-        translateToEnglish: Boolean = false
+        translateToEnglish: Boolean = false,
+        forceVisionBitmap: Boolean = false,
+        compactFastMode: Boolean = true,
+        solveMode: QuestionSolveMode = QuestionSolveMode.STANDARD
     ): AnswerModel = withContext(Dispatchers.IO) {
         if (extractedText.isBlank() && screenBitmap == null) {
             throw IllegalArgumentException("EMPTY_INPUT")
         }
 
         val primaryModelId = normalizeCloudModel(requestedModel)
-        val fallbackOrder = listOf(primaryModelId, MODEL_LITE).distinct()
-        val attachBitmap = shouldAttachVisionBitmap(extractedText, screenBitmap != null)
+        val useCompact = compactFastMode && !dualVerify && !translateToEnglish && solveMode == QuestionSolveMode.STANDARD
+        val attachBitmap = forceVisionBitmap || shouldAttachVisionBitmap(extractedText, screenBitmap != null)
         val preparedBitmap = if (attachBitmap && screenBitmap != null) {
-            downscaleForInference(screenBitmap, maxDimension = 1024)
+            downscaleForInference(screenBitmap, maxDimension = 960)
         } else {
             null
         }
 
         try {
-            var primaryResult: AnswerModel? = null
-            var lastError: Exception? = null
+            val initial = invokeSinglePass(
+                modelId = primaryModelId,
+                subject = subjectMode,
+                extractedText = extractedText,
+                bitmap = preparedBitmap,
+                translateToEnglish = translateToEnglish,
+                verificationDraft = null,
+                compactMode = useCompact,
+                solveMode = solveMode
+            )
 
-            for (candidateModel in fallbackOrder) {
-                try {
-                    primaryResult = invokeSinglePass(
-                        modelId = candidateModel,
-                        subject = subjectMode,
-                        extractedText = extractedText,
-                        bitmap = preparedBitmap,
-                        translateToEnglish = translateToEnglish,
-                        verificationDraft = null
-                    )
-                    break
-                } catch (ce: CancellationException) {
-                    throw ce
-                } catch (e: Exception) {
-                    lastError = e
-                    Log.w(TAG, "Firebase AI Logic pass on $candidateModel failed: ${e.message}")
-                    if (isNonRetryableCloudFailure(e)) {
-                        break
-                    }
-                }
-            }
-
-            val initial = primaryResult ?: throw (lastError ?: IllegalStateException("CLOUD_AI_UNAVAILABLE"))
-
-            // Dual-Check Verification Pass: cross-verify when explicitly enabled
             if (dualVerify) {
-                try {
-                    val verifierModel = if (primaryModelId == MODEL_ARGON) MODEL_ARGON else MODEL_FLASH
+                return@withContext try {
                     val verifiedResult = invokeSinglePass(
-                        modelId = verifierModel,
+                        modelId = primaryModelId,
                         subject = subjectMode,
                         extractedText = extractedText,
                         bitmap = preparedBitmap,
                         translateToEnglish = translateToEnglish,
-                        verificationDraft = initial
+                        verificationDraft = initial,
+                        compactMode = false,
+                        solveMode = solveMode
                     )
-                    return@withContext verifiedResult.copy(
+                    verifiedResult.copy(
                         verified = true,
-                        engineLabel = "Verified • $verifierModel"
+                        engineLabel = "Verified • $primaryModelId"
                     )
                 } catch (ce: CancellationException) {
                     throw ce
                 } catch (verifyErr: Exception) {
-                    Log.w(TAG, "Dual-check pass skipped (${verifyErr.message}), returning primary answer")
-                    return@withContext initial
+                    Log.w(TAG, "Dual-check skipped (${verifyErr.message}), returning primary answer")
+                    initial
                 }
             }
 
@@ -250,30 +254,37 @@ object PrismAiSolverEngine {
         extractedText: String,
         bitmap: Bitmap?,
         translateToEnglish: Boolean,
-        verificationDraft: AnswerModel?
+        verificationDraft: AnswerModel?,
+        compactMode: Boolean,
+        solveMode: QuestionSolveMode = QuestionSolveMode.STANDARD
     ): AnswerModel {
-        val model = getOrCreateModel(modelId, subject)
+        val model = getOrCreateModel(modelId, subject, compactMode)
         val prompt = buildString {
             if (verificationDraft != null) {
-                appendLine("DUAL-CHECK VERIFICATION MODE:")
-                appendLine("An initial pass proposed answerBadge='${verificationDraft.correctChoice}' (${verificationDraft.shortAnswer}).")
-                appendLine("Independently re-solve the question from scratch, check for subtle traps, negation words ('NOT', 'EXCEPT'), unit conversions, or edge cases, and output the verified JSON answer.")
-                appendLine()
+                appendLine("VERIFY DRAFT: '${verificationDraft.correctChoice}' (${verificationDraft.shortAnswer}). Re-check for NOT/EXCEPT or math traps and output JSON.")
             }
-            appendLine("Subject Focus: ${subject.label}")
-            if (translateToEnglish) {
-                appendLine("Translation Requested: Provide an English translation in translatedQuestion if the source text is non-English (or a concise plain-English restatement).")
+            if (subject != SubjectMode.GENERAL) {
+                appendLine("Subject: ${subject.label}")
+            }
+            when (solveMode) {
+                QuestionSolveMode.MATCH_FOLLOWING ->
+                    appendLine("MODE: MATCH THE FOLLOWING. Match every item in Column I / List I with Column II / List II carefully. Put the winning option letter A-F (or compact pairs like 'A-2, B-4, C-1, D-3' if no single letter option exists) in answerBadge.")
+                QuestionSolveMode.COMPLEX_MATH ->
+                    appendLine("MODE: COMPLICATED MATH / MULTI-STEP. Carefully verify equations, signs, derivatives/integrals, units, and multi-statement conditions before putting the final answer in answerBadge.")
+                QuestionSolveMode.STANDARD -> Unit
+            }
+            if (translateToEnglish && !compactMode) {
+                appendLine("Include English translation in translatedQuestion if non-English.")
             }
             if (extractedText.isNotBlank()) {
-                appendLine("--- EXTRACTED SCREEN TEXT ---")
-                appendLine(extractedText.trim().take(3200))
-                appendLine("--- END SCREEN TEXT ---")
+                appendLine("Question:")
+                appendLine(extractedText.trim().take(3400))
             } else {
-                appendLine("Read the question and options directly from the attached screen image and solve.")
+                appendLine("Solve the question shown in the attached cropped image.")
             }
         }
 
-        val response = withTimeout(35_000L) {
+        val response = withTimeout(30_000L) {
             if (bitmap != null) {
                 model.generateContent(
                     content {
@@ -288,7 +299,7 @@ object PrismAiSolverEngine {
 
         val rawJson = response.text?.trim()
             ?: throw IllegalStateException("EMPTY_AI_RESPONSE")
-        Log.d(TAG, "Firebase AI ($modelId) structured output: $rawJson")
+        Log.d(TAG, "Firebase AI ($modelId, compact=$compactMode) output: $rawJson")
         return parseStructuredAnswer(rawJson, subject, modelId)
     }
 
@@ -312,7 +323,7 @@ object PrismAiSolverEngine {
         } else {
             inferQuestionType(normalizedBadge)
         }
-        val confidence = (obj.get("confidence")?.asInt ?: 94).coerceIn(0, 100)
+        val confidence = (obj.get("confidence")?.asInt ?: 95).coerceIn(0, 100)
         val language = obj.get("language")?.asString?.trim()?.ifBlank { "English" }?.take(40) ?: "English"
         val translated = obj.get("translatedQuestion")?.asString?.trim().orEmpty().take(1200)
 
@@ -326,14 +337,13 @@ object PrismAiSolverEngine {
             translatedQuestion = translated,
             subject = subject.id,
             verified = false,
-            engineLabel = "Cloud • $modelId"
+            engineLabel = "Server • $modelId"
         )
     }
 
     internal fun normalizeBadge(raw: String): String {
         val trimmed = raw.trim()
         if (trimmed.isEmpty()) return "?"
-        // Single parenthesized or dotted option like "(B)" or "C."
         val singleMatch = Regex("""^\(?([A-Fa-f])\)?[.)]?$""").matchEntire(trimmed)
         if (singleMatch != null) {
             return singleMatch.groupValues[1].uppercase()

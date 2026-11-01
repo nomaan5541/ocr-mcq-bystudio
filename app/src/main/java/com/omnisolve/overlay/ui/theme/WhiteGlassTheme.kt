@@ -4,6 +4,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -34,31 +35,70 @@ val InterFamily = FontFamily(
 
 @Immutable
 data class WhiteGlassPalette(
+    val isDarkObsidian: Boolean = false,
     val canvasTop: Color = Color(0xFFF6FAFF),
     val canvasBottom: Color = Color(0xFFEAF2FB),
-    val glassStrong: Color = Color(0xF7FFFFFF),
-    val glassMedium: Color = Color(0xEDFFFFFF),
-    val glassSubtle: Color = Color(0xDBFFFFFF),
-    val glassTintedSky: Color = Color(0xF0F0F9FF),
-    val glassTintedMint: Color = Color(0xF0ECFDF5),
-    val rimHighlight: Color = Color(0xFAFFFFFF),
-    val rimEdgeCool: Color = Color(0x420369A1),
-    val rimEdgeMint: Color = Color(0x48047857),
+    val glassStrong: Color = Color(0xFFFFFFFF),
+    val glassMedium: Color = Color(0xFFF8FAFC),
+    val glassSubtle: Color = Color(0xFFF1F5F9),
+    val glassTintedSky: Color = Color(0xFFF0F9FF),
+    val glassTintedMint: Color = Color(0xFFECFDF5),
+    val rimHighlight: Color = Color(0xFFE2E8F0),
+    val rimEdgeCool: Color = Color(0xFFBAE6FD),
+    val rimEdgeMint: Color = Color(0xFFA7F3D0),
     val inkPrimary: Color = Color(0xFF020617),
-    val inkSecondary: Color = Color(0xFF0F172A),
-    val inkMuted: Color = Color(0xFF1E293B),
-    val accentSky: Color = Color(0xFF0369A1),
-    val accentSkyBright: Color = Color(0xFF0284C7),
+    val inkSecondary: Color = Color(0xFF334155),
+    val inkMuted: Color = Color(0xFF64748B),
+    val accentSky: Color = Color(0xFF0284C7),
+    val accentSkyBright: Color = Color(0xFF38BDF8),
     val accentSkyContainer: Color = Color(0xFFE0F2FE),
     val accentMint: Color = Color(0xFF047857),
     val accentMintContainer: Color = Color(0xFFD1FAE5),
+    val accentEmerald: Color = Color(0xFF047857),
+    val accentEmeraldContainer: Color = Color(0xFFD1FAE5),
     val warningAmber: Color = Color(0xFFB45309),
     val warningContainer: Color = Color(0xFFFEF3C7),
+    val accentAmber: Color = Color(0xFFB45309),
+    val accentAmberContainer: Color = Color(0xFFFEF3C7),
     val dangerRose: Color = Color(0xFFBE123C),
-    val dangerContainer: Color = Color(0xFFFFE4E6)
+    val dangerContainer: Color = Color(0xFFFFE4E6),
+    val cardHairlineBorder: Color = Color(0xFFCBD5E1)
 )
 
-val LocalWhiteGlassPalette = staticCompositionLocalOf { WhiteGlassPalette() }
+private fun buildDaylightPalette() = WhiteGlassPalette(isDarkObsidian = false)
+
+private fun buildDarkObsidianPalette() = WhiteGlassPalette(
+    isDarkObsidian = true,
+    canvasTop = Color(0xFF090D16),
+    canvasBottom = Color(0xFF0F172A),
+    glassStrong = Color(0xFF151E2E),
+    glassMedium = Color(0xFF111827),
+    glassSubtle = Color(0xFF1E293B),
+    glassTintedSky = Color(0xFF0F2942),
+    glassTintedMint = Color(0xFF0A2E26),
+    rimHighlight = Color(0xFF293548),
+    rimEdgeCool = Color(0xFF0284C7),
+    rimEdgeMint = Color(0xFF059669),
+    inkPrimary = Color(0xFFF8FAFC),
+    inkSecondary = Color(0xFFCBD5E1),
+    inkMuted = Color(0xFF94A3B8),
+    accentSky = Color(0xFF38BDF8),
+    accentSkyBright = Color(0xFF7DD3FC),
+    accentSkyContainer = Color(0xFF0C4A6E),
+    accentMint = Color(0xFF34D399),
+    accentMintContainer = Color(0xFF064E3B),
+    accentEmerald = Color(0xFF34D399),
+    accentEmeraldContainer = Color(0xFF064E3B),
+    warningAmber = Color(0xFFFBBF24),
+    warningContainer = Color(0xFF451A03),
+    accentAmber = Color(0xFFFBBF24),
+    accentAmberContainer = Color(0xFF451A03),
+    dangerRose = Color(0xFFFB7185),
+    dangerContainer = Color(0xFF4C0519),
+    cardHairlineBorder = Color(0xFF334155)
+)
+
+val LocalWhiteGlassPalette = staticCompositionLocalOf { buildDaylightPalette() }
 
 private val DaylightMaterialColorScheme = lightColorScheme(
     primary = Color(0xFF0369A1),
@@ -81,6 +121,29 @@ private val DaylightMaterialColorScheme = lightColorScheme(
     outlineVariant = Color(0xFFCBD5E1),
     error = Color(0xFFBE123C),
     onError = Color.White
+)
+
+private val DarkObsidianMaterialColorScheme = darkColorScheme(
+    primary = Color(0xFF38BDF8),
+    onPrimary = Color(0xFF020617),
+    primaryContainer = Color(0xFF0C4A6E),
+    onPrimaryContainer = Color(0xFFE0F2FE),
+    secondary = Color(0xFF34D399),
+    onSecondary = Color(0xFF022C22),
+    secondaryContainer = Color(0xFF064E3B),
+    onSecondaryContainer = Color(0xFFD1FAE5),
+    tertiary = Color(0xFF818CF8),
+    onTertiary = Color(0xFF020617),
+    background = Color(0xFF090D16),
+    onBackground = Color(0xFFF8FAFC),
+    surface = Color(0xFF151E2E),
+    onSurface = Color(0xFFF8FAFC),
+    surfaceVariant = Color(0xFF1E293B),
+    onSurfaceVariant = Color(0xFFCBD5E1),
+    outline = Color(0xFF475569),
+    outlineVariant = Color(0xFF334155),
+    error = Color(0xFFFB7185),
+    onError = Color(0xFF4C0519)
 )
 
 val WhiteGlassTypography = Typography(
@@ -173,12 +236,14 @@ val WhiteGlassShapes = Shapes(
 
 @Composable
 fun WhiteGlassTheme(
+    darkObsidian: Boolean = false,
     content: @Composable () -> Unit
 ) {
-    val palette = WhiteGlassPalette()
+    val palette = if (darkObsidian) buildDarkObsidianPalette() else buildDaylightPalette()
+    val scheme = if (darkObsidian) DarkObsidianMaterialColorScheme else DaylightMaterialColorScheme
     CompositionLocalProvider(LocalWhiteGlassPalette provides palette) {
         MaterialTheme(
-            colorScheme = DaylightMaterialColorScheme,
+            colorScheme = scheme,
             typography = WhiteGlassTypography,
             shapes = WhiteGlassShapes,
             content = content

@@ -17,6 +17,7 @@ import com.omnisolve.overlay.api.PrismAiSolverEngine
 import com.omnisolve.overlay.data.SolvedQuestionRecord
 import com.omnisolve.overlay.data.SolvedQuestionRepository
 import com.omnisolve.overlay.model.AnswerModel
+import com.omnisolve.overlay.model.QuestionSolveMode
 import com.omnisolve.overlay.model.SolverMethod
 import com.omnisolve.overlay.model.SubjectMode
 import com.omnisolve.overlay.service.AutoClickAccessibilityService
@@ -48,7 +49,10 @@ data class SolvedHistoryEntry(
     val questionPreview: String,
     val answerLetter: String,
     val sourceLabel: String,
-    val timestamp: String
+    val timestamp: String,
+    val explanation: String = "",
+    val subject: String = "GENERAL",
+    val bookmarked: Boolean = false
 )
 
 data class MainUiState(
@@ -76,9 +80,13 @@ data class MainUiState(
     val geminiApiKey: String = "",
     val openAiApiKey: String = "",
     val configuredKeyCount: Int = 0,
+    val isTestingApiKeys: Boolean = false,
+    val apiKeysTestSummary: String? = null,
     val activePreset: String = "STUDY",
     val hudStyle: String = MainActivity.HUD_STYLE_ISLAND,
     val islandOpacityIndex: Int = 0,
+    val customOpacityPct: Int = 100,
+    val questionSolveMode: QuestionSolveMode = QuestionSolveMode.STANDARD,
     val displayMode: String = MainActivity.MODE_STEALTH,
     val autoClickEnabled: Boolean = false,
     val afkAutoAdvanceEnabled: Boolean = false,
@@ -98,6 +106,34 @@ data class MainUiState(
     val dualVerifyEnabled: Boolean = false,
     val translateToEnglish: Boolean = false,
 
+    // Advanced Options (ALL OFF by default — enabled explicitly in Advanced Settings)
+    val advCropToScanEnabled: Boolean = false,
+    val advIslandGesturesEnabled: Boolean = false,
+    val advSplitPillEnabled: Boolean = false,
+    val advMinimalShapesEnabled: Boolean = false,
+    val advNetSpeedDisguiseEnabled: Boolean = false,
+    val advAutoFadeIdleEnabled: Boolean = false,
+    val advFlashcardsExportEnabled: Boolean = false,
+    val advDarkObsidianEnabled: Boolean = false,
+    val advSpringPhysicsEnabled: Boolean = false,
+    val springDamping: Float = 0.72f,
+    val springStiffness: Float = 650f,
+    val advSplitScreenRailEnabled: Boolean = false,
+    val advQuickTileNotifEnabled: Boolean = false,
+
+    // Dynamic Flow Bar Options (Controllable ON/OFF in Settings -> Dynamic Flow Options)
+    val dfTwoPartCaptureEnabled: Boolean = true,
+    val dfScrollTimerEnabled: Boolean = true,
+    val dfComplexModeEnabled: Boolean = true,
+    val dfDiagramVisionEnabled: Boolean = false,
+    val dfQuickCropEnabled: Boolean = false,
+    val dfSwipeMethodLoopEnabled: Boolean = true,
+
+    // Flashcard Deck Search & Filters
+    val flashcardSearchQuery: String = "",
+    val flashcardSubjectFilter: String = "ALL",
+    val flashcardBookmarkedOnly: Boolean = false,
+
     // Practice & Metrics
     val solvedCount: Int = 12,
     val currentSampleIndex: Int = 0,
@@ -110,20 +146,26 @@ data class MainUiState(
     val statusBannerMessage: String? = null
 )
 
-private fun defaultHistoryEntries(): List<SolvedHistoryEntry> = listOf(
+private fun defaultHistoryEntries(bookmarkedIds: Set<Long> = emptySet()): List<SolvedHistoryEntry> = listOf(
     SolvedHistoryEntry(
         id = 1L,
         questionPreview = "Which cell structure produces most ATP energy?",
         answerLetter = "B",
         sourceLabel = "Biology • Cloud Gemini",
-        timestamp = "Just now"
+        timestamp = "Just now",
+        explanation = "Mitochondria generate ATP via oxidative phosphorylation.",
+        subject = SubjectMode.MEDICAL.id,
+        bookmarked = 1L in bookmarkedIds
     ),
     SolvedHistoryEntry(
         id = 2L,
         questionPreview = "Search time in a balanced binary search tree?",
         answerLetter = "B",
         sourceLabel = "CS • Cloud Gemini",
-        timestamp = "Earlier"
+        timestamp = "Earlier",
+        explanation = "O(log n) because each step halves the remaining search space.",
+        subject = SubjectMode.CODING.id,
+        bookmarked = 2L in bookmarkedIds
     )
 )
 
@@ -227,9 +269,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private fun loadBookmarkedIds(): Set<Long> {
+        val raw = prefs.getString("PREF_BOOKMARKED_IDS", "")?.trim().orEmpty()
+        if (raw.isEmpty()) return emptySet()
+        return raw.split(",").mapNotNull { it.trim().toLongOrNull() }.toSet()
+    }
+
     private fun loadPersistedOverlayHistory(): List<SolvedHistoryEntry> {
+        val bookmarked = loadBookmarkedIds()
         val raw = prefs.getString("PREF_SOLVE_HISTORY", "")?.trim().orEmpty()
-        if (raw.isBlank()) return defaultHistoryEntries()
+        if (raw.isBlank()) return defaultHistoryEntries(bookmarked)
         val fmt = SimpleDateFormat("h:mm a", Locale.getDefault())
         val parsed = raw.lines().mapNotNull { line ->
             val parts = line.split("||")
@@ -237,22 +286,31 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val ts = parts[0].toLongOrNull() ?: System.currentTimeMillis()
                 val badge = parts[1].trim().ifBlank { "?" }
                 val snippet = parts[2].trim().ifBlank { "Screen Question" }
+                val exp = parts.getOrNull(3)?.trim().orEmpty()
+                val subj = parts.getOrNull(4)?.trim()?.ifBlank { SubjectMode.GENERAL.id } ?: SubjectMode.GENERAL.id
                 SolvedHistoryEntry(
                     id = ts,
                     questionPreview = snippet,
                     answerLetter = badge,
                     sourceLabel = "Prism Island",
-                    timestamp = fmt.format(Date(ts))
+                    timestamp = fmt.format(Date(ts)),
+                    explanation = exp,
+                    subject = subj,
+                    bookmarked = ts in bookmarked
                 )
             } else {
                 null
             }
         }
-        return parsed.ifEmpty { defaultHistoryEntries() }
+        return parsed.ifEmpty { defaultHistoryEntries(bookmarked) }
     }
 
     private fun loadInitialState(): MainUiState {
-        prefs.edit().putString(MainActivity.PREF_KEY_THEME_MODE, MainActivity.THEME_LIGHT).apply()
+        val advDarkObsidian = prefs.getBoolean(MainActivity.PREF_KEY_ADV_DARK_OBSIDIAN, false)
+        prefs.edit().putString(
+            MainActivity.PREF_KEY_THEME_MODE,
+            if (advDarkObsidian) MainActivity.THEME_DARK else MainActivity.THEME_LIGHT
+        ).apply()
 
         val rawSavedModel = prefs.getString(MainActivity.PREF_KEY_GEMINI_MODEL, PrismAiSolverEngine.DEFAULT_CLOUD_MODEL)
             ?: PrismAiSolverEngine.DEFAULT_CLOUD_MODEL
@@ -302,6 +360,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             hudStyle = prefs.getString(MainActivity.PREF_KEY_HUD_STYLE, MainActivity.HUD_STYLE_ISLAND)
                 ?: MainActivity.HUD_STYLE_ISLAND,
             islandOpacityIndex = prefs.getInt("PREF_ISLAND_OPACITY_INDEX", 0).coerceIn(0, 3),
+            customOpacityPct = prefs.getInt(MainActivity.PREF_KEY_CUSTOM_OPACITY_PCT, 100).coerceIn(20, 100),
+            questionSolveMode = QuestionSolveMode.fromId(
+                prefs.getString(MainActivity.PREF_KEY_QUESTION_SOLVE_MODE, QuestionSolveMode.STANDARD.id)
+            ),
             displayMode = prefs.getString(MainActivity.PREF_KEY_DISPLAY_MODE, MainActivity.MODE_STEALTH)
                 ?: MainActivity.MODE_STEALTH,
             autoClickEnabled = prefs.getBoolean(MainActivity.PREF_KEY_AUTO_CLICK, false),
@@ -321,6 +383,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             subjectMode = savedSubject,
             dualVerifyEnabled = dualVerify,
             translateToEnglish = translate,
+            advCropToScanEnabled = prefs.getBoolean(MainActivity.PREF_KEY_ADV_CROP_TO_SCAN, false),
+            advIslandGesturesEnabled = prefs.getBoolean(MainActivity.PREF_KEY_ADV_ISLAND_GESTURES, false),
+            advSplitPillEnabled = prefs.getBoolean(MainActivity.PREF_KEY_ADV_SPLIT_PILL, false),
+            advMinimalShapesEnabled = prefs.getBoolean(MainActivity.PREF_KEY_ADV_MINIMAL_SHAPES, false),
+            advNetSpeedDisguiseEnabled = prefs.getBoolean(MainActivity.PREF_KEY_ADV_NET_SPEED_DISGUISE, false),
+            advAutoFadeIdleEnabled = prefs.getBoolean(MainActivity.PREF_KEY_ADV_AUTO_FADE_IDLE, false),
+            advFlashcardsExportEnabled = prefs.getBoolean(MainActivity.PREF_KEY_ADV_FLASHCARDS_EXPORT, false),
+            advDarkObsidianEnabled = advDarkObsidian,
+            advSpringPhysicsEnabled = prefs.getBoolean(MainActivity.PREF_KEY_ADV_SPRING_PHYSICS, false),
+            springDamping = prefs.getFloat(MainActivity.PREF_KEY_SPRING_DAMPING, 0.72f).coerceIn(0.35f, 1.0f),
+            springStiffness = prefs.getFloat(MainActivity.PREF_KEY_SPRING_STIFFNESS, 650f).coerceIn(200f, 1500f),
+            advSplitScreenRailEnabled = prefs.getBoolean(MainActivity.PREF_KEY_ADV_SPLIT_SCREEN_RAIL, false),
+            advQuickTileNotifEnabled = prefs.getBoolean(MainActivity.PREF_KEY_ADV_QUICK_TILE_NOTIF, false),
+            dfTwoPartCaptureEnabled = prefs.getBoolean(MainActivity.PREF_KEY_DF_TWO_PART_CAPTURE, true),
+            dfScrollTimerEnabled = prefs.getBoolean(MainActivity.PREF_KEY_DF_SCROLL_TIMER, true),
+            dfComplexModeEnabled = prefs.getBoolean(MainActivity.PREF_KEY_DF_COMPLEX_MODE, true),
+            dfDiagramVisionEnabled = prefs.getBoolean(MainActivity.PREF_KEY_DF_DIAGRAM_VISION, false),
+            dfQuickCropEnabled = prefs.getBoolean(MainActivity.PREF_KEY_DF_QUICK_CROP, false),
+            dfSwipeMethodLoopEnabled = prefs.getBoolean(MainActivity.PREF_KEY_DF_SWIPE_METHOD_LOOP, true),
             solvedCount = prefs.getInt("PREF_SOLVED_COUNT", 12),
             historyEntries = loadPersistedOverlayHistory()
         )
@@ -350,6 +431,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         val configuredKeys = MultiProviderApiSolver.getConfiguredProviders(ctx).size
+        val latestMethod = SolverMethod.fromId(
+            prefs.getString(MainActivity.PREF_KEY_SOLVER_METHOD, _uiState.value.solverMethod.id)
+        )
+        val latestSolveMode = QuestionSolveMode.fromId(
+            prefs.getString(MainActivity.PREF_KEY_QUESTION_SOLVE_MODE, _uiState.value.questionSolveMode.id)
+        )
+        val latestOpacityPct = prefs.getInt(
+            MainActivity.PREF_KEY_CUSTOM_OPACITY_PCT,
+            _uiState.value.customOpacityPct
+        ).coerceIn(20, 100)
         val overlayRunning = OverlayService.isServiceRunning()
         val captureActive = OverlayService.hasScreenCapture()
         _uiState.update {
@@ -362,6 +453,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 firebaseUserId = currentUser?.uid,
                 firebaseUserName = currentUser?.displayName,
                 firebaseUserEmail = currentUser?.email,
+                solverMethod = latestMethod,
+                questionSolveMode = latestSolveMode,
+                customOpacityPct = latestOpacityPct,
                 configuredKeyCount = configuredKeys,
                 hasSecretApiKey = true,
                 solvedCount = prefs.getInt("PREF_SOLVED_COUNT", it.solvedCount),
@@ -492,6 +586,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         onSyncService()
     }
 
+    fun testSavedApiKeys(
+        nvidiaKey: String,
+        openRouterKey: String,
+        geminiKey: String,
+        openAiKey: String,
+        onSyncService: () -> Unit
+    ) {
+        if (_uiState.value.isTestingApiKeys) return
+        saveMultiProviderApiKeys(nvidiaKey, openRouterKey, geminiKey, openAiKey, onSyncService)
+        _uiState.update { it.copy(isTestingApiKeys = true, apiKeysTestSummary = "Testing configured AI keys...") }
+        viewModelScope.launch {
+            val summary = MultiProviderApiSolver.verifyConfiguredProviders(getApplication())
+            _uiState.update {
+                it.copy(
+                    isTestingApiKeys = false,
+                    apiKeysTestSummary = summary
+                )
+            }
+        }
+    }
+
     fun applyStudyPreset(preset: String, onSyncService: () -> Unit) {
         val editor = prefs.edit()
         when (preset) {
@@ -588,8 +703,62 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setIslandOpacityIndex(index: Int, onSyncService: () -> Unit) {
         val safe = index.coerceIn(0, 3)
-        prefs.edit().putInt("PREF_ISLAND_OPACITY_INDEX", safe).apply()
-        _uiState.update { it.copy(islandOpacityIndex = safe) }
+        val mappedPct = listOf(100, 90, 50, 25)[safe]
+        prefs.edit()
+            .putInt("PREF_ISLAND_OPACITY_INDEX", safe)
+            .putInt(MainActivity.PREF_KEY_CUSTOM_OPACITY_PCT, mappedPct)
+            .apply()
+        _uiState.update { it.copy(islandOpacityIndex = safe, customOpacityPct = mappedPct) }
+        onSyncService()
+    }
+
+    fun setCustomOpacityPct(pct: Int, onSyncService: () -> Unit) {
+        val safePct = pct.coerceIn(20, 100)
+        prefs.edit().putInt(MainActivity.PREF_KEY_CUSTOM_OPACITY_PCT, safePct).apply()
+        _uiState.update { it.copy(customOpacityPct = safePct) }
+        onSyncService()
+    }
+
+    fun setQuestionSolveMode(mode: QuestionSolveMode, onSyncService: () -> Unit) {
+        prefs.edit().putString(MainActivity.PREF_KEY_QUESTION_SOLVE_MODE, mode.id).apply()
+        _uiState.update { it.copy(questionSolveMode = mode) }
+        showBannerMessage("Solve Mode: ${mode.fullLabel}")
+        onSyncService()
+    }
+
+    fun setDfTwoPartCapture(enabled: Boolean, onSyncService: () -> Unit) {
+        prefs.edit().putBoolean(MainActivity.PREF_KEY_DF_TWO_PART_CAPTURE, enabled).apply()
+        _uiState.update { it.copy(dfTwoPartCaptureEnabled = enabled) }
+        onSyncService()
+    }
+
+    fun setDfScrollTimer(enabled: Boolean, onSyncService: () -> Unit) {
+        prefs.edit().putBoolean(MainActivity.PREF_KEY_DF_SCROLL_TIMER, enabled).apply()
+        _uiState.update { it.copy(dfScrollTimerEnabled = enabled) }
+        onSyncService()
+    }
+
+    fun setDfComplexMode(enabled: Boolean, onSyncService: () -> Unit) {
+        prefs.edit().putBoolean(MainActivity.PREF_KEY_DF_COMPLEX_MODE, enabled).apply()
+        _uiState.update { it.copy(dfComplexModeEnabled = enabled) }
+        onSyncService()
+    }
+
+    fun setDfDiagramVision(enabled: Boolean, onSyncService: () -> Unit) {
+        prefs.edit().putBoolean(MainActivity.PREF_KEY_DF_DIAGRAM_VISION, enabled).apply()
+        _uiState.update { it.copy(dfDiagramVisionEnabled = enabled) }
+        onSyncService()
+    }
+
+    fun setDfQuickCrop(enabled: Boolean, onSyncService: () -> Unit) {
+        prefs.edit().putBoolean(MainActivity.PREF_KEY_DF_QUICK_CROP, enabled).apply()
+        _uiState.update { it.copy(dfQuickCropEnabled = enabled) }
+        onSyncService()
+    }
+
+    fun setDfSwipeMethodLoop(enabled: Boolean, onSyncService: () -> Unit) {
+        prefs.edit().putBoolean(MainActivity.PREF_KEY_DF_SWIPE_METHOD_LOOP, enabled).apply()
+        _uiState.update { it.copy(dfSwipeMethodLoopEnabled = enabled) }
         onSyncService()
     }
 
@@ -720,9 +889,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         showBannerMessage("Subject focus set to ${mode.label}")
     }
 
-    fun setDualVerifyEnabled(enabled: Boolean) {
+    fun setDualVerifyEnabled(enabled: Boolean, onSyncService: () -> Unit = {}) {
         prefs.edit().putBoolean(MainActivity.PREF_KEY_DUAL_VERIFY, enabled).apply()
         _uiState.update { it.copy(dualVerifyEnabled = enabled) }
+        onSyncService()
     }
 
     fun setTranslateToEnglish(enabled: Boolean) {
@@ -730,8 +900,149 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.update { it.copy(translateToEnglish = enabled) }
     }
 
+    // ─── Advanced Options Setters (All Default OFF, Toggled in Advanced Settings) ───
+
+    fun setAdvCropToScan(enabled: Boolean, onSyncService: () -> Unit) {
+        prefs.edit().putBoolean(MainActivity.PREF_KEY_ADV_CROP_TO_SCAN, enabled).apply()
+        _uiState.update { it.copy(advCropToScanEnabled = enabled) }
+        showBannerMessage(if (enabled) "Crop-to-Scan Region Selector ON" else "Crop-to-Scan OFF")
+        onSyncService()
+    }
+
+    fun setAdvIslandGestures(enabled: Boolean, onSyncService: () -> Unit) {
+        prefs.edit().putBoolean(MainActivity.PREF_KEY_ADV_ISLAND_GESTURES, enabled).apply()
+        _uiState.update { it.copy(advIslandGesturesEnabled = enabled) }
+        showBannerMessage(if (enabled) "Pill Swipe & Long-Press Gestures ON" else "Pill Gestures OFF")
+        onSyncService()
+    }
+
+    fun setAdvSplitPill(enabled: Boolean, onSyncService: () -> Unit) {
+        prefs.edit().putBoolean(MainActivity.PREF_KEY_ADV_SPLIT_PILL, enabled).apply()
+        _uiState.update { it.copy(advSplitPillEnabled = enabled) }
+        showBannerMessage(if (enabled) "Split Pill Mode (Badge • Short Text) ON" else "Split Pill Mode OFF")
+        onSyncService()
+    }
+
+    fun setAdvMinimalShapes(enabled: Boolean, onSyncService: () -> Unit) {
+        val currentHud = _uiState.value.hudStyle
+        val nextHud = if (enabled) {
+            if (currentHud == MainActivity.HUD_STYLE_TOP_STRIP || currentHud == MainActivity.HUD_STYLE_EDGE_TAB) {
+                currentHud
+            } else {
+                MainActivity.HUD_STYLE_TOP_STRIP
+            }
+        } else {
+            if (currentHud == MainActivity.HUD_STYLE_TOP_STRIP || currentHud == MainActivity.HUD_STYLE_EDGE_TAB) {
+                MainActivity.HUD_STYLE_ISLAND
+            } else {
+                currentHud
+            }
+        }
+        prefs.edit()
+            .putBoolean(MainActivity.PREF_KEY_ADV_MINIMAL_SHAPES, enabled)
+            .putString(MainActivity.PREF_KEY_HUD_STYLE, nextHud)
+            .apply()
+        _uiState.update { it.copy(advMinimalShapesEnabled = enabled, hudStyle = nextHud) }
+        onSyncService()
+    }
+
+    fun setAdvNetSpeedDisguise(enabled: Boolean, onSyncService: () -> Unit) {
+        prefs.edit().putBoolean(MainActivity.PREF_KEY_ADV_NET_SPEED_DISGUISE, enabled).apply()
+        _uiState.update { it.copy(advNetSpeedDisguiseEnabled = enabled) }
+        showBannerMessage(
+            if (enabled) "Network Speed Disguise ON (0.91–0.94 MB/s)"
+            else "Network Speed Disguise OFF"
+        )
+        onSyncService()
+    }
+
+    fun setAdvAutoFadeIdle(enabled: Boolean, onSyncService: () -> Unit) {
+        prefs.edit().putBoolean(MainActivity.PREF_KEY_ADV_AUTO_FADE_IDLE, enabled).apply()
+        _uiState.update { it.copy(advAutoFadeIdleEnabled = enabled) }
+        onSyncService()
+    }
+
+    fun setAdvFlashcardsExport(enabled: Boolean) {
+        prefs.edit().putBoolean(MainActivity.PREF_KEY_ADV_FLASHCARDS_EXPORT, enabled).apply()
+        _uiState.update { it.copy(advFlashcardsExportEnabled = enabled) }
+    }
+
+    fun setAdvDarkObsidian(enabled: Boolean, onSyncService: () -> Unit) {
+        prefs.edit()
+            .putBoolean(MainActivity.PREF_KEY_ADV_DARK_OBSIDIAN, enabled)
+            .putString(MainActivity.PREF_KEY_THEME_MODE, if (enabled) MainActivity.THEME_DARK else MainActivity.THEME_LIGHT)
+            .apply()
+        _uiState.update { it.copy(advDarkObsidianEnabled = enabled) }
+        showBannerMessage(if (enabled) "Dark Obsidian Liquid Glass Active" else "Daylight White Glass Active")
+        onSyncService()
+    }
+
+    fun setAdvSpringPhysics(enabled: Boolean) {
+        prefs.edit().putBoolean(MainActivity.PREF_KEY_ADV_SPRING_PHYSICS, enabled).apply()
+        _uiState.update { it.copy(advSpringPhysicsEnabled = enabled) }
+    }
+
+    fun updateSpringPhysics(damping: Float, stiffness: Float) {
+        val safeDamping = damping.coerceIn(0.35f, 1.0f)
+        val safeStiffness = stiffness.coerceIn(200f, 1500f)
+        prefs.edit()
+            .putFloat(MainActivity.PREF_KEY_SPRING_DAMPING, safeDamping)
+            .putFloat(MainActivity.PREF_KEY_SPRING_STIFFNESS, safeStiffness)
+            .apply()
+        _uiState.update { it.copy(springDamping = safeDamping, springStiffness = safeStiffness) }
+    }
+
+    fun setAdvSplitScreenRail(enabled: Boolean) {
+        prefs.edit().putBoolean(MainActivity.PREF_KEY_ADV_SPLIT_SCREEN_RAIL, enabled).apply()
+        _uiState.update { it.copy(advSplitScreenRailEnabled = enabled) }
+    }
+
+    fun setAdvQuickTileNotif(enabled: Boolean, onSyncService: () -> Unit) {
+        prefs.edit().putBoolean(MainActivity.PREF_KEY_ADV_QUICK_TILE_NOTIF, enabled).apply()
+        _uiState.update { it.copy(advQuickTileNotifEnabled = enabled) }
+        showBannerMessage(
+            if (enabled) "Quick Settings Tile & Notification Actions ON"
+            else "Notification Action Buttons OFF"
+        )
+        onSyncService()
+    }
+
+    fun updateFlashcardSearch(query: String) {
+        _uiState.update { it.copy(flashcardSearchQuery = query) }
+    }
+
+    fun updateFlashcardSubjectFilter(subject: String) {
+        _uiState.update { it.copy(flashcardSubjectFilter = subject) }
+    }
+
+    fun setFlashcardBookmarkedOnly(enabled: Boolean) {
+        _uiState.update { it.copy(flashcardBookmarkedOnly = enabled) }
+    }
+
+    fun toggleBookmarkHistoryEntry(entryId: Long) {
+        val currentSet = loadBookmarkedIds().toMutableSet()
+        val nowBookmarked = if (entryId in currentSet) {
+            currentSet.remove(entryId)
+            false
+        } else {
+            currentSet.add(entryId)
+            true
+        }
+        prefs.edit().putString("PREF_BOOKMARKED_IDS", currentSet.joinToString(",")).apply()
+        _uiState.update { cur ->
+            cur.copy(
+                historyEntries = cur.historyEntries.map { item ->
+                    if (item.id == entryId) item.copy(bookmarked = nowBookmarked) else item
+                }
+            )
+        }
+    }
+
     fun clearHistory() {
-        prefs.edit().remove("PREF_SOLVE_HISTORY").apply()
+        prefs.edit()
+            .remove("PREF_SOLVE_HISTORY")
+            .remove("PREF_BOOKMARKED_IDS")
+            .apply()
         _uiState.update { it.copy(historyEntries = emptyList()) }
         showBannerMessage("Local recent history cleared")
     }
@@ -923,7 +1234,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
             try {
                 val existing = prefs.getString("PREF_SOLVE_HISTORY", "") ?: ""
-                val entryLine = "$nowMs||$finalLetter||$previewTitle"
+                val cleanExp = finalExplanation.replace("\n", " ").replace("||", " ").take(120)
+                val entryLine = "$nowMs||$finalLetter||$previewTitle||$cleanExp||${effectiveSubject.id}"
                 val merged = (listOf(entryLine) + existing.split("\n").filter { it.isNotBlank() })
                     .take(25)
                     .joinToString("\n")
@@ -940,7 +1252,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 questionPreview = previewTitle,
                 answerLetter = finalLetter,
                 sourceLabel = sourceBadge,
-                timestamp = timeLabel
+                timestamp = timeLabel,
+                explanation = finalExplanation,
+                subject = effectiveSubject.id,
+                bookmarked = false
             )
 
             _uiState.update { cur ->
@@ -950,7 +1265,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     practiceSolvedLetter = finalLetter,
                     practiceExplanation = finalExplanation,
                     practiceStatusNote = sourceBadge,
-                    historyEntries = listOf(newEntry) + cur.historyEntries.take(14)
+                    historyEntries = listOf(newEntry) + cur.historyEntries.take(24)
                 )
             }
         }

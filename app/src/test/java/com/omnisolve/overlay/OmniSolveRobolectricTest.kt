@@ -2,6 +2,8 @@ package com.omnisolve.overlay
 
 import android.content.Context
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsOff
+import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -13,8 +15,11 @@ import com.omnisolve.overlay.api.GeminiVisionClient
 import com.omnisolve.overlay.api.MultiProviderApiSolver
 import com.omnisolve.overlay.api.PrismAiSolverEngine
 import com.omnisolve.overlay.model.AnswerModel
+import com.omnisolve.overlay.model.QuestionSolveMode
 import com.omnisolve.overlay.model.SubjectMode
 import com.omnisolve.overlay.service.OverlayService
+import com.omnisolve.overlay.ui.SolvedHistoryEntry
+import com.omnisolve.overlay.util.StudySheetExporter
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
@@ -57,6 +62,40 @@ class OmniSolveRobolectricTest {
     }
 
     @Test
+    fun `network speed disguise maps ABCD to 0_91 through 0_94 MB per sec and masks idle states`() {
+        assertEquals("0.91 MB/s" to true, OverlayService.formatNetworkSpeedDisguise("A"))
+        assertEquals("0.92 MB/s" to true, OverlayService.formatNetworkSpeedDisguise("(B)"))
+        assertEquals("0.93 MB/s" to true, OverlayService.formatNetworkSpeedDisguise("c"))
+        assertEquals("0.94 MB/s" to true, OverlayService.formatNetworkSpeedDisguise("D"))
+        assertEquals("0.91/93 MB/s" to true, OverlayService.formatNetworkSpeedDisguise("A, C"))
+
+        assertEquals("0.48 MB/s" to false, OverlayService.formatNetworkSpeedDisguise("?"))
+        assertEquals("0.48 MB/s" to false, OverlayService.formatNetworkSpeedDisguise("..."))
+        assertEquals("0.48 MB/s" to false, OverlayService.formatNetworkSpeedDisguise("ERR"))
+    }
+
+    @Test
+    fun `study sheet markdown exporter formats flashcards with answers explanations and bookmarks`() {
+        val entries = listOf(
+            SolvedHistoryEntry(
+                id = 101L,
+                questionPreview = "Which organelle produces ATP?",
+                answerLetter = "B",
+                sourceLabel = "1) Server Sol",
+                timestamp = "10:15 AM",
+                explanation = "Mitochondria generate ATP via oxidative phosphorylation.",
+                subject = "Medical",
+                bookmarked = true
+            )
+        )
+        val md = StudySheetExporter.buildMarkdownContent(entries)
+        assertTrue(md.contains("Which organelle produces ATP? ★"))
+        assertTrue(md.contains("`B`"))
+        assertTrue(md.contains("Mitochondria generate ATP"))
+        assertTrue(md.contains("Medical"))
+    }
+
+    @Test
     fun `single line ocr prompt strips newlines and retains full question and options`() {
         val multiLineOcrQuestion = """
             Q12. Which data structure uses LIFO (Last-In, First-Out) order?
@@ -74,6 +113,21 @@ class OmniSolveRobolectricTest {
         assertTrue(singleLinePrompt.contains("B) Stack"))
         assertTrue(singleLinePrompt.contains("D) Linked List"))
         assertTrue(singleLinePrompt.contains("FINAL_ANSWER:"))
+
+        val matchPrompt = MultiProviderApiSolver.buildSingleLineSolverPrompt(
+            "Column I: A. Newton B. Joule | Column II: 1. Energy 2. Force",
+            QuestionSolveMode.MATCH_FOLLOWING
+        )
+        assertFalse(matchPrompt.contains('\n'))
+        assertTrue(matchPrompt.contains("Column I"))
+        assertTrue(matchPrompt.contains("A-2, B-4, C-1, D-3"))
+
+        val mathPrompt = MultiProviderApiSolver.buildSingleLineSolverPrompt(
+            "Integrate x^2 dx from 0 to 3",
+            QuestionSolveMode.COMPLEX_MATH
+        )
+        assertFalse(mathPrompt.contains('\n'))
+        assertTrue(mathPrompt.contains("complicated math"))
     }
 
     @Test
@@ -147,6 +201,10 @@ class OmniSolveRobolectricTest {
         assertEquals("True", client.extractAnswerLetter("FINAL_ANSWER: true").correctChoice)
         assertEquals("42.5", client.extractAnswerLetter("FINAL_ANSWER: 42.5").correctChoice)
         assertEquals("C", client.extractAnswerLetter("**CORRECT_OPTION:** **C**").correctChoice)
+        assertEquals(
+            "A-2, B-4, C-1, D-3",
+            client.extractAnswerLetter("FINAL_ANSWER: A-2, B-4, C-1, D-3").correctChoice
+        )
 
         assertThrows(Exception::class.java) {
             client.extractAnswerLetter("Gemini Flash-Lite is working...")
@@ -154,12 +212,21 @@ class OmniSolveRobolectricTest {
     }
 
     @Test
-    fun `verify instant home methods and settings local keys charging format and overlapping google`() {
+    fun `verify instant home methods custom opacity dynamic flow toggles and advanced settings`() {
         composeTestRule.waitForIdle()
 
-        // Home screen shows Start button + the 3 primary methods right away
+        // Home screen shows Start button + custom 20%-100% opacity + modes + 3 primary methods right away
         composeTestRule.onNodeWithTag("top_glass_header").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("section_home_opacity").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("input_home_opacity_pct").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("slider_home_opacity_pct").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("btn_home_mode_standard").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("btn_home_mode_match").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("btn_home_mode_complex_math").assertIsDisplayed()
         composeTestRule.onNodeWithTag("btn_toggle_overlay").assertIsDisplayed()
+
+        composeTestRule.onNodeWithTag("home_screen_list")
+            .performScrollToNode(hasTestTag("option_method_api_keys"))
         composeTestRule.onNodeWithTag("option_method_firebase").assertIsDisplayed()
         composeTestRule.onNodeWithTag("option_method_background_gemini").assertIsDisplayed()
         composeTestRule.onNodeWithTag("option_method_api_keys").assertIsDisplayed()
@@ -178,6 +245,54 @@ class OmniSolveRobolectricTest {
             .performScrollToNode(hasTestTag("btn_save_api_keys"))
         composeTestRule.onNodeWithTag("input_nvidia_key").assertIsDisplayed()
         composeTestRule.onNodeWithTag("btn_save_api_keys").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("btn_test_api_keys").assertIsDisplayed()
+
+        // Scroll to Dynamic Flow Bar Options section and verify ON/OFF toggles work
+        composeTestRule.onNodeWithTag("settings_screen_list")
+            .performScrollToNode(hasTestTag("section_dynamic_flow_options"))
+        composeTestRule.onNodeWithTag("switch_df_two_part").assertIsOn()
+        composeTestRule.onNodeWithTag("switch_df_scroll_timer").assertIsOn()
+        composeTestRule.onNodeWithTag("switch_df_complex_mode").assertIsOn()
+        composeTestRule.onNodeWithTag("switch_df_swipe_method_loop").assertIsOn()
+        composeTestRule.onNodeWithTag("switch_df_diagram_vision").assertIsOff()
+        composeTestRule.onNodeWithTag("switch_df_quick_crop").assertIsOff()
+
+        // Toggle Diagram Vision ON in Dynamic Flow Options
+        composeTestRule.onNodeWithTag("switch_df_diagram_vision").performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("switch_df_diagram_vision").assertIsOn()
+
+        // Scroll to Advanced Settings Card 1 and verify all switches default to OFF
+        composeTestRule.onNodeWithTag("settings_screen_list")
+            .performScrollToNode(hasTestTag("section_advanced_options"))
+        composeTestRule.onNodeWithTag("switch_adv_crop_scan").assertIsOff()
+        composeTestRule.onNodeWithTag("switch_adv_island_gestures").assertIsOff()
+        composeTestRule.onNodeWithTag("switch_adv_split_pill").assertIsOff()
+        composeTestRule.onNodeWithTag("switch_adv_minimal_shapes").assertIsOff()
+        composeTestRule.onNodeWithTag("switch_adv_net_speed").assertIsOff()
+        composeTestRule.onNodeWithTag("switch_adv_auto_fade").assertIsOff()
+
+        // Toggle Minimal Shapes ON and verify Top Strip & Edge Tab buttons appear
+        composeTestRule.onNodeWithTag("switch_adv_minimal_shapes").performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("switch_adv_minimal_shapes").assertIsOn()
+        composeTestRule.onNodeWithTag("btn_shape_top_strip").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("btn_shape_edge_tab").assertIsDisplayed()
+
+        // Scroll to Advanced Settings Card 2 and verify all system/study switches default to OFF
+        composeTestRule.onNodeWithTag("settings_screen_list")
+            .performScrollToNode(hasTestTag("section_advanced_system_options"))
+        composeTestRule.onNodeWithTag("switch_adv_flashcards").assertIsOff()
+        composeTestRule.onNodeWithTag("switch_adv_dark_obsidian").assertIsOff()
+        composeTestRule.onNodeWithTag("switch_adv_spring_physics").assertIsOff()
+        composeTestRule.onNodeWithTag("switch_adv_split_rail").assertIsOff()
+        composeTestRule.onNodeWithTag("switch_adv_quick_tile_notif").assertIsOff()
+        composeTestRule.onNodeWithTag("switch_adv_dual_verify").assertIsOff()
+
+        // Toggle Split-Screen Side-Rail ON and verify compact side_navigation_rail renders live
+        composeTestRule.onNodeWithTag("switch_adv_split_rail").performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("side_navigation_rail").assertIsDisplayed()
 
         // Scroll to the very bottom ("At last") and verify Overlapping Google Completely
         composeTestRule.onNodeWithTag("settings_screen_list")

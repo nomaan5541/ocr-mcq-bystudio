@@ -58,6 +58,7 @@ data class SolvedHistoryEntry(
 data class MainUiState(
     val selectedTab: AppTab = AppTab.Home,
     val isOverlayRunning: Boolean = false,
+    val userConsentAccepted: Boolean = false,
     val hasOverlayPermission: Boolean = false,
     val isAccessibilityEnabled: Boolean = false,
     val isCaptureAuthorized: Boolean = false,
@@ -343,6 +344,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         return MainUiState(
             isOverlayRunning = OverlayService.isServiceRunning(),
+            userConsentAccepted = prefs.getBoolean(MainActivity.PREF_KEY_USER_CONSENT_ACCEPTED, false),
             isCaptureAuthorized = OverlayService.hasScreenCapture(),
             firebaseUserId = currentUser?.uid,
             firebaseUserName = currentUser?.displayName,
@@ -470,6 +472,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun selectTab(tab: AppTab) {
         _uiState.update { it.copy(selectedTab = tab) }
+    }
+
+    fun acceptUserConsent() {
+        prefs.edit().putBoolean(MainActivity.PREF_KEY_USER_CONSENT_ACCEPTED, true).apply()
+        _uiState.update { it.copy(userConsentAccepted = true) }
     }
 
     fun setOverlayServiceState(running: Boolean, captureAuthorized: Boolean = _uiState.value.isCaptureAuthorized) {

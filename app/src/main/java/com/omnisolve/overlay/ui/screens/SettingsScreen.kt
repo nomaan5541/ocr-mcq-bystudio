@@ -2,6 +2,7 @@ package com.omnisolve.overlay.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -787,6 +788,145 @@ fun SettingsScreen(
                     )
                     .padding(18.dp)
             ) {
+                // Feature Guide & Operational Manual (Comprehensive explanation of every feature)
+                Text(
+                    text = stringResource(R.string.feature_guide_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = palette.inkPrimary
+                )
+                Text(
+                    text = stringResource(R.string.feature_guide_subtitle),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = palette.inkSecondary
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+
+                FeatureExplanationCard(
+                    title = "1. Floating Dynamic Island & 1-Tap Solving",
+                    description = "A compact, draggable pill docked at the top of your screen. Tap anywhere on the pill body to instantly scan and solve the visible question. The pill displays the solved option badge (e.g. Option B) with zero lag.",
+                    palette = palette
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+
+                FeatureExplanationCard(
+                    title = "2. 2-View Split Capture (1st + 2nd)",
+                    description = "Solves long questions where diagrams or equations are at the top and multiple choice options are below the fold. Tap '1st' to capture the question/diagram, scroll down to options, and tap '2nd' — prism-ocr-solver stitches both images and analyzes the full context.",
+                    palette = palette
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+
+                FeatureExplanationCard(
+                    title = "3. 2-Second Scroll-Capture Timer (2s↓)",
+                    description = "One-tap automated capture: instantly snapshots View 1, gives you a live 2-second countdown while you scroll down to options, and automatically snapshots View 2 without requiring a second tap.",
+                    palette = palette
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+
+                FeatureExplanationCard(
+                    title = "4. Match-the-Following & Math+ Modes",
+                    description = "Switch between Standard MCQ, Column I & Column II matching (outputs structured pairings like A-2, B-4, C-1, D-3), and Complicated Math+ multi-step equation reasoning.",
+                    palette = palette
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+
+                FeatureExplanationCard(
+                    title = "5. Swipe-Down Looping Method Selector",
+                    description = "Swipe down directly on the floating Dynamic Island to reveal an infinite loop of the 3 solving engines: 1) Server Sol, 2) OCR Text Extractor, and 3) Local API Keys. Tap any method to instantly switch on the fly.",
+                    palette = palette
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+
+                FeatureExplanationCard(
+                    title = "6. Local API Keys & Instant Auto-Failover",
+                    description = "Supports NVIDIA NIM, OpenRouter, OpenAI, and Google Gemini API keys. Keys are saved strictly on your local device. If a provider reaches rate limits or errors, prism-ocr-solver automatically fails over to the next configured provider in milliseconds.",
+                    palette = palette
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+
+                FeatureExplanationCard(
+                    title = "7. Start-Time Customizable Opacity (20% – 100%)",
+                    description = "Adjust overlay transparency from 20% to 100% directly from the Home screen or Settings with live numeric and slider inputs for distraction-free reading.",
+                    palette = palette
+                )
+
+                Spacer(modifier = Modifier.height(14.dp))
+                HorizontalDivider(color = dividerColor)
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Legal & Privacy Documentation Hub
+                Text(
+                    text = stringResource(R.string.privacy_legal_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = palette.inkPrimary
+                )
+                Text(
+                    text = stringResource(R.string.privacy_legal_subtitle),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = palette.inkSecondary
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+
+                val context = androidx.compose.ui.platform.LocalContext.current
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(if (palette.isDarkObsidian) Color(0xFF0F172A) else Color(0xFFF1F5F9))
+                        .border(1.dp, palette.accentSky.copy(alpha = 0.5f), RoundedCornerShape(14.dp))
+                        .clickable {
+                            val intent = android.content.Intent(
+                                android.content.Intent.ACTION_VIEW,
+                                android.net.Uri.parse(MainActivity.URL_PRIVACY_POLICY_WEB)
+                            )
+                            try {
+                                context.startActivity(intent)
+                            } catch (_: Exception) {
+                                onShowBannerMessage("Visit: virusboss.in/app/prism-ocr-solver/#privacy-policy")
+                            }
+                        }
+                        .padding(14.dp)
+                        .testTag("btn_open_public_privacy_policy"),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Official Privacy Policy & Disclosures",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = palette.accentSky
+                        )
+                        Text(
+                            text = "Hosted at virusboss.in/app/prism-ocr-solver/#privacy-policy",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = palette.inkSecondary
+                        )
+                    }
+                    LivingSecondaryButton(
+                        text = "Open Web",
+                        icon = Icons.Filled.OpenInFull,
+                        onClick = {
+                            val intent = android.content.Intent(
+                                android.content.Intent.ACTION_VIEW,
+                                android.net.Uri.parse(MainActivity.URL_PRIVACY_POLICY_WEB)
+                            )
+                            try {
+                                context.startActivity(intent)
+                            } catch (_: Exception) {
+                                onShowBannerMessage("Visit: virusboss.in/app/prism-ocr-solver/#privacy-policy")
+                            }
+                        },
+                        testTag = "btn_open_web_policy"
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+                HorizontalDivider(color = dividerColor)
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Solved History Section
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
@@ -794,7 +934,7 @@ fun SettingsScreen(
                 ) {
                     Text(
                         text = stringResource(R.string.history_title),
-                        style = MaterialTheme.typography.titleMedium,
+                        style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
                         color = palette.inkPrimary
                     )
@@ -807,62 +947,6 @@ fun SettingsScreen(
                             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
                         )
                     }
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = sample.question,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = palette.inkPrimary
-                )
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    text = sample.options.joinToString("   "),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = palette.inkSecondary
-                )
-
-                if (state.practiceSolvedLetter != null) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    val previewBadge = when {
-                        state.advNetSpeedDisguiseEnabled -> {
-                            val ch = state.practiceSolvedLetter.trim().uppercase().firstOrNull()
-                            if (ch != null && ch in 'A'..'F') "0.${91 + (ch - 'A')} MB/s (${state.practiceSolvedLetter})"
-                            else state.practiceSolvedLetter
-                        }
-                        state.batteryCamouflage -> {
-                            val ch = state.practiceSolvedLetter.trim().uppercase().firstOrNull()
-                            if (ch != null && ch in 'A'..'F') "Charging ${91 + (ch - 'A')}% (${state.practiceSolvedLetter})"
-                            else state.practiceSolvedLetter
-                        }
-                        else -> "Option ${state.practiceSolvedLetter}"
-                    }
-                    Text(
-                        text = "Result: $previewBadge — ${state.practiceStatusNote.orEmpty()}",
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = palette.accentEmerald
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    LivingPrimaryButton(
-                        text = if (state.isPracticeScanning) "Solving..." else stringResource(R.string.btn_solve_sample),
-                        icon = Icons.Filled.PlayArrow,
-                        onClick = onSolvePractice,
-                        testTag = "btn_solve_practice",
-                        modifier = Modifier.weight(1f)
-                    )
-                    LivingSecondaryButton(
-                        text = stringResource(R.string.btn_next_sample),
-                        icon = Icons.Filled.SkipNext,
-                        onClick = onNextPractice,
-                        testTag = "btn_next_practice"
-                    )
                 }
 
                 if (state.historyEntries.isNotEmpty()) {
@@ -1330,3 +1414,33 @@ private fun LocalApiKeyField(
         )
     }
 }
+
+@Composable
+private fun FeatureExplanationCard(
+    title: String,
+    description: String,
+    palette: com.omnisolve.overlay.ui.theme.WhiteGlassPalette
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(if (palette.isDarkObsidian) Color(0xFF0F172A) else Color(0xFFF8FAFC))
+            .border(1.dp, palette.cardHairlineBorder, RoundedCornerShape(12.dp))
+            .padding(12.dp)
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.Bold,
+            color = palette.inkPrimary
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = description,
+            style = MaterialTheme.typography.bodySmall,
+            color = palette.inkSecondary
+        )
+    }
+}
+

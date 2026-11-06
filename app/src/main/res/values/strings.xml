@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Prism AI</string>
-    <string name="accessibility_service_description">Prism AI Study Assistant: Reads quiz questions on screen and optionally taps solved options when enabled by you.</string>
+    <string name="app_name">prism-ocr-solver</string>
+    <string name="accessibility_service_description">prism-ocr-solver: Assistive study tool for reading on-screen quiz questions and tapping solved options when enabled.</string>
 
     <!-- Header & Navigation -->
     <string name="header_subtitle">Instant Floating Solver</string>
@@ -56,7 +56,21 @@
     <string name="btn_solve_sample">Test Solver</string>
     <string name="btn_next_sample">Next Sample</string>
 
-    <!-- Login Activity -->
     <string name="login_header_title">Connect Google Gemini</string>
     <string name="login_done_button">Done</string>
+
+    <!-- Legal, Privacy & Terms Agreement Dialog -->
+    <string name="legal_consent_title">Welcome to prism-ocr-solver</string>
+    <string name="legal_consent_subtitle">Please review and accept our Terms of Service &amp; Privacy Policy before starting.</string>
+    <string name="legal_consent_checkbox">I agree to the Terms of Service &amp; Privacy Policy. I confirm I will use this application strictly for personal study, learning, and educational revision.</string>
+    <string name="legal_consent_btn_accept">Accept &amp; Continue</string>
+    <string name="legal_consent_academic_notice">Academic Integrity: prism-ocr-solver is an assistive learning tool. You are solely responsible for complying with your institution\'s examination policies.</string>
+    <string name="legal_policy_link_text">View Privacy Policy &amp; Terms Online</string>
+
+    <!-- Feature Guide & Legal Section -->
+    <string name="feature_guide_title">How prism-ocr-solver Works</string>
+    <string name="feature_guide_subtitle">Complete feature walkthrough and operational manual.</string>
+    <string name="privacy_legal_title">Legal &amp; Privacy Policies</string>
+    <string name="privacy_legal_subtitle">On-device privacy guarantees, zero-tracker policy, and official website documentation.</string>
+    <string name="btn_open_website_policy">Open virusboss.in/app/prism-ocr-solver/#privacy-policy</string>
 </resources>

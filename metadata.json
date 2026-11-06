@@ -1,6 +1,6 @@
 {
-  "name": "Prism AI",
-  "description": "Prism AI — iOS 26 Liquid Glass & Physics floating study assistant with Dynamic Island HUD, instant screen reader, ML Kit OCR, and Gemini AI.",
+  "name": "prism-ocr-solver",
+  "description": "prism-ocr-solver — On-device floating study assistant with Dynamic Island HUD, ML Kit OCR, and multi-model AI question analysis.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

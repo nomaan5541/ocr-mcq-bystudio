@@ -41,7 +41,7 @@ class OmniSolveRobolectricTest {
     fun `read app name from context`() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val appName = context.getString(R.string.app_name)
-        assertEquals("Prism AI", appName)
+        assertEquals("prism-ocr-solver", appName)
     }
 
     @Test
@@ -214,6 +214,14 @@ class OmniSolveRobolectricTest {
     @Test
     fun `verify instant home methods custom opacity dynamic flow toggles and advanced settings`() {
         composeTestRule.waitForIdle()
+
+        // Accept mandatory terms and privacy policy dialog if shown
+        try {
+            composeTestRule.onNodeWithTag("checkbox_accept_terms").performClick()
+            composeTestRule.waitForIdle()
+            composeTestRule.onNodeWithTag("btn_accept_and_continue").performClick()
+            composeTestRule.waitForIdle()
+        } catch (_: Throwable) {}
 
         // Home screen shows Start button + custom 20%-100% opacity + modes + 3 primary methods right away
         composeTestRule.onNodeWithTag("top_glass_header").assertIsDisplayed()

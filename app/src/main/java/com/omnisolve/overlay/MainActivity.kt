@@ -151,6 +151,10 @@ class MainActivity : AppCompatActivity() {
         const val PREF_KEY_DF_DIAGRAM_VISION = "PREF_DF_DIAGRAM_VISION"
         const val PREF_KEY_DF_QUICK_CROP = "PREF_DF_QUICK_CROP"
         const val PREF_KEY_DF_SWIPE_METHOD_LOOP = "PREF_DF_SWIPE_METHOD_LOOP"
+
+        // Legal & Privacy Consent Gate (First Launch Mandatory Checkbox)
+        const val PREF_KEY_USER_CONSENT_ACCEPTED = "PREF_USER_CONSENT_ACCEPTED"
+        const val URL_PRIVACY_POLICY_WEB = "https://virusboss.in/app/prism-ocr-solver/#privacy-policy"
     }
 
     private val viewModel: MainViewModel by viewModels()
@@ -258,6 +262,16 @@ class MainActivity : AppCompatActivity() {
                         onTestVibration = ::testPocketHapticPulse,
                         onSyncRunningService = ::notifyServiceConfigChanged
                     )
+
+                    // Mandatory First-Launch Legal Agreement Gate
+                    if (!uiState.userConsentAccepted) {
+                        com.omnisolve.overlay.ui.components.MandatoryLegalConsentDialog(
+                            onAcceptAndContinue = {
+                                triggerHapticTick()
+                                viewModel.acceptUserConsent()
+                            }
+                        )
+                    }
                 }
             }
         }

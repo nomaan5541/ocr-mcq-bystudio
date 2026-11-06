@@ -22,6 +22,6 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "Prism AI"
+rootProject.name = "prism-ocr-solver"
 
 include(":app")

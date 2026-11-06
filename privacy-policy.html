@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Privacy Policy - prism-ocr-solver</title>
+  <style>
+    :root {
+      --bg: #0b1120;
+      --card-bg: #1e293b;
+      --border: #334155;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --accent: #38bdf8;
+      --emerald: #34d399;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      padding: 2rem 1rem;
+    }
+    .container {
+      max-width: 860px;
+      margin: 0 auto;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 2.5rem;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.4);
+    }
+    h1 { font-size: 2.2rem; color: #fff; margin-bottom: 0.5rem; }
+    .badge {
+      display: inline-block;
+      background: rgba(56, 189, 248, 0.15);
+      color: var(--accent);
+      padding: 0.25rem 0.75rem;
+      border-radius: 9999px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      margin-bottom: 1.5rem;
+    }
+    h2 { font-size: 1.35rem; color: var(--accent); margin-top: 2rem; margin-bottom: 0.75rem; border-bottom: 1px solid var(--border); padding-bottom: 0.4rem; }
+    h3 { font-size: 1.1rem; color: #fff; margin-top: 1rem; margin-bottom: 0.5rem; }
+    p, li { color: var(--text-muted); font-size: 0.98rem; margin-bottom: 0.8rem; }
+    ul { padding-left: 1.5rem; margin-bottom: 1rem; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 1.25rem 0;
+      font-size: 0.9rem;
+    }
+    th, td {
+      border: 1px solid var(--border);
+      padding: 0.75rem 1rem;
+      text-align: left;
+    }
+    th {
+      background: rgba(255, 255, 255, 0.05);
+      color: #fff;
+    }
+    td { color: var(--text-muted); }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .footer {
+      margin-top: 2.5rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid var(--border);
+      font-size: 0.85rem;
+      text-align: center;
+      color: var(--text-muted);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>prism-ocr-solver</h1>
+    <span class="badge">Official Privacy Policy & Legal Disclosures</span>
+    <p><strong>Effective Date:</strong> November 6, 2026</p>
+    <p><strong>Official URL:</strong> <a href="https://virusboss.in/app/prism-ocr-solver/#privacy-policy">https://virusboss.in/app/prism-ocr-solver/#privacy-policy</a></p>
+    <p><strong>Contact:</strong> nomaankhannfs2@gmail.com</p>
+
+    <h2>1. Introduction</h2>
+    <p><strong>prism-ocr-solver</strong> is an on-device floating assistive study and quiz analysis tool. We are deeply committed to user privacy, data minimization, and user control. This policy describes how our application collects, uses, and protects your information.</p>
+
+    <h2>2. Data Handling & Security</h2>
+    <h3>A. Screen Capture & OCR Processing</h3>
+    <p>When you trigger a scan via the floating Dynamic Island or Bubble HUD, the app captures a temporary bitmap of your current screen strictly in volatile random-access memory (RAM). Google ML Kit performs optical character recognition locally on your device. Bitmaps are promptly deleted once analysis completes and are never saved to disk or persistent storage.</p>
+
+    <h3>B. Artificial Intelligence Inference</h3>
+    <ul>
+      <li><strong>Method 1 (Server Sol - Firebase AI Logic):</strong> Extracted question text is encrypted and sent to Firebase AI Logic powered by Gemini to generate the solution.</li>
+      <li><strong>Method 2 (OCR Text Extractor - Background Gemini):</strong> Employs on-device OCR and background Gemini processing.</li>
+      <li><strong>Method 3 (User Local API Keys):</strong> If you configure your own API keys (NVIDIA NIM, OpenRouter, OpenAI, Google AI), requests are made directly from your device to the respective provider. Your keys are stored strictly in private, sandboxed device storage and are never uploaded to any intermediate server.</li>
+    </ul>
+
+    <h2>3. Permissions Overview</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Permission</th>
+          <th>Usage Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Draw Over Other Apps</strong></td>
+          <td>Renders the non-intrusive floating HUD over educational PDFs and browser documents.</td>
+        </tr>
+        <tr>
+          <td><strong>Screen Capture</strong></td>
+          <td>Takes a snapshot of visible quiz questions only when tapped directly by the user.</td>
+        </tr>
+        <tr>
+          <td><strong>Internet Access</strong></td>
+          <td>Enables secure HTTPS communication with AI model inference backends.</td>
+        </tr>
+        <tr>
+          <td><strong>Vibration</strong></td>
+          <td>Provides optional non-visual haptic pulses for answer verification.</td>
+        </tr>
+        <tr>
+          <td><strong>Accessibility Service (Optional)</strong></td>
+          <td>Enables optional auto-assistive tapping when explicitly turned on by the user.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>4. Academic Integrity & Responsible Use</h2>
+    <p>prism-ocr-solver is designed strictly as a personal study assistant, revision aid, and learning companion. Users are solely responsible for ensuring compliance with all local laws, school guidelines, and examination honor codes.</p>
+
+    <h2>5. Data Deletion & Contact</h2>
+    <p>You can purge all locally saved test history, preferences, and API keys at any time via <strong>Settings &gt; Clear Local History</strong>, or by uninstalling the application.</p>
+    <p>For questions or assistance, contact: <strong>nomaankhannfs2@gmail.com</strong></p>
+
+    <div class="footer">
+      &copy; 2026 prism-ocr-solver &bull; <a href="https://virusboss.in/app/prism-ocr-solver/#privacy-policy">virusboss.in/app/prism-ocr-solver/#privacy-policy</a>
+    </div>
+  </div>
+</body>
+</html>

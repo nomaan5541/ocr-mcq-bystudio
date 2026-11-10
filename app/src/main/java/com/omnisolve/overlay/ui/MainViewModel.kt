@@ -17,6 +17,7 @@ import com.omnisolve.overlay.api.PrismAiSolverEngine
 import com.omnisolve.overlay.data.SolvedQuestionRecord
 import com.omnisolve.overlay.data.SolvedQuestionRepository
 import com.omnisolve.overlay.model.AnswerModel
+import com.omnisolve.overlay.model.EnginePerformanceMode
 import com.omnisolve.overlay.model.QuestionSolveMode
 import com.omnisolve.overlay.model.SolverMethod
 import com.omnisolve.overlay.model.SubjectMode
@@ -88,6 +89,7 @@ data class MainUiState(
     val islandOpacityIndex: Int = 0,
     val customOpacityPct: Int = 100,
     val questionSolveMode: QuestionSolveMode = QuestionSolveMode.STANDARD,
+    val enginePerformanceMode: EnginePerformanceMode = EnginePerformanceMode.NORMAL,
     val displayMode: String = MainActivity.MODE_STEALTH,
     val autoClickEnabled: Boolean = false,
     val afkAutoAdvanceEnabled: Boolean = false,
@@ -329,6 +331,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val savedMethod = SolverMethod.fromId(
             prefs.getString(MainActivity.PREF_KEY_SOLVER_METHOD, SolverMethod.BACKGROUND_GEMINI.id)
         )
+        val savedEngineMode = EnginePerformanceMode.fromId(
+            prefs.getString(MainActivity.PREF_KEY_ENGINE_PERFORMANCE_MODE, EnginePerformanceMode.NORMAL.id)
+        )
         val autoFailover = prefs.getBoolean(MainActivity.PREF_KEY_AUTO_FAILOVER, true)
         val nvidiaKey = prefs.getString(MainActivity.PREF_KEY_NVIDIA_API_KEY, "")?.trim().orEmpty()
         val openRouterKey = prefs.getString(MainActivity.PREF_KEY_OPENROUTER_API_KEY, "")?.trim().orEmpty()
@@ -366,6 +371,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             questionSolveMode = QuestionSolveMode.fromId(
                 prefs.getString(MainActivity.PREF_KEY_QUESTION_SOLVE_MODE, QuestionSolveMode.STANDARD.id)
             ),
+            enginePerformanceMode = savedEngineMode,
             displayMode = prefs.getString(MainActivity.PREF_KEY_DISPLAY_MODE, MainActivity.MODE_STEALTH)
                 ?: MainActivity.MODE_STEALTH,
             autoClickEnabled = prefs.getBoolean(MainActivity.PREF_KEY_AUTO_CLICK, false),
@@ -731,6 +737,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.update { it.copy(questionSolveMode = mode) }
         showBannerMessage("Solve Mode: ${mode.fullLabel}")
         onSyncService()
+    }
+
+    fun setEnginePerformanceMode(mode: EnginePerformanceMode, onSyncService: (() -> Unit)? = null) {
+        prefs.edit().putString(MainActivity.PREF_KEY_ENGINE_PERFORMANCE_MODE, mode.id).apply()
+        _uiState.update { it.copy(enginePerformanceMode = mode) }
+        showBannerMessage("Engine Mode: ${mode.title}")
+        onSyncService?.invoke()
     }
 
     fun setDfTwoPartCapture(enabled: Boolean, onSyncService: () -> Unit) {

@@ -5,6 +5,14 @@ This document contains the exact declarations, text copy, and answers to copy-pa
 
 ---
 
+### Sub-Topic 3.0: App Content & Ads Declaration
+* **Does your app contain ads?**  
+  * Answer: **Yes** (Select *"Yes, my app contains ads"* in Google Play Console under **Policy and programs → App content → Ads**).
+* **Ad Placement Policy Compliance:**  
+  * Ads are strictly limited to the main app interface (`MainActivity`). No ads are shown in floating system overlay windows or during screen captures.
+
+---
+
 ### Sub-Topic 3.1: Content Rating & Target Audience
 
 * **Target Age Group Selection:**  
@@ -67,17 +75,17 @@ Google Play's Data Safety questionnaire requires answers about user data collect
 
 | Question | Answer | Details / Justification |
 | :--- | :--- | :--- |
-| **Does your app collect or share any of the required user data types?** | **No** | Screen captures and OCR text are processed ephemerally in RAM and are not retained. |
-| **Is all user data collected by your app encrypted in transit?** | **Yes** | All network communications (AI model endpoints) use HTTPS / TLS 1.3. |
-| **Do you provide a way for users to request that their data is deleted?** | **Yes** | All local test history and API keys can be purged instantly via in-app Settings ("Clear Local History") or by uninstalling. |
-| **Location Data:** | **No** | The app does not request or collect GPS or network location. |
+| **Does your app collect or share any of the required user data types?** | **Yes** | Standard Google Mobile Ads SDK (AdMob) advertising identifiers; screen captures and OCR remain 100% ephemeral in RAM. |
+| **Is all user data collected by your app encrypted in transit?** | **Yes** | All network communications (AI model endpoints and AdMob) use HTTPS / TLS 1.3. |
+| **Do you provide a way for users to request that their data is deleted?** | **Yes** | All local test history and API keys can be purged instantly via in-app Settings ("Clear Local History") or by uninstalling; Ad ID can be deleted in Android Settings. |
+| **Location Data:** | **No** | The app does not request or collect GPS or location. |
 | **Personal Info (Name, Email, User IDs):** | **Optional / No** | Only standard Firebase Authentication if the user chooses Google Sign-In; no personal data is sold or shared. |
 | **Financial Info:** | **No** | Zero financial or payment collection. |
 | **Photos & Videos:** | **No** | Screen capture bitmaps are temporary RAM buffers discarded post-OCR; zero disk storage. |
 | **Files & Documents:** | **No** | The app does not read local user storage. |
 | **Audio Files:** | **No** | No audio recording. |
-| **App Activity / Analytics:** | **No** | No third-party tracking or advertising SDKs. |
-| **Device or other IDs:** | **No** | No advertising ID or IMEI collection. |
+| **App Activity / Analytics:** | **Optional (AdMob)** | Google AdMob processes ad impressions for fraud prevention and performance. |
+| **Device or other IDs:** | **Yes** | Advertising ID collected by Google Play Services / AdMob for ad serving and fraud detection. Declared as ephemeral, encrypted in transit. |
 
 ---
 

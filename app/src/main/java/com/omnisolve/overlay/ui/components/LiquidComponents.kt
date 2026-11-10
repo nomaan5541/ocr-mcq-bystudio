@@ -45,10 +45,42 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.omnisolve.overlay.R
 import com.omnisolve.overlay.ui.physics.GlassMaterialStrength
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.PathNode
 import com.omnisolve.overlay.ui.physics.livingGlassSurface
 import com.omnisolve.overlay.ui.theme.LocalWhiteGlassPalette
+
+val BarChartVector: ImageVector by lazy {
+    ImageVector.Builder(
+        name = "BarChart",
+        defaultWidth = 24.dp,
+        defaultHeight = 24.dp,
+        viewportWidth = 24f,
+        viewportHeight = 24f
+    ).addPath(
+        fill = SolidColor(Color.Black),
+        pathData = listOf(
+            PathNode.MoveTo(4f, 10f),
+            PathNode.HorizontalTo(8f),
+            PathNode.VerticalTo(20f),
+            PathNode.HorizontalTo(4f),
+            PathNode.Close,
+            PathNode.MoveTo(10f, 4f),
+            PathNode.HorizontalTo(14f),
+            PathNode.VerticalTo(20f),
+            PathNode.HorizontalTo(10f),
+            PathNode.Close,
+            PathNode.MoveTo(16f, 13f),
+            PathNode.HorizontalTo(20f),
+            PathNode.VerticalTo(20f),
+            PathNode.HorizontalTo(16f),
+            PathNode.Close
+        )
+    ).build()
+}
 
 enum class AppTab(
     val labelRes: Int,
@@ -57,11 +89,12 @@ enum class AppTab(
     val testTag: String
 ) {
     Home(R.string.nav_home, Icons.Filled.Home, Icons.Outlined.Home, "nav_tab_home"),
+    Stats(R.string.nav_stats, BarChartVector, BarChartVector, "nav_tab_stats"),
     Settings(R.string.nav_settings, Icons.Filled.Settings, Icons.Outlined.Settings, "nav_tab_settings")
 }
 
 /**
- * Clean, instant 2-tab bottom navigation bar (Home & Settings) with zero transition lag.
+ * Modern floating pill dock with bottom-wave gradient matching the exact HTML specification.
  */
 @Composable
 fun LiquidMorphBottomDock(
@@ -75,64 +108,71 @@ fun LiquidMorphBottomDock(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .navigationBarsPadding()
-            .padding(horizontal = 18.dp, vertical = 10.dp),
-        contentAlignment = Alignment.Center
+            .navigationBarsPadding(),
+        contentAlignment = Alignment.BottomCenter
     ) {
-        Row(
+        // Clean Floating Dock without background curly shade
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(64.dp)
-                .livingGlassSurface(
-                    strength = GlassMaterialStrength.FloatingDock,
-                    cornerRadius = 32.dp
-                )
-                .padding(horizontal = 6.dp, vertical = 6.dp)
-                .testTag("bottom_navigation_dock"),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                .padding(horizontal = 18.dp, vertical = 12.dp),
+            contentAlignment = Alignment.Center
         ) {
-            tabs.forEach { tab ->
-                val isSelected = tab == selectedTab
-                val pillShape = RoundedCornerShape(26.dp)
-                val selectedBg = if (palette.isDarkObsidian) Color(0xFF0C2D48) else Color(0xFFE0F2FE)
-                val selectedText = if (palette.isDarkObsidian) Color(0xFFE0F2FE) else Color(0xFF0C4A6E)
-                Row(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                        .minimumInteractiveComponentSize()
-                        .clip(pillShape)
-                        .background(if (isSelected) selectedBg else Color.Transparent)
-                        .border(
-                            width = if (isSelected) 1.2.dp else 0.dp,
-                            color = if (isSelected) palette.accentSky else Color.Transparent,
-                            shape = pillShape
-                        )
-                        .selectable(
-                            selected = isSelected,
-                            onClick = { onSelectTab(tab) },
-                            role = Role.Tab
-                        )
-                        .testTag(tab.testTag),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
-                ) {
-                    Icon(
-                        imageVector = if (isSelected) tab.selectedIcon else tab.unselectedIcon,
-                        contentDescription = stringResource(tab.labelRes),
-                        tint = if (isSelected) palette.accentSky else palette.inkSecondary,
-                        modifier = Modifier.size(21.dp)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp)
+                    .clip(RoundedCornerShape(50.dp))
+                    .background(if (palette.isDarkObsidian) Color(0xFF121316).copy(alpha = 0.96f) else Color.White.copy(alpha = 0.94f))
+                    .border(
+                        width = 1.dp,
+                        color = if (palette.isDarkObsidian) Color(0xFF23252A) else Color(0x99CBD5E1),
+                        shape = RoundedCornerShape(50.dp)
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = stringResource(tab.labelRes),
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = if (isSelected) selectedText else palette.inkPrimary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                    .padding(horizontal = 6.dp, vertical = 5.dp)
+                    .testTag("bottom_navigation_dock"),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                tabs.forEach { tab ->
+                    val isSelected = tab == selectedTab
+                    val pillShape = RoundedCornerShape(50.dp)
+                    val selectedBg = Color(0xFFD71921)
+                    val selectedText = Color.White
+                    val unselectedText = if (palette.isDarkObsidian) Color(0xFF767676) else Color(0xFF64748B)
+
+                    Row(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .clip(pillShape)
+                            .background(if (isSelected) selectedBg else Color.Transparent)
+                            .selectable(
+                                selected = isSelected,
+                                onClick = { onSelectTab(tab) },
+                                role = Role.Tab
+                            )
+                            .testTag(tab.testTag),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            imageVector = if (isSelected) tab.selectedIcon else tab.unselectedIcon,
+                            contentDescription = stringResource(tab.labelRes),
+                            tint = if (isSelected) selectedText else unselectedText,
+                            modifier = Modifier.size(17.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = stringResource(tab.labelRes),
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp,
+                            color = if (isSelected) selectedText else unselectedText,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
             }
         }

@@ -54,6 +54,7 @@ import com.omnisolve.overlay.data.SolvedQuestionRecord
 import com.omnisolve.overlay.data.SolvedQuestionRepository
 import com.omnisolve.overlay.firebase.configureAppCheck
 import com.omnisolve.overlay.model.AnswerModel
+import com.omnisolve.overlay.model.EnginePerformanceMode
 import com.omnisolve.overlay.model.QuestionSolveMode
 import com.omnisolve.overlay.model.SolverMethod
 import com.omnisolve.overlay.model.SubjectMode
@@ -2327,7 +2328,10 @@ class OverlayService : Service() {
         val subjectMode = SubjectMode.fromId(
             prefs.getString(MainActivity.PREF_KEY_SUBJECT_MODE, SubjectMode.GENERAL.id)
         )
-        val dualVerify = prefs.getBoolean(MainActivity.PREF_KEY_DUAL_VERIFY, false)
+        val perfModeId = prefs.getString(MainActivity.PREF_KEY_ENGINE_PERFORMANCE_MODE, EnginePerformanceMode.NORMAL.id)
+        val perfMode = EnginePerformanceMode.fromId(perfModeId)
+        val dualVerifyPref = prefs.getBoolean(MainActivity.PREF_KEY_DUAL_VERIFY, false)
+        val dualVerify = (dualVerifyPref || perfMode == EnginePerformanceMode.HIGH_ACCURACY) && perfMode != EnginePerformanceMode.EASY_RAM
         val translateToEnglish = prefs.getBoolean(MainActivity.PREF_KEY_TRANSLATE_ENGLISH, false)
 
         val currentEngine = prefs.getString(MainActivity.PREF_KEY_EXTRACTION_ENGINE, MainActivity.ENGINE_OCR)
@@ -2375,7 +2379,7 @@ class OverlayService : Service() {
             try {
                 var extractedText = ""
                 var textBlocks = emptyList<Pair<String, Rect>>()
-                val forceVisionForSolve = hasCropSelection || forceVisionOverride || forceDiagramVisionActive
+                var forceVisionForSolve = hasCropSelection || forceVisionOverride || forceDiagramVisionActive
 
                 if (preCapturedData != null) {
                     extractedText = preCapturedData.first
@@ -2409,7 +2413,13 @@ class OverlayService : Service() {
                             bitmapToRecycle = captureFrameOnly()
                         }
                     } else if (allowOcrFallback && screenCaptureManager != null) {
-                        val ocrData = captureAndOcr()
+                        var ocrData: Triple<String, List<Pair<String, Rect>>, Bitmap?>? = null
+                        for (attempt in 1..3) {
+                            ocrData = captureAndOcr()
+                            val chars = ocrData?.first?.count { it.isLetterOrDigit() } ?: 0
+                            if (ocrData != null && chars >= 4) break
+                            if (attempt < 3) delay(200)
+                        }
                         if (ocrData == null) {
                             setAnswerUI("CAP", "#B45309", triggerFeedback = false)
                             btnWindowScan?.text = "Solve"
@@ -2419,6 +2429,10 @@ class OverlayService : Service() {
                         extractedText = ocrData.first
                         textBlocks = ocrData.second
                         bitmapToRecycle = ocrData.third
+                        if (extractedText.count { it.isLetterOrDigit() } < 4 && bitmapToRecycle != null) {
+                            forceVisionForSolve = true
+                            extractedText = "Solve the question shown in the captured screen."
+                        }
                     } else {
                         setAnswerUI("TXT", "#B45309", triggerFeedback = false)
                         btnWindowScan?.text = "Solve"
@@ -2426,7 +2440,16 @@ class OverlayService : Service() {
                         return@launch
                     }
                 } else if (screenCaptureManager != null) {
-                    val ocrData = captureAndOcr()
+                    var ocrData: Triple<String, List<Pair<String, Rect>>, Bitmap?>? = null
+                    for (attempt in 1..3) {
+                        ocrData = captureAndOcr()
+                        val chars = ocrData?.first?.count { it.isLetterOrDigit() } ?: 0
+                        if (ocrData != null && chars >= 4) break
+                        if (attempt < 3) {
+                            Log.d(TAG, "OCR attempt $attempt extracted $chars chars, retrying in 200ms...")
+                            delay(200)
+                        }
+                    }
                     if (ocrData == null) {
                         setAnswerUI("CAP", "#B45309", triggerFeedback = false)
                         btnWindowScan?.text = "Solve"
@@ -2436,6 +2459,12 @@ class OverlayService : Service() {
                     extractedText = ocrData.first
                     textBlocks = ocrData.second
                     bitmapToRecycle = ocrData.third
+
+                    if (extractedText.count { it.isLetterOrDigit() } < 4 && bitmapToRecycle != null) {
+                        Log.i(TAG, "OCR text low after retry — auto-promoting to Vision AI")
+                        forceVisionForSolve = true
+                        extractedText = "Solve the question shown in the captured screen."
+                    }
                 } else if (a11yActive) {
                     val scraped = withContext(Dispatchers.Default) {
                         AutoClickAccessibilityService.extractScreenHierarchy()
@@ -2500,61 +2529,69 @@ class OverlayService : Service() {
                 var failureToast: String? = null
 
                 suspend fun tryFirebaseServer(isPrimary: Boolean): Boolean {
-                    val uid = try {
-                        if (FirebaseApp.getApps(this@OverlayService).isNotEmpty()) Firebase.auth.currentUser?.uid else null
-                    } catch (_: Exception) {
-                        null
-                    }
-                    if (isPrimary && uid.isNullOrBlank()) {
-                        failureBadge = "LOGIN"
-                        failureToast = "Log in to Server with Google first, or swipe down to switch method."
-                        return false
-                    }
                     withContext(Dispatchers.Main) {
                         btnWindowScan?.text = if (dualVerify) "Verifying..." else "Server..."
                     }
-                    return try {
-                        val answerModel = PrismAiSolverEngine.solveQuestion(
-                            extractedText = safePromptInput,
-                            screenBitmap = bitmapToRecycle,
-                            requestedModel = selectedModel,
-                            subjectMode = subjectMode,
-                            dualVerify = dualVerify,
-                            translateToEnglish = translateToEnglish,
-                            forceVisionBitmap = forceVisionForSolve,
-                            compactFastMode = !dualVerify && !translateToEnglish && solveMode == QuestionSolveMode.STANDARD,
-                            solveMode = solveMode
-                        )
-                        val resolvedBadge = answerModel.correctChoice.trim()
-                        if (isValidAnswerBadge(resolvedBadge)) {
-                            withContext(Dispatchers.Main) {
-                                if (autoClickMode) pendingAutoClickBlocks = textBlocks
-                                deliverResolvedAnswer(
-                                    rawLetter = resolvedBadge,
-                                    isAutoClick = autoClickMode,
-                                    solveId = currentSolveId,
-                                    questionPreview = safePromptInput,
-                                    answerModel = answerModel
-                                )
+                    for (attempt in 1..2) {
+                        try {
+                            val answerModel = PrismAiSolverEngine.solveQuestion(
+                                extractedText = safePromptInput,
+                                screenBitmap = bitmapToRecycle,
+                                requestedModel = selectedModel,
+                                subjectMode = subjectMode,
+                                dualVerify = dualVerify,
+                                translateToEnglish = translateToEnglish,
+                                forceVisionBitmap = forceVisionForSolve,
+                                compactFastMode = !dualVerify && !translateToEnglish && solveMode == QuestionSolveMode.STANDARD,
+                                solveMode = solveMode
+                            )
+                            val resolvedBadge = answerModel.correctChoice.trim()
+                            if (isValidAnswerBadge(resolvedBadge)) {
+                                withContext(Dispatchers.Main) {
+                                    if (autoClickMode) pendingAutoClickBlocks = textBlocks
+                                    deliverResolvedAnswer(
+                                        rawLetter = resolvedBadge,
+                                        isAutoClick = autoClickMode,
+                                        solveId = currentSolveId,
+                                        questionPreview = safePromptInput,
+                                        answerModel = answerModel
+                                    )
+                                }
+                                return true
                             }
-                            true
-                        } else {
-                            false
+                        } catch (ce: CancellationException) {
+                            if (ce !is TimeoutCancellationException) throw ce
+                            Log.w(TAG, "Firebase Server timed out (attempt $attempt): ${ce.message}")
+                            if (attempt == 1) {
+                                delay(250)
+                                continue
+                            }
+                            if (isPrimary) {
+                                failureToast = "Server timed out. Switching to backup solver..."
+                            }
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Firebase Server failed (attempt $attempt): ${e.message}")
+                            val isAuthIssue = e.message.orEmpty().contains("401") ||
+                                e.message.orEmpty().contains("403") ||
+                                e.message.orEmpty().contains("unauthenticated", ignoreCase = true) ||
+                                e.message.orEmpty().contains("permission", ignoreCase = true)
+                            if (isAuthIssue) {
+                                if (isPrimary) {
+                                    failureBadge = "LOGIN"
+                                    failureToast = "Log in to Server with Google in app first, or swipe down to switch method."
+                                }
+                                return false
+                            }
+                            if (attempt == 1) {
+                                delay(250)
+                                continue
+                            }
+                            if (isPrimary) {
+                                failureToast = "Server could not respond (${e.message?.take(50) ?: "check connection"})."
+                            }
                         }
-                    } catch (ce: CancellationException) {
-                        if (ce !is TimeoutCancellationException) throw ce
-                        Log.w(TAG, "Firebase Server timed out: ${ce.message}")
-                        if (isPrimary) {
-                            failureToast = "Server timed out. Tap again or swipe down to switch method."
-                        }
-                        false
-                    } catch (e: Exception) {
-                        Log.w(TAG, "Firebase Server failed: ${e.message}")
-                        if (isPrimary) {
-                            failureToast = "Server could not respond (${e.message?.take(60) ?: "check connection"})."
-                        }
-                        false
                     }
+                    return false
                 }
 
                 suspend fun tryApiKeys(isPrimary: Boolean): Boolean {
@@ -2616,13 +2653,30 @@ class OverlayService : Service() {
                     withContext(Dispatchers.Main) {
                         pendingAutoClickBlocks = if (autoClickMode) textBlocks else null
                     }
-                    return solveViaGeminiWebSession(
+                    val firstSuccess = solveViaGeminiWebSession(
                         promptText = promptText,
                         isAutoClick = autoClickMode,
                         solveId = currentSolveId,
                         questionPreview = safePromptInput,
                         isPrimaryMethod = isPrimary,
                         suppressFailureUi = true
+                    )
+                    if (firstSuccess) return true
+
+                    // Auto-recovery: if attempt 1 encounters error or stall, start fresh from new tab
+                    Log.i(TAG, "Gemini session initial attempt did not resolve answer — resetting to fresh tab and retrying...")
+                    withContext(Dispatchers.Main) {
+                        btnWindowScan?.text = "New Tab..."
+                        forceResetGeminiWebChat()
+                    }
+                    delay(300)
+                    return solveViaGeminiWebSession(
+                        promptText = promptText,
+                        isAutoClick = autoClickMode,
+                        solveId = currentSolveId,
+                        questionPreview = safePromptInput,
+                        isPrimaryMethod = isPrimary,
+                        suppressFailureUi = !isPrimary
                     )
                 }
 
@@ -2632,14 +2686,16 @@ class OverlayService : Service() {
                 val solved = when (method) {
                     SolverMethod.FIREBASE_SERVER -> {
                         tryFirebaseServer(isPrimary = true) ||
-                            (autoFailover && MultiProviderApiSolver.hasAnyConfiguredKey(this@OverlayService) && tryApiKeys(isPrimary = false))
+                            (autoFailover && MultiProviderApiSolver.hasAnyConfiguredKey(this@OverlayService) && tryApiKeys(isPrimary = false)) ||
+                            (autoFailover && tryBackgroundGemini(isPrimary = false))
                     }
                     SolverMethod.BACKGROUND_GEMINI -> {
                         tryBackgroundGemini(isPrimary = true) ||
                             (autoFailover && MultiProviderApiSolver.hasAnyConfiguredKey(this@OverlayService) && tryApiKeys(isPrimary = false))
                     }
                     SolverMethod.API_KEYS -> {
-                        tryApiKeys(isPrimary = true)
+                        tryApiKeys(isPrimary = true) ||
+                            (autoFailover && tryBackgroundGemini(isPrimary = false))
                     }
                     SolverMethod.OVERLAPPING_GOOGLE -> {
                         withContext(Dispatchers.Main) {
@@ -2783,10 +2839,31 @@ class OverlayService : Service() {
 
         if (bitmap == null) return null
 
-        val ocrResult = withContext(Dispatchers.Default) {
-            ocrEngine.extractTextWithBounds(bitmap)
+        val prefs = getSharedPreferences("OmniSolvePrefs", Context.MODE_PRIVATE)
+        val perfModeId = prefs.getString(MainActivity.PREF_KEY_ENGINE_PERFORMANCE_MODE, EnginePerformanceMode.NORMAL.id)
+        val finalBitmap = if (perfModeId == EnginePerformanceMode.EASY_RAM.id) {
+            try {
+                val scaled = Bitmap.createScaledBitmap(
+                    bitmap,
+                    (bitmap.width * 0.65f).toInt().coerceAtLeast(100),
+                    (bitmap.height * 0.65f).toInt().coerceAtLeast(100),
+                    true
+                )
+                if (scaled != bitmap) {
+                    bitmap.recycle()
+                }
+                scaled
+            } catch (_: Exception) {
+                bitmap
+            }
+        } else {
+            bitmap
         }
-        return Triple(ocrResult.first, ocrResult.second, bitmap)
+
+        val ocrResult = withContext(Dispatchers.Default) {
+            ocrEngine.extractTextWithBounds(finalBitmap)
+        }
+        return Triple(ocrResult.first, ocrResult.second, finalBitmap)
     }
 
     private fun parseJsEvalJson(rawResult: String?): JSONObject? {

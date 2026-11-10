@@ -1,6 +1,27 @@
 # Add rules that OEM-specific and library code won't be stripped
 -keep class com.omnisolve.overlay.** { *; }
 
+# AndroidX WorkManager, Room & Startup
+-keep class androidx.work.** { *; }
+-dontwarn androidx.work.**
+-keep class androidx.room.** { *; }
+-dontwarn androidx.room.**
+-keep class * extends androidx.room.RoomDatabase { *; }
+-keep class androidx.work.impl.WorkDatabase { *; }
+-keep class androidx.work.impl.WorkDatabase_Impl { *; }
+-keep class androidx.startup.** { *; }
+-dontwarn androidx.startup.**
+
+# Google Mobile Ads (AdMob)
+-keep class com.google.android.gms.ads.** { *; }
+-dontwarn com.google.android.gms.ads.**
+
+# Firebase & Google Services
+-keep class com.google.firebase.** { *; }
+-dontwarn com.google.firebase.**
+-keep class com.google.android.gms.** { *; }
+-dontwarn com.google.android.gms.**
+
 # OkHttp
 -dontwarn okhttp3.**
 -dontwarn okio.**
@@ -19,8 +40,6 @@
 # ML Kit Text Recognition
 -keep class com.google.mlkit.** { *; }
 -dontwarn com.google.mlkit.**
--keep class com.google.android.gms.** { *; }
--dontwarn com.google.android.gms.**
 
 # Kotlin Coroutines
 -keepclassmembernames class kotlinx.** {
@@ -31,8 +50,6 @@
 # Keep accessibility service metadata
 -keep class com.omnisolve.overlay.service.AutoClickAccessibilityService { *; }
 -keep class com.omnisolve.overlay.service.OverlayService { *; }
-
-
 
 # Samsung, OPPO, Realme, OnePlus, Xiaomi OEM compatibility
 # Some OEMs use reflection to read app metadata

@@ -160,18 +160,28 @@ fun LiquidAtmosphericBackdrop(
     modifier: Modifier = Modifier
 ) {
     val palette = LocalWhiteGlassPalette.current
-    val midColor = if (palette.isDarkObsidian) Color(0xFF0B1120) else Color(0xFFF1F5F9)
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(
-                brush = Brush.verticalGradient(
-                    colors = listOf(
-                        palette.canvasTop,
-                        midColor,
-                        palette.canvasBottom
+                if (palette.isDarkObsidian) {
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            Color(0xFF070B19),
+                            Color(0xFF0F172A),
+                            Color(0xFF090E1F)
+                        )
                     )
-                )
+                } else {
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            Color(0xFFEDF5FC),
+                            Color(0xFFD8E8F8),
+                            Color(0xFFE2EFFA),
+                            Color(0xFFCFE3F6)
+                        )
+                    )
+                }
             )
     )
 }

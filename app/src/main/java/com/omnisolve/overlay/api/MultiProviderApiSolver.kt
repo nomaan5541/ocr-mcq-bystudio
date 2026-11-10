@@ -121,7 +121,10 @@ object MultiProviderApiSolver {
     internal fun sanitizeApiKey(raw: String?): String {
         val trimmed = raw?.trim().orEmpty()
         if (trimmed.isEmpty()) return ""
-        if (trimmed.endsWith("_DEFAULT_VALUE") || trimmed.equals("null", ignoreCase = true)) {
+        if (trimmed.endsWith("_DEFAULT_VALUE") ||
+            trimmed.equals("null", ignoreCase = true) ||
+            trimmed.equals("none", ignoreCase = true)
+        ) {
             return ""
         }
         return trimmed

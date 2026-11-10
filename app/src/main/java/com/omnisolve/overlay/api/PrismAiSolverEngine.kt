@@ -30,9 +30,10 @@ object PrismAiSolverEngine {
 
     private const val TAG = "PrismAiSolverEngine"
 
-    const val MODEL_FLASH = "gemini-3.8-flash"
-    const val MODEL_LITE = "gemini-3.5-flash-lite"
-    const val MODEL_ARGON = "gemini-4-argon"
+    const val MODEL_FLASH = "gemini-1.5-flash"
+    const val MODEL_LITE = "gemini-1.5-flash-8b"
+    const val MODEL_ARGON = "gemini-1.5-pro"
+    const val MODEL_FLASH_2 = "gemini-2.0-flash"
     const val DEFAULT_CLOUD_MODEL = MODEL_FLASH
 
     private val modelCache = ConcurrentHashMap<String, GenerativeModel>()
@@ -84,11 +85,12 @@ object PrismAiSolverEngine {
     )
 
     fun normalizeCloudModel(requested: String?): String {
-        val clean = requested?.trim().orEmpty()
+        val clean = requested?.trim().orEmpty().lowercase()
         return when {
-            clean == MODEL_ARGON || clean.endsWith("-pro") || clean.contains("pro-preview") -> MODEL_ARGON
-            clean == MODEL_LITE || clean.endsWith("flash-lite") || clean.contains("flash-lite-preview") -> MODEL_LITE
-            clean == MODEL_FLASH -> MODEL_FLASH
+            clean == MODEL_FLASH_2 || clean.contains("2.0") || clean.contains("flash-2") -> MODEL_FLASH_2
+            clean == MODEL_ARGON || clean.contains("pro") || clean.contains("argon") -> MODEL_ARGON
+            clean == MODEL_LITE || clean.contains("8b") || clean.contains("lite") -> MODEL_LITE
+            clean == MODEL_FLASH || clean.contains("flash") -> MODEL_FLASH
             else -> MODEL_FLASH
         }
     }
@@ -258,7 +260,6 @@ object PrismAiSolverEngine {
         compactMode: Boolean,
         solveMode: QuestionSolveMode = QuestionSolveMode.STANDARD
     ): AnswerModel {
-        val model = getOrCreateModel(modelId, subject, compactMode)
         val prompt = buildString {
             if (verificationDraft != null) {
                 appendLine("VERIFY DRAFT: '${verificationDraft.correctChoice}' (${verificationDraft.shortAnswer}). Re-check for NOT/EXCEPT or math traps and output JSON.")
@@ -284,23 +285,41 @@ object PrismAiSolverEngine {
             }
         }
 
-        val response = withTimeout(30_000L) {
-            if (bitmap != null) {
-                model.generateContent(
-                    content {
-                        image(bitmap)
-                        text(prompt)
+        val candidates = listOf(modelId, MODEL_FLASH_2, MODEL_FLASH, MODEL_LITE).distinct()
+        var lastError: Exception? = null
+
+        for (candidate in candidates) {
+            try {
+                val model = getOrCreateModel(candidate, subject, compactMode)
+                val response = withTimeout(25_000L) {
+                    if (bitmap != null) {
+                        model.generateContent(
+                            content {
+                                image(bitmap)
+                                text(prompt)
+                            }
+                        )
+                    } else {
+                        model.generateContent(prompt)
                     }
-                )
-            } else {
-                model.generateContent(prompt)
+                }
+
+                val rawJson = response.text?.trim()
+                    ?: throw IllegalStateException("EMPTY_AI_RESPONSE")
+                Log.d(TAG, "Firebase AI ($candidate, compact=$compactMode) output: $rawJson")
+                return parseStructuredAnswer(rawJson, subject, candidate)
+            } catch (ce: CancellationException) {
+                throw ce
+            } catch (e: Exception) {
+                Log.w(TAG, "Candidate $candidate failed: ${e.message}")
+                lastError = e
+                if (isNonRetryableCloudFailure(e) && !e.message.orEmpty().contains("not found", ignoreCase = true)) {
+                    break
+                }
             }
         }
 
-        val rawJson = response.text?.trim()
-            ?: throw IllegalStateException("EMPTY_AI_RESPONSE")
-        Log.d(TAG, "Firebase AI ($modelId, compact=$compactMode) output: $rawJson")
-        return parseStructuredAnswer(rawJson, subject, modelId)
+        throw lastError ?: IllegalStateException("Cloud model invocation failed")
     }
 
     internal fun parseStructuredAnswer(

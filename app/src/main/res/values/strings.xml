@@ -6,6 +6,7 @@
     <!-- Header & Navigation -->
     <string name="header_subtitle">Instant Floating Solver</string>
     <string name="nav_home">Home</string>
+    <string name="nav_stats">Stats</string>
     <string name="nav_settings">Settings</string>
 
     <!-- Home Screen -->

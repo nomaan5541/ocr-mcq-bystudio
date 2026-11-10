@@ -223,14 +223,8 @@ class OmniSolveRobolectricTest {
             composeTestRule.waitForIdle()
         } catch (_: Throwable) {}
 
-        // Home screen shows Start button + custom 20%-100% opacity + modes + 3 primary methods right away
+        // Home screen shows Header + Start button + 3 primary methods + Quick Settings
         composeTestRule.onNodeWithTag("top_glass_header").assertIsDisplayed()
-        composeTestRule.onNodeWithTag("section_home_opacity").assertIsDisplayed()
-        composeTestRule.onNodeWithTag("input_home_opacity_pct").assertIsDisplayed()
-        composeTestRule.onNodeWithTag("slider_home_opacity_pct").assertIsDisplayed()
-        composeTestRule.onNodeWithTag("btn_home_mode_standard").assertIsDisplayed()
-        composeTestRule.onNodeWithTag("btn_home_mode_match").assertIsDisplayed()
-        composeTestRule.onNodeWithTag("btn_home_mode_complex_math").assertIsDisplayed()
         composeTestRule.onNodeWithTag("btn_toggle_overlay").assertIsDisplayed()
 
         composeTestRule.onNodeWithTag("home_screen_list")
@@ -238,6 +232,15 @@ class OmniSolveRobolectricTest {
         composeTestRule.onNodeWithTag("option_method_firebase").assertIsDisplayed()
         composeTestRule.onNodeWithTag("option_method_background_gemini").assertIsDisplayed()
         composeTestRule.onNodeWithTag("option_method_api_keys").assertIsDisplayed()
+
+        composeTestRule.onNodeWithTag("home_screen_list")
+            .performScrollToNode(hasTestTag("section_home_opacity"))
+        composeTestRule.onNodeWithTag("section_home_opacity").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("input_home_opacity_pct").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("slider_home_opacity_pct").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("btn_home_mode_standard").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("btn_home_mode_match").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("btn_home_mode_complex_math").assertIsDisplayed()
 
         // Switch to Settings tab instantly
         composeTestRule.onNodeWithTag("nav_tab_settings").performClick()

@@ -20,6 +20,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -42,6 +43,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -52,19 +54,27 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import com.google.firebase.FirebaseApp
+import com.omnisolve.overlay.ads.AdManager
+import com.omnisolve.overlay.ads.InAppAdMobBanner
 import com.omnisolve.overlay.data.GoogleAuthManager
 import com.omnisolve.overlay.data.GoogleSignInOutcome
 import com.omnisolve.overlay.firebase.configureAppCheck
@@ -82,6 +92,7 @@ import com.omnisolve.overlay.ui.physics.SpringPhysicsConfig
 import com.omnisolve.overlay.ui.physics.livingGlassSurface
 import com.omnisolve.overlay.ui.screens.HomeScreen
 import com.omnisolve.overlay.ui.screens.SettingsScreen
+import com.omnisolve.overlay.ui.screens.StatsScreen
 import com.omnisolve.overlay.ui.theme.LocalWhiteGlassPalette
 import com.omnisolve.overlay.ui.theme.WhiteGlassTheme
 import kotlinx.coroutines.launch
@@ -155,6 +166,7 @@ class MainActivity : AppCompatActivity() {
         // Legal & Privacy Consent Gate (First Launch Mandatory Checkbox)
         const val PREF_KEY_USER_CONSENT_ACCEPTED = "PREF_USER_CONSENT_ACCEPTED"
         const val URL_PRIVACY_POLICY_WEB = "https://virusboss.in/app/prism-ocr-solver/#privacy-policy"
+        const val PREF_KEY_ENGINE_PERFORMANCE_MODE = "PREF_KEY_ENGINE_PERFORMANCE_MODE"
     }
 
     private val viewModel: MainViewModel by viewModels()
@@ -179,6 +191,11 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
 
         configureAppCheck(this, intent)
+
+        // Initialize Google Mobile Ads SDK for in-app banners/interstitials
+        AdManager.initialize(this) {
+            AdManager.preloadInterstitial(this)
+        }
 
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.light(
@@ -221,8 +238,20 @@ class MainActivity : AppCompatActivity() {
                 stiffness = if (uiState.advSpringPhysicsEnabled) uiState.springStiffness else 650f
             )
 
+            val currentDensity = LocalDensity.current
+            // Dynamic auto-adjustment: safely clamps font scaling to [0.85f, 1.12f]
+            // so developer options DPI changes, display size adjustments, or system font scale
+            // NEVER cause text collision, line overlapping, or broken layouts.
+            val adaptiveDensity = remember(currentDensity.density, currentDensity.fontScale) {
+                Density(
+                    density = currentDensity.density,
+                    fontScale = currentDensity.fontScale.coerceIn(0.85f, 1.12f)
+                )
+            }
+
             WhiteGlassTheme(darkObsidian = uiState.advDarkObsidianEnabled) {
                 CompositionLocalProvider(
+                    LocalDensity provides adaptiveDensity,
                     LocalReducedMotion provides !uiState.advSpringPhysicsEnabled,
                     LocalSpringPhysics provides springCfg
                 ) {
@@ -522,6 +551,9 @@ private fun MainInstantApp(
                         onSelectTab(
                             if (state.selectedTab == AppTab.Settings) AppTab.Home else AppTab.Settings
                         )
+                    },
+                    onShowNotifications = {
+                        viewModel.showBannerMessage("Prism OCR Solver v3.5.2 is active & ready")
                     }
                 )
             },
@@ -578,6 +610,18 @@ private fun MainInstantApp(
                             onOpenSettings = { onSelectTab(AppTab.Settings) },
                             onSignInServer = onSignInGoogle,
                             onOpenGeminiLogin = onOpenGoogleLogin,
+                            onToggleTheme = {
+                                viewModel.setAdvDarkObsidian(!state.advDarkObsidianEnabled, onSyncRunningService)
+                            },
+                            modifier = contentMod
+                        )
+
+                        AppTab.Stats -> StatsScreen(
+                            state = state,
+                            onOpenSettings = { onSelectTab(AppTab.Settings) },
+                            onSelectEngineMode = { mode ->
+                                viewModel.setEnginePerformanceMode(mode, onSyncRunningService)
+                            },
                             modifier = contentMod
                         )
 
@@ -744,112 +788,144 @@ private fun MainInstantApp(
 private fun WhiteGlassTopHeader(
     isOverlayRunning: Boolean,
     selectedTab: AppTab,
-    onToggleSettings: () -> Unit
+    onToggleSettings: () -> Unit,
+    onShowNotifications: () -> Unit = {}
 ) {
     val palette = LocalWhiteGlassPalette.current
-    val logoBoxBg = if (palette.isDarkObsidian) Color(0xFF0E2A47) else Color(0xFFF0F9FF)
-    val logoBoxBorder = if (palette.isDarkObsidian) Color(0xFF0284C7) else Color(0xFFBAE6FD)
-    val chipBg = when {
-        selectedTab == AppTab.Settings && palette.isDarkObsidian -> Color(0xFF0E2A47)
-        selectedTab == AppTab.Settings -> Color(0xFFE0F2FE)
-        palette.isDarkObsidian -> Color(0xFF151F32)
-        else -> Color(0xFFF1F5F9)
-    }
-    val chipBorder = when {
-        selectedTab == AppTab.Settings -> palette.accentSky
-        palette.isDarkObsidian -> Color(0xFF334155)
-        else -> Color(0xFFCBD5E1)
-    }
 
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .statusBarsPadding()
-            .padding(horizontal = 18.dp, vertical = 8.dp),
+            .padding(horizontal = 20.dp, vertical = 10.dp),
         contentAlignment = Alignment.Center
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .widthIn(max = 680.dp)
-                .livingGlassSurface(
-                    strength = GlassMaterialStrength.FloatingDock,
-                    cornerRadius = 20.dp
-                )
-                .padding(horizontal = 16.dp, vertical = 10.dp)
                 .testTag("top_glass_header"),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
+            // Left: Logo & Title matching HTML
             Row(verticalAlignment = Alignment.CenterVertically) {
+                // Diamond Prism Logo
                 Box(
                     modifier = Modifier
-                        .size(40.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(logoBoxBg)
-                        .border(1.dp, logoBoxBorder, RoundedCornerShape(12.dp)),
+                        .size(48.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(
+                            Brush.linearGradient(
+                                listOf(Color(0xFF1D1F25), Color(0xFF15161A), Color(0xFF0D0E11))
+                            )
+                        )
+                        .border(1.2.dp, Color(0xFF2B2D34), RoundedCornerShape(16.dp))
+                        .padding(2.5.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    Image(
-                        painter = painterResource(id = R.drawable.ic_prism_orb),
-                        contentDescription = null,
-                        modifier = Modifier.size(26.dp)
-                    )
+                    // Diamond Shape with Crimson / Scarlet gradient
+                    Box(
+                        modifier = Modifier
+                            .size(24.dp)
+                            .rotate(45f)
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(
+                                Brush.linearGradient(
+                                    listOf(Color(0xFFD71921), Color(0xFF7A0A0F))
+                                )
+                            )
+                            .border(1.5.dp, Color(0xFFFF4D4D), RoundedCornerShape(4.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(9.dp)
+                                .clip(CircleShape)
+                                .background(Color.White.copy(alpha = 0.85f))
+                        )
+                    }
                 }
-                Spacer(modifier = Modifier.width(12.dp))
+
+                Spacer(modifier = Modifier.width(13.dp))
+
                 Column {
                     Text(
-                        text = stringResource(R.string.app_name),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = palette.inkPrimary
+                        text = "Prism OCR Solver",
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = palette.inkPrimary,
+                            letterSpacing = (-0.4).sp
+                        )
                     )
                     Text(
-                        text = stringResource(R.string.header_subtitle),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = palette.inkSecondary
+                        text = "Instant Floating Solver",
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = palette.inkSecondary
+                        )
                     )
                 }
             }
 
+            // Right: Action Buttons (Notification & Settings) matching HTML
             Row(
-                modifier = Modifier
-                    .minimumInteractiveComponentSize()
-                    .clip(RoundedCornerShape(999.dp))
-                    .background(chipBg)
-                    .border(
-                        width = 1.dp,
-                        color = chipBorder,
-                        shape = RoundedCornerShape(999.dp)
-                    )
-                    .clickable(
-                        role = Role.Button,
-                        onClick = onToggleSettings
-                    )
-                    .padding(horizontal = 12.dp, vertical = 8.dp)
-                    .testTag("btn_header_account"),
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                // Notification Button
                 Box(
                     modifier = Modifier
-                        .size(8.dp)
+                        .size(40.dp)
                         .clip(CircleShape)
-                        .background(if (isOverlayRunning) Color(0xFF10B981) else palette.accentSky)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = if (selectedTab == AppTab.Settings) "Home" else "Settings",
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = palette.inkPrimary
-                )
-                Spacer(modifier = Modifier.width(5.dp))
-                Icon(
-                    imageVector = Icons.Filled.Settings,
-                    contentDescription = "Open Settings",
-                    tint = palette.accentSky,
-                    modifier = Modifier.size(16.dp)
-                )
+                        .background(if (palette.isDarkObsidian) Color(0xFF16171B) else Color.White.copy(alpha = 0.9f))
+                        .border(
+                            1.dp,
+                            if (palette.isDarkObsidian) Color(0xFF23252A) else Color(0x99CBD5E1),
+                            CircleShape
+                        )
+                        .clickable(role = Role.Button, onClick = onShowNotifications),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.NotificationsActive,
+                        contentDescription = "Notifications",
+                        tint = palette.inkPrimary,
+                        modifier = Modifier.size(17.dp)
+                    )
+                }
+
+                // Settings Button (preserving testTag("btn_header_account"))
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(
+                            if (selectedTab == AppTab.Settings) Color(0xFF2A1315)
+                            else if (palette.isDarkObsidian) Color(0xFF16171B)
+                            else Color.White.copy(alpha = 0.9f)
+                        )
+                        .border(
+                            1.dp,
+                            if (selectedTab == AppTab.Settings) Color(0xFFD71921)
+                            else if (palette.isDarkObsidian) Color(0xFF23252A)
+                            else Color(0x99CBD5E1),
+                            CircleShape
+                        )
+                        .clickable(role = Role.Button, onClick = onToggleSettings)
+                        .testTag("btn_header_account"),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Settings,
+                        contentDescription = "Settings",
+                        tint = if (selectedTab == AppTab.Settings) Color(0xFFD71921)
+                        else palette.inkPrimary,
+                        modifier = Modifier.size(17.dp)
+                    )
+                }
             }
         }
     }

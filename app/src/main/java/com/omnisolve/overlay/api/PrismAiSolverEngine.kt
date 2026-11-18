@@ -19,6 +19,11 @@ import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import java.util.concurrent.TimeUnit
 
 /**
  * Single-Shot Ultra-Fast Cloud Gemini Solver powered by Firebase AI Logic (`Firebase.ai`).
@@ -37,6 +42,61 @@ object PrismAiSolverEngine {
     const val DEFAULT_CLOUD_MODEL = MODEL_FLASH
 
     private val modelCache = ConcurrentHashMap<String, GenerativeModel>()
+
+    const val CLOUDFLARE_WORKER_URL = "https://mcq-mate.nomaankhannfs2.workers.dev"
+
+    private val httpClient: OkHttpClient by lazy {
+        OkHttpClient.Builder()
+            .connectTimeout(4, TimeUnit.SECONDS)
+            .readTimeout(8, TimeUnit.SECONDS)
+            .writeTimeout(6, TimeUnit.SECONDS)
+            .build()
+    }
+
+    suspend fun solveViaCloudflare(
+        extractedText: String,
+        solveMode: QuestionSolveMode = QuestionSolveMode.STANDARD
+    ): AnswerModel? = withContext(Dispatchers.IO) {
+        if (extractedText.isBlank()) return@withContext null
+        try {
+            val jsonPayload = com.google.gson.JsonObject().apply {
+                addProperty("extractedText", extractedText)
+                addProperty("mode", solveMode.id)
+            }.toString()
+
+            val request = Request.Builder()
+                .url(CLOUDFLARE_WORKER_URL)
+                .post(jsonPayload.toRequestBody("application/json; charset=utf-8".toMediaType()))
+                .build()
+
+            httpClient.newCall(request).execute().use { resp ->
+                if (!resp.isSuccessful) {
+                    Log.w(TAG, "Cloudflare Worker returned HTTP ${resp.code}")
+                    return@withContext null
+                }
+                val rawBody = resp.body?.string() ?: return@withContext null
+                val json = JsonParser.parseString(rawBody).asJsonObject
+                val choice = json.get("correctChoice")?.asString?.trim().orEmpty()
+                if (choice.isBlank()) return@withContext null
+
+                val badge = json.get("answerBadge")?.asString?.trim() ?: "($choice)"
+                val shortAns = json.get("shortAnswer")?.asString?.trim() ?: "Option $choice"
+                val explanation = json.get("explanation")?.asString?.trim().orEmpty()
+
+                AnswerModel(
+                    correctChoice = choice,
+                    shortAnswer = shortAns,
+                    explanation = explanation,
+                    confidence = 98,
+                    engineLabel = "Cloudflare • Workers AI"
+                )
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Cloudflare Workers AI call skipped: ${e.message}")
+            null
+        }
+    }
+
 
     private val compactFastSchema = Schema.obj(
         mapOf(
@@ -204,6 +264,15 @@ object PrismAiSolverEngine {
             downscaleForInference(screenBitmap, maxDimension = 960)
         } else {
             null
+        }
+
+        // 1. Prioritize Cloudflare Workers AI (Zero API Keys, fast Edge inference)
+        if (preparedBitmap == null) {
+            val cfResult = solveViaCloudflare(extractedText, solveMode)
+            if (cfResult != null && cfResult.correctChoice.isNotBlank()) {
+                Log.i(TAG, "Solved via Cloudflare Workers AI: ${cfResult.correctChoice}")
+                return@withContext cfResult
+            }
         }
 
         try {

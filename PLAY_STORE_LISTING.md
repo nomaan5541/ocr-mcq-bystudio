@@ -6,6 +6,9 @@ Prism: Solve On Your Screen
 ## Short Description — Max 80 chars
 Solve anything on your screen instantly with Prism AI: Quizzes, Forms & MCQs.
 
+## Privacy Policy URL (for Google Play Console "App content")
+https://nomaan5541.github.io/prism-privacy-policy/
+
 ---
 
 ## Full Description — Copy & Paste into Google Play Console:

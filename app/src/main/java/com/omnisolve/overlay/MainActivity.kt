@@ -219,7 +219,7 @@ class MainActivity : AppCompatActivity() {
 
         // Legal & Privacy Consent Gate (First Launch Mandatory Checkbox)
         const val PREF_KEY_USER_CONSENT_ACCEPTED = "PREF_USER_CONSENT_ACCEPTED"
-        const val URL_PRIVACY_POLICY_WEB = "https://virusboss.in/app/prism-ocr-solver/#privacy-policy"
+        const val URL_PRIVACY_POLICY_WEB = "https://nomaan5541.github.io/prism-privacy-policy/"
         const val PREF_KEY_ENGINE_PERFORMANCE_MODE = "PREF_KEY_ENGINE_PERFORMANCE_MODE"
 
         // Dynamic Island Studio Extended Customization

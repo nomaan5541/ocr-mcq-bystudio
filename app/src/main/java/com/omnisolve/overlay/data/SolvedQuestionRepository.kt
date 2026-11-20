@@ -53,7 +53,6 @@ class SolvedQuestionRepository(
     fun observeSolvedQuestions(userId: String, limit: Long = 100L): Flow<List<SolvedQuestionRecord>> = callbackFlow {
         val path = "users/$userId/solvedQuestions"
         val registration = userQuestionsCollection(userId)
-            .whereEqualTo("userId", userId)
             .orderBy("createdAt", Query.Direction.DESCENDING)
             .limit(limit)
             .addSnapshotListener { snapshot, error ->
@@ -80,7 +79,6 @@ class SolvedQuestionRepository(
         val path = "users/$userId/solvedQuestions"
         return try {
             val snapshot = userQuestionsCollection(userId)
-                .whereEqualTo("userId", userId)
                 .limit(limit)
                 .get()
                 .await()
@@ -188,6 +186,32 @@ class SolvedQuestionRepository(
         val path = "users/$userId/solvedQuestions/$questionId"
         return try {
             userQuestionsCollection(userId).document(questionId).delete().await()
+            Result.success(Unit)
+        } catch (ce: CancellationException) {
+            throw ce
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.DELETE, path, auth)
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Deletes all solved question documents owned by `userId` (used during in-app account deletion).
+     */
+    suspend fun deleteAllUserQuestions(userId: String): Result<Unit> {
+        val path = "users/$userId/solvedQuestions"
+        return try {
+            while (true) {
+                val snapshot = userQuestionsCollection(userId)
+                    .limit(200L)
+                    .get()
+                    .await()
+                if (snapshot.isEmpty) break
+                val batch = db.batch()
+                snapshot.documents.forEach { doc -> batch.delete(doc.reference) }
+                batch.commit().await()
+                if (snapshot.size() < 200) break
+            }
             Result.success(Unit)
         } catch (ce: CancellationException) {
             throw ce

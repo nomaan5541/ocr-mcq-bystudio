@@ -20,8 +20,24 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -34,17 +50,27 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.SystemUpdate
+import androidx.compose.material.icons.filled.VerifiedUser
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -54,19 +80,31 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -74,35 +112,49 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import com.google.firebase.FirebaseApp
 import com.omnisolve.overlay.ads.AdManager
-import com.omnisolve.overlay.ads.InAppAdMobBanner
 import com.omnisolve.overlay.data.GoogleAuthManager
 import com.omnisolve.overlay.data.GoogleSignInOutcome
 import com.omnisolve.overlay.firebase.configureAppCheck
 import com.omnisolve.overlay.service.OverlayService
+import com.omnisolve.overlay.service.PrismEngagementNotificationManager
+import com.omnisolve.overlay.ui.HomeSubScreen
 import com.omnisolve.overlay.ui.MainUiState
 import com.omnisolve.overlay.ui.MainViewModel
 import com.omnisolve.overlay.ui.components.AppTab
 import com.omnisolve.overlay.ui.components.CompactSplitScreenSideRail
 import com.omnisolve.overlay.ui.components.LiquidMorphBottomDock
+import com.omnisolve.overlay.ui.components.NewUserFeatureGuideOverlay
+import com.omnisolve.overlay.ui.components.PrismAppEntryAnimationOverlay
+import com.omnisolve.overlay.ui.components.RedPrismLogoMark
 import com.omnisolve.overlay.ui.physics.GlassMaterialStrength
 import com.omnisolve.overlay.ui.physics.LiquidAtmosphericBackdrop
 import com.omnisolve.overlay.ui.physics.LocalReducedMotion
 import com.omnisolve.overlay.ui.physics.LocalSpringPhysics
 import com.omnisolve.overlay.ui.physics.SpringPhysicsConfig
 import com.omnisolve.overlay.ui.physics.livingGlassSurface
+import com.omnisolve.overlay.ui.physics.rememberSystemReducedMotion
 import com.omnisolve.overlay.ui.screens.HomeScreen
 import com.omnisolve.overlay.ui.screens.SettingsScreen
 import com.omnisolve.overlay.ui.screens.StatsScreen
+import com.omnisolve.overlay.ui.theme.LocalPrismThemeSpec
 import com.omnisolve.overlay.ui.theme.LocalWhiteGlassPalette
+import com.omnisolve.overlay.ui.theme.PrismCurves
+import com.omnisolve.overlay.ui.theme.ThemeAnimationIntensity
+import com.omnisolve.overlay.ui.theme.ThemeLayoutArchetype
 import com.omnisolve.overlay.ui.theme.WhiteGlassTheme
+import com.omnisolve.overlay.util.AppShareHelper
+import com.omnisolve.overlay.util.InAppReviewHelper
+import com.omnisolve.overlay.util.InAppUpdateController
+import com.omnisolve.overlay.util.PerformanceBenchmarkTracker
+import com.omnisolve.overlay.util.PlayUpdateUiState
+import com.omnisolve.overlay.util.PrismCrashlytics
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
 
     companion object {
         const val PREF_KEY_DISPLAY_MODE = "PREF_DISPLAY_MODE"
-        const val PREF_KEY_AUTO_CLICK = "PREF_AUTO_CLICK"
-        const val PREF_KEY_AFK_MODE = "PREF_AFK_MODE"
         const val PREF_KEY_SCAN_INTERVAL_SEC = "PREF_SCAN_INTERVAL_SEC"
         const val PREF_KEY_NEXT_DELAY_MS = "PREF_NEXT_DELAY_MS"
         const val PREF_KEY_INSTANT_TRIGGER = "PREF_INSTANT_TRIGGER"
@@ -134,6 +186,7 @@ class MainActivity : AppCompatActivity() {
         const val PREF_KEY_SOLVER_METHOD = "PREF_SOLVER_METHOD"
         const val PREF_KEY_AUTO_FAILOVER = "PREF_AUTO_FAILOVER"
         const val PREF_KEY_GEMINI_MODEL = "PREF_GEMINI_MODEL"
+        const val PREF_KEY_GOOGLE_FORMS_MODEL = "PREF_GOOGLE_FORMS_MODEL"
         const val PREF_KEY_SUBJECT_MODE = "PREF_SUBJECT_MODE"
         const val PREF_KEY_DUAL_VERIFY = "PREF_DUAL_VERIFY"
         const val PREF_KEY_TRANSLATE_ENGLISH = "PREF_TRANSLATE_ENGLISH"
@@ -147,6 +200,7 @@ class MainActivity : AppCompatActivity() {
         const val PREF_KEY_ADV_AUTO_FADE_IDLE = "PREF_ADV_AUTO_FADE_IDLE"
         const val PREF_KEY_ADV_FLASHCARDS_EXPORT = "PREF_ADV_FLASHCARDS_EXPORT"
         const val PREF_KEY_ADV_DARK_OBSIDIAN = "PREF_ADV_DARK_OBSIDIAN"
+        const val PREF_KEY_FLUID_ANIMATIONS_ENABLED = "PREF_FLUID_ANIMATIONS_ENABLED"
         const val PREF_KEY_ADV_SPRING_PHYSICS = "PREF_ADV_SPRING_PHYSICS"
         const val PREF_KEY_SPRING_DAMPING = "PREF_SPRING_DAMPING"
         const val PREF_KEY_SPRING_STIFFNESS = "PREF_SPRING_STIFFNESS"
@@ -167,9 +221,48 @@ class MainActivity : AppCompatActivity() {
         const val PREF_KEY_USER_CONSENT_ACCEPTED = "PREF_USER_CONSENT_ACCEPTED"
         const val URL_PRIVACY_POLICY_WEB = "https://virusboss.in/app/prism-ocr-solver/#privacy-policy"
         const val PREF_KEY_ENGINE_PERFORMANCE_MODE = "PREF_KEY_ENGINE_PERFORMANCE_MODE"
+
+        // Dynamic Island Studio Extended Customization
+        const val PREF_KEY_ISLAND_ACCENT_THEME = "PREF_ISLAND_ACCENT_THEME"
+        const val PREF_KEY_ISLAND_CUSTOM_HEX = "PREF_ISLAND_CUSTOM_HEX"
+        const val PREF_KEY_ISLAND_LIGHT_MODE = "PREF_ISLAND_LIGHT_MODE"
+        const val PREF_KEY_ISLAND_SURFACE_HEX = "PREF_ISLAND_SURFACE_HEX"
+        const val PREF_KEY_ISLAND_SIZE_PRESET = "PREF_ISLAND_SIZE_PRESET"
+        const val PREF_KEY_ISLAND_EDGE_SNAP = "PREF_ISLAND_EDGE_SNAP"
+        const val PREF_KEY_ISLAND_IDLE_FADE_SEC = "PREF_ISLAND_IDLE_FADE_SEC"
+
+        const val ISLAND_SIZE_COMPACT = "COMPACT"
+        const val ISLAND_SIZE_STANDARD = "STANDARD"
+        const val ISLAND_SIZE_LARGE = "LARGE"
+        const val ISLAND_SIZE_XL = "XL"
+        const val PREF_KEY_ISLAND_SCALE_PCT = "PREF_ISLAND_SCALE_PCT"
+        const val PREF_KEY_ISLAND_ANSWER_SCALE = "PREF_ISLAND_ANSWER_SCALE"
+        const val ANSWER_SCALE_NORMAL = "NORMAL"
+        const val ANSWER_SCALE_LARGE = "LARGE"
+        const val ANSWER_SCALE_XL_BOLD = "XL_BOLD"
+        const val PREF_KEY_ISLAND_WIDTH_DP = "PREF_ISLAND_WIDTH_DP"
+        const val PREF_KEY_ISLAND_HEIGHT_DP = "PREF_ISLAND_HEIGHT_DP"
+        const val PREF_KEY_ISLAND_CORNER_RADIUS_DP = "PREF_ISLAND_CORNER_RADIUS_DP"
+        const val PREF_KEY_ISLAND_ANIM_SPEED = "PREF_ISLAND_ANIM_SPEED"
+        const val PREF_KEY_ISLAND_CUTOUT_ALIGN = "PREF_ISLAND_CUTOUT_ALIGN"
+        const val PREF_KEY_ISLAND_CUTOUT_OFFSET_X_DP = "PREF_ISLAND_CUTOUT_OFFSET_X_DP"
+        const val PREF_KEY_ISLAND_CUTOUT_OFFSET_Y_DP = "PREF_ISLAND_CUTOUT_OFFSET_Y_DP"
+        const val EXTRA_REQUEST_GOOGLE_SIGN_IN = "EXTRA_REQUEST_GOOGLE_SIGN_IN"
     }
 
     private val viewModel: MainViewModel by viewModels()
+    private lateinit var inAppUpdateController: InAppUpdateController
+    private var islandEntrancePulseTick by mutableIntStateOf(0)
+    private var activePrePermissionPrompt by mutableStateOf<PrePermissionPrompt?>(null)
+    private var showStartConsentDialog by mutableStateOf(false)
+
+    private val inAppUpdateLauncher = registerForActivityResult(
+        ActivityResultContracts.StartIntentSenderForResult()
+    ) { result ->
+        if (result.resultCode != Activity.RESULT_OK) {
+            viewModel.showBannerMessage("Update paused — check Settings anytime")
+        }
+    }
 
     private val loginLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -182,56 +275,53 @@ class MainActivity : AppCompatActivity() {
     ) { result ->
         if (result.resultCode == Activity.RESULT_OK && result.data != null) {
             startOverlayForegroundService(result.resultCode, result.data!!)
+            islandEntrancePulseTick += 1
         } else {
             viewModel.showBannerMessage("Screen capture permission was declined")
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        PerformanceBenchmarkTracker.markAppProcessStart()
         super.onCreate(savedInstanceState)
 
         configureAppCheck(this, intent)
+        PrismCrashlytics.initialize(this)
+        inAppUpdateController = InAppUpdateController(applicationContext)
+        inAppUpdateController.checkForUpdates(manualCheck = false)
 
-        // Initialize Google Mobile Ads SDK for in-app banners/interstitials
-        AdManager.initialize(this) {
-            AdManager.preloadInterstitial(this)
+        // Initialize Google Mobile Ads SDK asynchronously after first frame to prevent launch jank
+        lifecycleScope.launch {
+            delay(900L)
+            AdManager.initialize(applicationContext)
         }
 
         enableEdgeToEdge(
-            statusBarStyle = SystemBarStyle.light(
-                AndroidColor.TRANSPARENT,
-                AndroidColor.TRANSPARENT
-            ),
-            navigationBarStyle = SystemBarStyle.light(
-                AndroidColor.TRANSPARENT,
-                AndroidColor.TRANSPARENT
-            )
+            statusBarStyle = SystemBarStyle.dark(AndroidColor.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(AndroidColor.TRANSPARENT)
         )
 
         handleIncomingDeepLink(intent)
 
         setContent {
             val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+            val playUpdateState by inAppUpdateController.updateState.collectAsStateWithLifecycle()
+            var showEntryAnimation by rememberSaveable { mutableStateOf(true) }
 
-            LaunchedEffect(uiState.advDarkObsidianEnabled) {
-                if (uiState.advDarkObsidianEnabled) {
-                    enableEdgeToEdge(
-                        statusBarStyle = SystemBarStyle.dark(AndroidColor.TRANSPARENT),
-                        navigationBarStyle = SystemBarStyle.dark(AndroidColor.TRANSPARENT)
-                    )
+            LaunchedEffect(uiState.effectiveThemeSpec.isDark) {
+                val barStyle = if (uiState.effectiveThemeSpec.isDark) {
+                    SystemBarStyle.dark(AndroidColor.TRANSPARENT)
                 } else {
-                    enableEdgeToEdge(
-                        statusBarStyle = SystemBarStyle.light(
-                            AndroidColor.TRANSPARENT,
-                            AndroidColor.TRANSPARENT
-                        ),
-                        navigationBarStyle = SystemBarStyle.light(
-                            AndroidColor.TRANSPARENT,
-                            AndroidColor.TRANSPARENT
-                        )
-                    )
+                    SystemBarStyle.light(AndroidColor.TRANSPARENT, AndroidColor.TRANSPARENT)
                 }
+                enableEdgeToEdge(
+                    statusBarStyle = barStyle,
+                    navigationBarStyle = barStyle
+                )
             }
+
+            // Do not auto-pop blocking modals or permission prompts on first launch;
+            // Start Solving checks consent and permissions cleanly on tap.
 
             val springCfg = SpringPhysicsConfig(
                 dampingRatio = if (uiState.advSpringPhysicsEnabled) uiState.springDamping else 0.72f,
@@ -239,66 +329,154 @@ class MainActivity : AppCompatActivity() {
             )
 
             val currentDensity = LocalDensity.current
-            // Dynamic auto-adjustment: safely clamps font scaling to [0.85f, 1.12f]
-            // so developer options DPI changes, display size adjustments, or system font scale
-            // NEVER cause text collision, line overlapping, or broken layouts.
+            // Resilient layouts adapt cleanly across accessibility Font Size & Display Size scales
             val adaptiveDensity = remember(currentDensity.density, currentDensity.fontScale) {
                 Density(
                     density = currentDensity.density,
-                    fontScale = currentDensity.fontScale.coerceIn(0.85f, 1.12f)
+                    fontScale = currentDensity.fontScale.coerceIn(0.85f, 1.30f)
                 )
             }
 
-            WhiteGlassTheme(darkObsidian = uiState.advDarkObsidianEnabled) {
+            val systemReducedMotion = rememberSystemReducedMotion()
+
+            WhiteGlassTheme(themeSpec = uiState.effectiveThemeSpec) {
                 CompositionLocalProvider(
                     LocalDensity provides adaptiveDensity,
-                    LocalReducedMotion provides !uiState.advSpringPhysicsEnabled,
+                    LocalReducedMotion provides (!uiState.fluidAnimationsEnabled || systemReducedMotion || uiState.effectiveThemeSpec.animationIntensity == ThemeAnimationIntensity.SUBTLE),
                     LocalSpringPhysics provides springCfg
                 ) {
                     LaunchedEffect(Unit) {
+                        PerformanceBenchmarkTracker.markColdLaunchReady()
                         if (FirebaseApp.getApps(this@MainActivity).isNotEmpty()) {
                             GoogleAuthManager.trySilentRestore(this@MainActivity)
                             viewModel.refreshSystemStatuses()
                         }
                     }
 
-                    BackHandler(enabled = uiState.selectedTab != AppTab.Home) {
-                        viewModel.selectTab(AppTab.Home)
+                    BackHandler(
+                        enabled = uiState.selectedTab != AppTab.Home || uiState.homeSubScreen != HomeSubScreen.MAIN
+                    ) {
+                        if (uiState.selectedTab == AppTab.Home && uiState.homeSubScreen != HomeSubScreen.MAIN) {
+                            viewModel.openHomeSubScreen(HomeSubScreen.MAIN)
+                        } else {
+                            viewModel.selectTab(AppTab.Home)
+                        }
                     }
 
-                    MainInstantApp(
-                        state = uiState,
-                        viewModel = viewModel,
-                        onSelectTab = { tab ->
-                            triggerHapticTick()
-                            viewModel.selectTab(tab)
-                        },
-                        onToggleOverlay = {
-                            triggerHapticTick()
-                            if (!uiState.isOverlayRunning) {
-                                checkOverlayPermissionAndStart()
-                            } else {
-                                stopOverlayForegroundService()
-                            }
-                        },
-                        onRequestOverlayPermission = ::openOverlayPermissionScreen,
-                        onOpenAccessibilitySettings = ::openAccessibilitySettingsScreen,
-                        onSignInGoogle = ::performInteractiveGoogleSignIn,
-                        onSignOutGoogle = ::performGoogleSignOut,
-                        onOpenGoogleLogin = {
-                            loginLauncher.launch(Intent(this, LoginActivity::class.java))
-                        },
-                        onTestVibration = ::testPocketHapticPulse,
-                        onSyncRunningService = ::notifyServiceConfigChanged
-                    )
+                    LaunchedEffect(uiState.solvedCount) {
+                        if (uiState.solvedCount >= 5) {
+                            InAppReviewHelper.maybeRequestReview(this@MainActivity, uiState.solvedCount)
+                        }
+                    }
 
-                    // Mandatory First-Launch Legal Agreement Gate
-                    if (!uiState.userConsentAccepted) {
-                        com.omnisolve.overlay.ui.components.MandatoryLegalConsentDialog(
-                            onAcceptAndContinue = {
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        MainInstantApp(
+                            state = uiState,
+                            viewModel = viewModel,
+                            playUpdateState = playUpdateState,
+                            onStartPlayUpdate = {
+                                inAppUpdateController.startUpdateFlow(
+                                    launcher = inAppUpdateLauncher,
+                                    onFallbackOpenPlayStore = {
+                                        AppShareHelper.openPlayStoreListing(this@MainActivity)
+                                    }
+                                )
+                            },
+                            onInstallReadyUpdate = {
+                                inAppUpdateController.completeFlexibleUpdate()
+                            },
+                            onDismissPlayUpdateBanner = {
+                                inAppUpdateController.dismissBanner()
+                            },
+                            onCheckForPlayUpdates = {
+                                inAppUpdateController.checkForUpdates(
+                                    manualCheck = true,
+                                    onManualFeedback = { msg -> viewModel.showBannerMessage(msg) }
+                                )
+                            },
+                            onSelectTab = { tab ->
                                 triggerHapticTick()
-                                viewModel.acceptUserConsent()
+                                viewModel.selectTab(tab)
+                            },
+                            onToggleOverlay = {
+                                triggerHapticTick()
+                                if (!uiState.isOverlayRunning) {
+                                    checkOverlayPermissionAndStart()
+                                } else {
+                                    stopOverlayForegroundService()
+                                }
+                            },
+                            onRequestOverlayPermission = {
+                                if (Settings.canDrawOverlays(this@MainActivity)) {
+                                    openOverlayPermissionScreen()
+                                } else {
+                                    activePrePermissionPrompt = PrePermissionPrompt.OVERLAY_SETTING
+                                }
+                            },
+                            onSignInGoogle = ::performInteractiveGoogleSignIn,
+                            onSignOutGoogle = ::performGoogleSignOut,
+                            onDeleteGoogleAccount = {
+                                viewModel.deleteGoogleAccount(
+                                    onDeleted = ::notifyServiceConfigChanged,
+                                    onRequireReauth = ::performInteractiveGoogleSignIn
+                                )
+                            },
+                            onOpenGoogleLogin = {
+                                loginLauncher.launch(Intent(this@MainActivity, LoginActivity::class.java))
+                            },
+                            onTestVibration = ::testPocketHapticPulse,
+                            onSyncRunningService = ::notifyServiceConfigChanged
+                        )
+
+                        // Show Legal Consent ONLY when tapping Start Solving for the first time
+                        if (showStartConsentDialog && !uiState.userConsentAccepted) {
+                            com.omnisolve.overlay.ui.components.MandatoryLegalConsentDialog(
+                                onAcceptAndContinue = {
+                                    triggerHapticTick()
+                                    showStartConsentDialog = false
+                                    viewModel.acceptUserConsent()
+                                    checkOverlayPermissionAndStart()
+                                }
+                            )
+                        }
+
+                        // Interactive Feature Tour (replayable from Settings)
+                        NewUserFeatureGuideOverlay(
+                            visible = uiState.showOnboardingGuide && !showEntryAnimation,
+                            onFinishGuide = { _ ->
+                                triggerHapticTick()
+                                viewModel.completeOnboardingGuide(sendWelcomeNotification = true)
                             }
+                        )
+
+                        // Red Prism App Entry Reveal Animation
+                        PrismAppEntryAnimationOverlay(
+                            visible = showEntryAnimation,
+                            onAnimationFinished = { showEntryAnimation = false }
+                        )
+
+                        // Calm 1-line pre-permission explainer before Android system dialogs
+                        activePrePermissionPrompt?.let { promptStep ->
+                            PrePermissionExplainerDialog(
+                                step = promptStep,
+                                onConfirm = {
+                                    triggerHapticTick()
+                                    activePrePermissionPrompt = null
+                                    when (promptStep) {
+                                        PrePermissionPrompt.OVERLAY_SETTING -> openOverlayPermissionScreen()
+                                        PrePermissionPrompt.SCREEN_CAPTURE -> launchScreenCaptureIntent()
+                                    }
+                                },
+                                onDismiss = {
+                                    activePrePermissionPrompt = null
+                                }
+                            )
+                        }
+
+                        // Overlapping Dynamic Island Entrance Feedback immediately after Display Share approval
+                        OverlappingDynamicIslandSpawnPulseOverlay(
+                            triggerTick = islandEntrancePulseTick,
+                            modifier = Modifier.align(Alignment.TopCenter)
                         )
                     }
                 }
@@ -313,6 +491,7 @@ class MainActivity : AppCompatActivity() {
                 when (val outcome = GoogleAuthManager.signInInteractive(this@MainActivity)) {
                     is GoogleSignInOutcome.Success -> {
                         viewModel.refreshSystemStatuses()
+                        notifyServiceConfigChanged()
                         viewModel.showBannerMessage("Signed in as ${outcome.user.email ?: outcome.user.displayName ?: "Google user"}")
                     }
                     is GoogleSignInOutcome.Cancelled -> Unit
@@ -330,7 +509,8 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch {
             GoogleAuthManager.signOut(this@MainActivity)
             viewModel.refreshSystemStatuses()
-            viewModel.showBannerMessage("Signed out of Server")
+            notifyServiceConfigChanged()
+            viewModel.showBannerMessage("Signed out • Free Screen Reader active")
         }
     }
 
@@ -340,14 +520,39 @@ class MainActivity : AppCompatActivity() {
         handleIncomingDeepLink(intent)
     }
 
+    private var foregroundResumeAtMs: Long = 0L
+
     override fun onResume() {
         super.onResume()
+        foregroundResumeAtMs = System.currentTimeMillis()
+        PrismEngagementNotificationManager.recordAppOpened(this)
         viewModel.refreshSystemStatuses()
+        if (::inAppUpdateController.isInitialized) {
+            inAppUpdateController.onResumeCheck(inAppUpdateLauncher)
+        }
+    }
+
+    override fun onPause() {
+        if (foregroundResumeAtMs > 0L) {
+            val elapsedSec = ((System.currentTimeMillis() - foregroundResumeAtMs) / 1000L).coerceAtLeast(0L)
+            foregroundResumeAtMs = 0L
+            if (elapsedSec >= 2L) {
+                viewModel.recordAppForegroundSession(elapsedSec)
+            }
+        }
+        super.onPause()
+    }
+
+    override fun onDestroy() {
+        if (::inAppUpdateController.isInitialized) {
+            inAppUpdateController.unregisterListener()
+        }
+        super.onDestroy()
     }
 
     private fun openOverlayPermissionScreen() {
         if (Settings.canDrawOverlays(this)) {
-            viewModel.showBannerMessage("Overlay permission is already allowed")
+            viewModel.showBannerMessage("Floating pill permission is already allowed")
             return
         }
         try {
@@ -358,7 +563,7 @@ class MainActivity : AppCompatActivity() {
             startActivity(intent)
             Toast.makeText(
                 this,
-                "Allow 'Display over other apps' for Prism AI, then return here",
+                "Turn on 'Display over other apps' so the pill can float above your quiz, then come back.",
                 Toast.LENGTH_LONG
             ).show()
         } catch (_: Exception) {
@@ -366,24 +571,19 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun openAccessibilitySettingsScreen() {
-        try {
-            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-            Toast.makeText(
-                this,
-                "Find 'Prism AI' in Installed Services and turn it on",
-                Toast.LENGTH_LONG
-            ).show()
-        } catch (_: Exception) {
-            viewModel.showBannerMessage("Could not open Accessibility settings")
-        }
-    }
-
     private fun checkOverlayPermissionAndStart() {
-        if (!Settings.canDrawOverlays(this)) {
-            openOverlayPermissionScreen()
+        if (!viewModel.uiState.value.userConsentAccepted) {
+            showStartConsentDialog = true
             return
         }
+        if (!Settings.canDrawOverlays(this)) {
+            activePrePermissionPrompt = PrePermissionPrompt.OVERLAY_SETTING
+            return
+        }
+        activePrePermissionPrompt = PrePermissionPrompt.SCREEN_CAPTURE
+    }
+
+    private fun launchScreenCaptureIntent() {
         val projectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         mediaProjectionLauncher.launch(projectionManager.createScreenCaptureIntent())
     }
@@ -394,8 +594,6 @@ class MainActivity : AppCompatActivity() {
             putExtra(OverlayService.EXTRA_RESULT_CODE, resultCode)
             putExtra(OverlayService.EXTRA_RESULT_DATA, resultData)
             putExtra(OverlayService.EXTRA_DISPLAY_MODE, state.displayMode)
-            putExtra(OverlayService.EXTRA_AUTO_CLICK, state.autoClickEnabled)
-            putExtra(OverlayService.EXTRA_AFK_MODE, state.afkAutoAdvanceEnabled)
             putExtra(OverlayService.EXTRA_SCAN_INTERVAL_SEC, state.scanIntervalSec)
             putExtra(OverlayService.EXTRA_NEXT_DELAY_MS, state.nextDelayMs)
             putExtra(OverlayService.EXTRA_INSTANT_TRIGGER, state.instantTriggerEnabled)
@@ -403,14 +601,33 @@ class MainActivity : AppCompatActivity() {
             putExtra(OverlayService.EXTRA_HUD_STYLE, state.hudStyle)
             putExtra(OverlayService.EXTRA_CAMOUFLAGE, state.batteryCamouflage)
             putExtra(OverlayService.EXTRA_HAPTIC, state.hapticEnabled)
-            putExtra(OverlayService.EXTRA_ANTI_CHEAT, state.naturalTimingEnabled)
-            putExtra(OverlayService.EXTRA_THEME_MODE, if (state.advDarkObsidianEnabled) THEME_DARK else THEME_LIGHT)
+            putExtra(OverlayService.EXTRA_THEME_MODE, if (state.effectiveThemeSpec.isDark) THEME_DARK else THEME_LIGHT)
             putExtra(OverlayService.EXTRA_ISLAND_OPACITY_INDEX, state.islandOpacityIndex)
             putExtra(OverlayService.EXTRA_CUSTOM_OPACITY_PCT, state.customOpacityPct)
             putExtra(OverlayService.EXTRA_COMPANION_HOST, state.companionHost)
             putExtra(OverlayService.EXTRA_COMPANION_PORT, state.companionPort)
             putExtra(OverlayService.EXTRA_COMPANION_SYNC_ENABLED, state.companionSyncEnabled)
             putExtra(OverlayService.EXTRA_SOLVER_METHOD, state.solverMethod.id)
+            putExtra(OverlayService.EXTRA_ISLAND_ACCENT_THEME, state.islandAccentTheme)
+            putExtra(
+                OverlayService.EXTRA_ISLAND_CUSTOM_HEX,
+                if (state.effectiveThemeSpec.isNormalDefault) "" else state.effectiveThemeSpec.islandAccentHex
+            )
+            putExtra(OverlayService.EXTRA_ISLAND_SIZE_PRESET, state.islandSizePreset)
+            putExtra(OverlayService.EXTRA_ISLAND_SCALE_PCT, state.islandScalePct)
+            putExtra(OverlayService.EXTRA_ISLAND_ANSWER_SCALE, state.islandAnswerScale)
+            putExtra(OverlayService.EXTRA_ISLAND_EDGE_SNAP, state.islandEdgeSnap)
+            putExtra(OverlayService.EXTRA_ISLAND_IDLE_FADE_SEC, state.islandIdleFadeSec)
+            putExtra(OverlayService.EXTRA_SPRING_DAMPING, state.springDamping)
+            putExtra(OverlayService.EXTRA_SPRING_STIFFNESS, state.springStiffness)
+            putExtra(OverlayService.EXTRA_FLUID_ANIMATIONS, state.fluidAnimationsEnabled)
+            putExtra(OverlayService.EXTRA_ISLAND_WIDTH_DP, state.islandWidthDp)
+            putExtra(OverlayService.EXTRA_ISLAND_HEIGHT_DP, state.islandHeightDp)
+            putExtra(OverlayService.EXTRA_ISLAND_CORNER_RADIUS_DP, state.islandCornerRadiusDp)
+            putExtra(OverlayService.EXTRA_ISLAND_ANIM_SPEED, state.islandAnimSpeed)
+            putExtra(OverlayService.EXTRA_ISLAND_CUTOUT_ALIGN, state.islandCutoutAlign)
+            putExtra(OverlayService.EXTRA_ISLAND_CUTOUT_OFFSET_X_DP, state.islandCutoutOffsetXDp)
+            putExtra(OverlayService.EXTRA_ISLAND_CUTOUT_OFFSET_Y_DP, state.islandCutoutOffsetYDp)
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -420,13 +637,13 @@ class MainActivity : AppCompatActivity() {
         }
 
         viewModel.setOverlayServiceState(running = true, captureAuthorized = true)
-        viewModel.showBannerMessage("Floating overlay started")
+        viewModel.showBannerMessage("Floating pill started")
     }
 
     private fun stopOverlayForegroundService() {
         stopService(Intent(this, OverlayService::class.java))
         viewModel.setOverlayServiceState(running = false)
-        viewModel.showBannerMessage("Floating overlay stopped")
+        viewModel.showBannerMessage("Floating pill stopped")
     }
 
     private fun notifyServiceConfigChanged() {
@@ -436,8 +653,6 @@ class MainActivity : AppCompatActivity() {
         val updateIntent = Intent(this, OverlayService::class.java).apply {
             action = OverlayService.ACTION_UPDATE_CONFIG
             putExtra(OverlayService.EXTRA_DISPLAY_MODE, state.displayMode)
-            putExtra(OverlayService.EXTRA_AUTO_CLICK, state.autoClickEnabled)
-            putExtra(OverlayService.EXTRA_AFK_MODE, state.afkAutoAdvanceEnabled)
             putExtra(OverlayService.EXTRA_SCAN_INTERVAL_SEC, state.scanIntervalSec)
             putExtra(OverlayService.EXTRA_NEXT_DELAY_MS, state.nextDelayMs)
             putExtra(OverlayService.EXTRA_INSTANT_TRIGGER, state.instantTriggerEnabled)
@@ -445,14 +660,33 @@ class MainActivity : AppCompatActivity() {
             putExtra(OverlayService.EXTRA_HUD_STYLE, state.hudStyle)
             putExtra(OverlayService.EXTRA_CAMOUFLAGE, state.batteryCamouflage)
             putExtra(OverlayService.EXTRA_HAPTIC, state.hapticEnabled)
-            putExtra(OverlayService.EXTRA_ANTI_CHEAT, state.naturalTimingEnabled)
-            putExtra(OverlayService.EXTRA_THEME_MODE, if (state.advDarkObsidianEnabled) THEME_DARK else THEME_LIGHT)
+            putExtra(OverlayService.EXTRA_THEME_MODE, if (state.effectiveThemeSpec.isDark) THEME_DARK else THEME_LIGHT)
             putExtra(OverlayService.EXTRA_ISLAND_OPACITY_INDEX, state.islandOpacityIndex)
             putExtra(OverlayService.EXTRA_CUSTOM_OPACITY_PCT, state.customOpacityPct)
             putExtra(OverlayService.EXTRA_COMPANION_HOST, state.companionHost)
             putExtra(OverlayService.EXTRA_COMPANION_PORT, state.companionPort)
             putExtra(OverlayService.EXTRA_COMPANION_SYNC_ENABLED, state.companionSyncEnabled)
             putExtra(OverlayService.EXTRA_SOLVER_METHOD, state.solverMethod.id)
+            putExtra(OverlayService.EXTRA_ISLAND_ACCENT_THEME, state.islandAccentTheme)
+            putExtra(
+                OverlayService.EXTRA_ISLAND_CUSTOM_HEX,
+                if (state.effectiveThemeSpec.isNormalDefault) "" else state.effectiveThemeSpec.islandAccentHex
+            )
+            putExtra(OverlayService.EXTRA_ISLAND_SIZE_PRESET, state.islandSizePreset)
+            putExtra(OverlayService.EXTRA_ISLAND_SCALE_PCT, state.islandScalePct)
+            putExtra(OverlayService.EXTRA_ISLAND_ANSWER_SCALE, state.islandAnswerScale)
+            putExtra(OverlayService.EXTRA_ISLAND_EDGE_SNAP, state.islandEdgeSnap)
+            putExtra(OverlayService.EXTRA_ISLAND_IDLE_FADE_SEC, state.islandIdleFadeSec)
+            putExtra(OverlayService.EXTRA_SPRING_DAMPING, state.springDamping)
+            putExtra(OverlayService.EXTRA_SPRING_STIFFNESS, state.springStiffness)
+            putExtra(OverlayService.EXTRA_FLUID_ANIMATIONS, state.fluidAnimationsEnabled)
+            putExtra(OverlayService.EXTRA_ISLAND_WIDTH_DP, state.islandWidthDp)
+            putExtra(OverlayService.EXTRA_ISLAND_HEIGHT_DP, state.islandHeightDp)
+            putExtra(OverlayService.EXTRA_ISLAND_CORNER_RADIUS_DP, state.islandCornerRadiusDp)
+            putExtra(OverlayService.EXTRA_ISLAND_ANIM_SPEED, state.islandAnimSpeed)
+            putExtra(OverlayService.EXTRA_ISLAND_CUTOUT_ALIGN, state.islandCutoutAlign)
+            putExtra(OverlayService.EXTRA_ISLAND_CUTOUT_OFFSET_X_DP, state.islandCutoutOffsetXDp)
+            putExtra(OverlayService.EXTRA_ISLAND_CUTOUT_OFFSET_Y_DP, state.islandCutoutOffsetYDp)
         }
         try {
             startService(updateIntent)
@@ -461,6 +695,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun handleIncomingDeepLink(intent: Intent?) {
+        if (intent?.getBooleanExtra(EXTRA_REQUEST_GOOGLE_SIGN_IN, false) == true) {
+            intent.removeExtra(EXTRA_REQUEST_GOOGLE_SIGN_IN)
+            viewModel.requestGoogleSignInGate()
+            performInteractiveGoogleSignIn()
+        }
         val data = intent?.data ?: return
         if (data.scheme == "omnisolve" && data.host == "sync") {
             val host = data.getQueryParameter("host")
@@ -526,19 +765,32 @@ private fun MainInstantApp(
     onSelectTab: (AppTab) -> Unit,
     onToggleOverlay: () -> Unit,
     onRequestOverlayPermission: () -> Unit,
-    onOpenAccessibilitySettings: () -> Unit,
     onSignInGoogle: () -> Unit,
     onSignOutGoogle: () -> Unit,
+    onDeleteGoogleAccount: () -> Unit,
     onOpenGoogleLogin: () -> Unit,
     onTestVibration: () -> Unit,
-    onSyncRunningService: () -> Unit
+    onSyncRunningService: () -> Unit,
+    playUpdateState: PlayUpdateUiState = PlayUpdateUiState.Idle,
+    onStartPlayUpdate: () -> Unit = {},
+    onInstallReadyUpdate: () -> Unit = {},
+    onDismissPlayUpdateBanner: () -> Unit = {},
+    onCheckForPlayUpdates: () -> Unit = {}
 ) {
     val palette = LocalWhiteGlassPalette.current
     val homeListState = rememberLazyListState()
     val settingsListState = rememberLazyListState()
 
     Box(modifier = Modifier.fillMaxSize()) {
-        LiquidAtmosphericBackdrop()
+        LiquidAtmosphericBackdrop(
+            scrollOffsetProvider = {
+                val activeList = when (state.selectedTab) {
+                    AppTab.Settings -> settingsListState
+                    else -> homeListState
+                }
+                (activeList.firstVisibleItemIndex * 220f + activeList.firstVisibleItemScrollOffset).coerceIn(0f, 1600f)
+            }
+        )
 
         Scaffold(
             containerColor = Color.Transparent,
@@ -546,19 +798,27 @@ private fun MainInstantApp(
             topBar = {
                 WhiteGlassTopHeader(
                     isOverlayRunning = state.isOverlayRunning,
+                    isNotifPinned = state.customPinConfig.isPinned || state.isGoogleFormPinned,
                     selectedTab = state.selectedTab,
+                    homeSubScreen = state.homeSubScreen,
+                    onBackFromSubScreen = {
+                        viewModel.openHomeSubScreen(HomeSubScreen.MAIN)
+                    },
                     onToggleSettings = {
                         onSelectTab(
                             if (state.selectedTab == AppTab.Settings) AppTab.Home else AppTab.Settings
                         )
                     },
                     onShowNotifications = {
-                        viewModel.showBannerMessage("Prism OCR Solver v3.5.2 is active & ready")
+                        viewModel.openHomeSubScreen(HomeSubScreen.NOTIFICATION_STUDIO)
                     }
                 )
             },
             bottomBar = {
-                if (!state.advSplitScreenRailEnabled) {
+                if (!state.advSplitScreenRailEnabled &&
+                    state.selectedTab != AppTab.Settings &&
+                    state.homeSubScreen == HomeSubScreen.MAIN
+                ) {
                     LiquidMorphBottomDock(
                         selectedTab = state.selectedTab,
                         onSelectTab = onSelectTab
@@ -586,17 +846,50 @@ private fun MainInstantApp(
                 ) {
                     val contentMod = Modifier
                         .fillMaxSize()
-                        .widthIn(max = 680.dp)
+                        .widthIn(max = 600.dp)
+                    val reducedMotion = LocalReducedMotion.current
 
-                    // Zero-delay direct screen swap for instant Frame-1 load & tab switching
-                    when (state.selectedTab) {
+                    // Gliding liquid horizontal & scale screen shift between Home <-> Stats <-> Settings
+                    AnimatedContent(
+                        targetState = state.selectedTab,
+                        transitionSpec = {
+                            if (reducedMotion) {
+                                EnterTransition.None togetherWith ExitTransition.None
+                            } else {
+                                val movingForward = targetState.ordinal >= initialState.ordinal
+                                val dir = if (movingForward) 1 else -1
+                                (slideInHorizontally(
+                                    animationSpec = spring(dampingRatio = 0.84f, stiffness = 460f),
+                                    initialOffsetX = { width -> dir * (width / 3) }
+                                ) + fadeIn(tween(240)) + scaleIn(
+                                    initialScale = 0.96f,
+                                    animationSpec = tween(260, easing = FastOutSlowInEasing)
+                                )) togetherWith (slideOutHorizontally(
+                                    animationSpec = tween(220, easing = FastOutSlowInEasing),
+                                    targetOffsetX = { width -> -dir * (width / 4) }
+                                ) + fadeOut(tween(180)) + scaleOut(
+                                    targetScale = 0.97f,
+                                    animationSpec = tween(200)
+                                ))
+                            }
+                        },
+                        label = "liquid_tab_screen_shift"
+                    ) { activeTab ->
+                    when (activeTab) {
                         AppTab.Home -> HomeScreen(
                             state = state,
                             listState = homeListState,
                             onToggleOverlay = onToggleOverlay,
                             onRequestOverlayPermission = onRequestOverlayPermission,
                             onSelectSolverMethod = { method ->
-                                viewModel.selectSolverMethod(method, onSyncRunningService)
+                                viewModel.selectSolverMethod(
+                                    method = method,
+                                    onSyncService = onSyncRunningService,
+                                    onRequireGoogleSignIn = {
+                                        viewModel.requestGoogleSignInGate()
+                                        onSignInGoogle()
+                                    }
+                                )
                             },
                             onSetCustomOpacityPct = { pct ->
                                 viewModel.setCustomOpacityPct(pct, onSyncRunningService)
@@ -607,11 +900,154 @@ private fun MainInstantApp(
                             onToggleChargingFormat = { enabled ->
                                 viewModel.setBatteryCamouflage(enabled, onSyncRunningService)
                             },
+                            onSelectHudStyle = { style ->
+                                viewModel.setHudStyle(style, onSyncRunningService)
+                            },
+                            onToggleDfTwoPartCapture = { enabled ->
+                                viewModel.setDfTwoPartCapture(enabled, onSyncRunningService)
+                            },
+                            onToggleDfScrollTimer = { enabled ->
+                                viewModel.setDfScrollTimer(enabled, onSyncRunningService)
+                            },
+                            onToggleDfComplexMode = { enabled ->
+                                viewModel.setDfComplexMode(enabled, onSyncRunningService)
+                            },
+                            onToggleDfDiagramVision = { enabled ->
+                                viewModel.setDfDiagramVision(enabled, onSyncRunningService)
+                            },
+                            onToggleDfQuickCrop = { enabled ->
+                                viewModel.setDfQuickCrop(enabled, onSyncRunningService)
+                            },
+                            onToggleDfSwipeMethodLoop = { enabled ->
+                                viewModel.setDfSwipeMethodLoop(enabled, onSyncRunningService)
+                            },
+                            onToggleAdvSplitPill = { enabled ->
+                                viewModel.setAdvSplitPill(enabled, onSyncRunningService)
+                            },
+                            onToggleAdvIslandGestures = { enabled ->
+                                viewModel.setAdvIslandGestures(enabled, onSyncRunningService)
+                            },
+                            onSelectIslandAccentTheme = { theme ->
+                                viewModel.setIslandAccentTheme(theme, onSyncRunningService)
+                            },
+                            onSelectIslandSizePreset = { preset ->
+                                viewModel.setIslandSizePreset(preset, onSyncRunningService)
+                            },
+                            onSetIslandScalePct = { pct ->
+                                viewModel.setIslandScalePct(pct, onSyncRunningService)
+                            },
+                            onSelectIslandAnswerScale = { scale ->
+                                viewModel.setIslandAnswerScale(scale, onSyncRunningService)
+                            },
+                            onToggleIslandEdgeSnap = { enabled ->
+                                viewModel.setIslandEdgeSnap(enabled, onSyncRunningService)
+                            },
+                            onSelectIslandIdleFadeSec = { sec ->
+                                viewModel.setIslandIdleFadeSec(sec, onSyncRunningService)
+                            },
+                            onUpdateIslandSpringPhysics = { damping, stiffness ->
+                                viewModel.setAdvSpringPhysics(true)
+                                viewModel.updateSpringPhysics(damping, stiffness)
+                                onSyncRunningService()
+                            },
+                            onSetIslandWidthDp = { widthDp ->
+                                viewModel.setIslandWidthDp(widthDp, onSyncRunningService)
+                            },
+                            onSetIslandHeightDp = { heightDp ->
+                                viewModel.setIslandHeightDp(heightDp, onSyncRunningService)
+                            },
+                            onSetIslandCornerRadiusDp = { cornerDp ->
+                                viewModel.setIslandCornerRadiusDp(cornerDp, onSyncRunningService)
+                            },
+                            onSetIslandAnimSpeed = { speed ->
+                                viewModel.setIslandAnimSpeed(speed, onSyncRunningService)
+                            },
+                            onToggleIslandCutoutAlign = { aligned ->
+                                viewModel.setIslandCutoutAlign(aligned, onSyncRunningService)
+                            },
+                            onSetIslandCutoutOffsets = { xDp, yDp ->
+                                viewModel.setIslandCutoutOffsets(xDp, yDp, onSyncRunningService)
+                            },
+                            onResetIslandGeometry = {
+                                viewModel.resetIslandGeometryDefaults(onSyncRunningService)
+                            },
+                            onToggleFluidAnimations = { enabled ->
+                                viewModel.setFluidAnimationsEnabled(enabled, onSyncRunningService)
+                            },
                             onOpenSettings = { onSelectTab(AppTab.Settings) },
                             onSignInServer = onSignInGoogle,
                             onOpenGeminiLogin = onOpenGoogleLogin,
                             onToggleTheme = {
                                 viewModel.setAdvDarkObsidian(!state.advDarkObsidianEnabled, onSyncRunningService)
+                            },
+                            onOpenHomeSubScreen = viewModel::openHomeSubScreen,
+                            onToggleBookmarkEntry = viewModel::toggleBookmarkHistoryEntry,
+                            onDeleteHistoryEntry = viewModel::deleteHistoryEntry,
+                            onClearOfflineRoomCache = viewModel::clearOfflineRoomCache,
+                            onAddSampleExport = viewModel::appendSampleQuestionToExport,
+                            onClearExportHistory = viewModel::clearHistory,
+                            onShowBannerMessage = viewModel::showBannerMessage,
+                            onUpdateGoogleFormUrl = viewModel::updateGoogleFormUrl,
+                            onUpdateGoogleFormPastedText = viewModel::updateGoogleFormPastedText,
+                            onSelectSubjectMode = viewModel::selectSubjectMode,
+                            onSelectGoogleFormsModel = viewModel::selectGoogleFormsModel,
+                            onToggleGoogleFormAppendMode = viewModel::toggleGoogleFormAppendMode,
+                            onSolveGoogleFormUrl = {
+                                viewModel.solveGoogleFormFromUrl {
+                                    viewModel.requestGoogleSignInGate()
+                                    onSignInGoogle()
+                                }
+                            },
+                            onSolveGoogleFormPastedText = {
+                                viewModel.solveGoogleFormFromPastedText {
+                                    viewModel.requestGoogleSignInGate()
+                                    onSignInGoogle()
+                                }
+                            },
+                            onSolveGoogleFormImageUri = { uri ->
+                                viewModel.solveGoogleFormFromImageUri(uri) {
+                                    viewModel.requestGoogleSignInGate()
+                                    onSignInGoogle()
+                                }
+                            },
+                            onSolveGoogleFormPdfUri = { uri ->
+                                viewModel.solveGoogleFormFromPdfUri(uri) {
+                                    viewModel.requestGoogleSignInGate()
+                                    onSignInGoogle()
+                                }
+                            },
+                            onReSolveGoogleFormQuestion = { qNum ->
+                                viewModel.reSolveSingleGoogleFormQuestion(qNum) {
+                                    viewModel.requestGoogleSignInGate()
+                                    onSignInGoogle()
+                                }
+                            },
+                            onPinFormsKeyToDynamicIsland = viewModel::pinFormsKeyToDynamicIsland,
+                            onUnpinFormsKeyFromDynamicIsland = viewModel::unpinFormsKeyFromDynamicIsland,
+                            onClearGoogleFormResult = viewModel::clearGoogleFormResult,
+                            onRefreshGoogleFormPinStatus = viewModel::refreshGoogleFormPinStatus,
+                            onSaveGoogleFormsToExport = viewModel::saveGoogleFormItemsToExportHistory,
+                            onCancelGoogleFormSolve = viewModel::cancelGoogleFormSolve,
+                            onUpdateCustomNotifConfig = viewModel::updateCustomNotifConfig,
+                            onApplyCustomNotifPreset = viewModel::applyCustomNotifPreset,
+                            onImportLatestSolvedIntoNotif = viewModel::importLatestSolvedIntoCustomNotif,
+                            onPinCustomBarNotification = viewModel::pinCustomBarNotification,
+                            onUnpinCustomBarNotification = viewModel::unpinCustomBarNotification,
+                            onToggleAutoWeeklyEngagement = viewModel::setAutoWeeklyEngagement,
+                            onSendRandomTestNotification = viewModel::sendOneRandomTestEngagementNotification,
+                            onSendWelcomeNotification = viewModel::sendWelcomeNotificationManual,
+                            onRefreshNotificationPermission = viewModel::refreshSystemStatuses,
+                            onSelectLocalThemePreset = { spec ->
+                                viewModel.selectLocalThemePreset(spec, onSyncRunningService)
+                            },
+                            onRevertToNormalDefaultTheme = {
+                                viewModel.revertToNormalDefaultTheme(onSyncRunningService)
+                            },
+                            onSelectThemeAnimOverride = { intensity ->
+                                viewModel.setThemeAnimationOverride(intensity, onSyncRunningService)
+                            },
+                            onSelectThemeAppearanceOverride = { mode ->
+                                viewModel.setThemeColorAppearanceOverride(mode, onSyncRunningService)
                             },
                             modifier = contentMod
                         )
@@ -622,6 +1058,11 @@ private fun MainInstantApp(
                             onSelectEngineMode = { mode ->
                                 viewModel.setEnginePerformanceMode(mode, onSyncRunningService)
                             },
+                            onOpenNotificationStudio = {
+                                viewModel.openHomeSubScreen(HomeSubScreen.NOTIFICATION_STUDIO)
+                            },
+                            onSignInGoogle = onSignInGoogle,
+                            onResetF1Health = { viewModel.resetF1ProviderHealth() },
                             modifier = contentMod
                         )
 
@@ -658,9 +1099,9 @@ private fun MainInstantApp(
                             },
                             onSignInGoogle = onSignInGoogle,
                             onSignOutGoogle = onSignOutGoogle,
+                            onDeleteGoogleAccount = onDeleteGoogleAccount,
                             onOpenGeminiWebLogin = onOpenGoogleLogin,
                             onRequestOverlayPermission = onRequestOverlayPermission,
-                            onOpenAccessibilitySettings = onOpenAccessibilitySettings,
                             onSelectHudStyle = { style ->
                                 viewModel.setHudStyle(style, onSyncRunningService)
                             },
@@ -692,31 +1133,18 @@ private fun MainInstantApp(
                             onToggleInstantDetect = { enabled ->
                                 viewModel.setInstantTrigger(enabled, onSyncRunningService)
                             },
-                            onToggleAutoClick = { enabled ->
-                                viewModel.setAutoClick(
-                                    enabled = enabled,
-                                    onRequireAccessibility = {
-                                        viewModel.showBannerMessage("Enable Auto-Tap helper first")
-                                        onOpenAccessibilitySettings()
-                                    },
-                                    onSyncService = onSyncRunningService
-                                )
-                            },
-                            onToggleAutoNext = { enabled ->
-                                viewModel.setAfkAutoAdvance(
-                                    enabled = enabled,
-                                    onRequireAccessibility = {
-                                        viewModel.showBannerMessage("Enable Auto-Tap helper first")
-                                        onOpenAccessibilitySettings()
-                                    },
-                                    onSyncService = onSyncRunningService
-                                )
-                            },
                             onSolvePractice = viewModel::solvePracticeQuestion,
                             onNextPractice = viewModel::nextSampleQuestion,
                             onClearHistory = viewModel::clearHistory,
                             onSelectSolverMethod = { method ->
-                                viewModel.selectSolverMethod(method, onSyncRunningService)
+                                viewModel.selectSolverMethod(
+                                    method = method,
+                                    onSyncService = onSyncRunningService,
+                                    onRequireGoogleSignIn = {
+                                        viewModel.requestGoogleSignInGate()
+                                        onSignInGoogle()
+                                    }
+                                )
                             },
                             onToggleAdvCropToScan = { enabled ->
                                 viewModel.setAdvCropToScan(enabled, onSyncRunningService)
@@ -749,21 +1177,84 @@ private fun MainInstantApp(
                             onToggleDualVerify = { enabled ->
                                 viewModel.setDualVerifyEnabled(enabled, onSyncRunningService)
                             },
+                            onToggleFluidAnimations = { enabled ->
+                                viewModel.setFluidAnimationsEnabled(enabled, onSyncRunningService)
+                            },
                             onFlashcardSearchChange = viewModel::updateFlashcardSearch,
                             onFlashcardSubjectFilterChange = viewModel::updateFlashcardSubjectFilter,
                             onToggleFlashcardBookmarkedOnly = viewModel::setFlashcardBookmarkedOnly,
                             onToggleBookmarkEntry = viewModel::toggleBookmarkHistoryEntry,
                             onShowBannerMessage = viewModel::showBannerMessage,
+                            onOpenNotificationStudio = {
+                                viewModel.openHomeSubScreen(HomeSubScreen.NOTIFICATION_STUDIO)
+                            },
+                            onReplayOnboardingGuide = viewModel::replayOnboardingGuide,
+                            onOpenThemeStudio = {
+                                viewModel.selectTab(AppTab.Home)
+                                viewModel.openHomeSubScreen(HomeSubScreen.THEME_STUDIO)
+                            },
+                            onSelectLocalThemePreset = { spec ->
+                                viewModel.selectLocalThemePreset(spec, onSyncRunningService)
+                            },
+                            onRevertToNormalDefaultTheme = {
+                                viewModel.revertToNormalDefaultTheme(onSyncRunningService)
+                            },
+                            onClearOfflineRoomCache = viewModel::clearOfflineRoomCache,
+                            onOpenHistoryVault = {
+                                viewModel.selectTab(AppTab.Home)
+                                viewModel.openHomeSubScreen(HomeSubScreen.EXPORT_QA)
+                            },
+                            playUpdateState = playUpdateState,
+                            onCheckForPlayUpdates = {
+                                if (playUpdateState is PlayUpdateUiState.Available) {
+                                    onStartPlayUpdate()
+                                } else {
+                                    onCheckForPlayUpdates()
+                                }
+                            },
+                            onInstallReadyUpdate = onInstallReadyUpdate,
                             modifier = contentMod
+                        )
+                    }
+                    }
+
+                    // Non-blocking Play Store In-App Update Banner
+                    val showPlayUpdateBanner = playUpdateState is PlayUpdateUiState.Available ||
+                        playUpdateState is PlayUpdateUiState.Downloading ||
+                        playUpdateState is PlayUpdateUiState.ReadyToInstall
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = showPlayUpdateBanner,
+                        enter = if (reducedMotion) EnterTransition.None else slideInVertically { it } + fadeIn(tween(220)),
+                        exit = if (reducedMotion) ExitTransition.None else slideOutVertically { it } + fadeOut(tween(180)),
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .navigationBarsPadding()
+                            .padding(
+                                start = 16.dp,
+                                end = 16.dp,
+                                bottom = if (state.selectedTab != AppTab.Settings && state.homeSubScreen == HomeSubScreen.MAIN) 96.dp else 18.dp
+                            )
+                            .widthIn(max = 560.dp)
+                    ) {
+                        PlayStoreUpdateFloatingBanner(
+                            updateState = playUpdateState,
+                            onStartUpdate = onStartPlayUpdate,
+                            onInstallReady = onInstallReadyUpdate,
+                            onDismiss = onDismissPlayUpdateBanner
                         )
                     }
 
                     // Instant status notification capsule
-                    if (state.statusBannerMessage != null) {
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = state.statusBannerMessage != null,
+                        enter = if (reducedMotion) EnterTransition.None else slideInVertically { -it } + fadeIn(tween(200)),
+                        exit = if (reducedMotion) ExitTransition.None else slideOutVertically { -it } + fadeOut(tween(180)),
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .padding(horizontal = 24.dp, vertical = 6.dp)
+                    ) {
                         Box(
                             modifier = Modifier
-                                .align(Alignment.TopCenter)
-                                .padding(horizontal = 24.dp, vertical = 6.dp)
                                 .livingGlassSurface(
                                     strength = GlassMaterialStrength.FloatingDock,
                                     cornerRadius = 999.dp
@@ -771,7 +1262,7 @@ private fun MainInstantApp(
                                 .padding(horizontal = 18.dp, vertical = 10.dp)
                         ) {
                             Text(
-                                text = state.statusBannerMessage,
+                                text = state.statusBannerMessage.orEmpty(),
                                 style = MaterialTheme.typography.labelMedium,
                                 fontWeight = FontWeight.SemiBold,
                                 color = palette.inkPrimary
@@ -785,148 +1276,885 @@ private fun MainInstantApp(
 }
 
 @Composable
+private fun PlayStoreUpdateFloatingBanner(
+    updateState: PlayUpdateUiState,
+    onStartUpdate: () -> Unit,
+    onInstallReady: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val palette = LocalWhiteGlassPalette.current
+    val themeSpec = LocalPrismThemeSpec.current
+    val cardCorner = PrismCurves.cardCorner(themeSpec)
+    val buttonCorner = PrismCurves.pillOrButtonCorner(themeSpec)
+
+    val title = when (updateState) {
+        is PlayUpdateUiState.Available -> "Prism Solver update ready"
+        is PlayUpdateUiState.Downloading -> "Downloading update (${updateState.progressPct}%)"
+        PlayUpdateUiState.ReadyToInstall -> "Update downloaded"
+        else -> ""
+    }
+    val subtitle = when (updateState) {
+        is PlayUpdateUiState.Available -> "New Play Store release with faster math & bug fixes"
+        is PlayUpdateUiState.Downloading -> "Keep using Prism Solver while it finishes"
+        PlayUpdateUiState.ReadyToInstall -> "Restart now to apply the newest version"
+        else -> ""
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .shadow(10.dp, RoundedCornerShape(cardCorner), ambientColor = Color.Black.copy(alpha = 0.45f))
+            .clip(RoundedCornerShape(cardCorner))
+            .background(palette.glassStrong)
+            .border(1.dp, palette.accentSky.copy(alpha = 0.55f), RoundedCornerShape(cardCorner))
+            .padding(horizontal = 14.dp, vertical = 12.dp)
+            .testTag("banner_play_in_app_update"),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(38.dp)
+                .clip(CircleShape)
+                .background(palette.accentSky.copy(alpha = 0.16f))
+        ) {
+            Icon(
+                imageVector = Icons.Filled.SystemUpdate,
+                contentDescription = "App update available",
+                tint = palette.accentSky,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.labelLarge.copy(
+                    color = palette.inkPrimary,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp
+                ),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall.copy(
+                    color = palette.inkSecondary,
+                    fontSize = 11.sp
+                ),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+
+        when (updateState) {
+            is PlayUpdateUiState.Available -> {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .heightIn(min = 48.dp)
+                        .clip(RoundedCornerShape(buttonCorner))
+                        .background(palette.accentSky)
+                        .clickable(role = Role.Button, onClick = onStartUpdate)
+                        .padding(horizontal = 14.dp, vertical = 8.dp)
+                        .testTag("btn_banner_play_update_now")
+                ) {
+                    Text(
+                        text = "Update",
+                        style = MaterialTheme.typography.labelMedium.copy(
+                            color = palette.onAccentInk,
+                            fontWeight = FontWeight.Bold
+                        )
+                    )
+                }
+                if (!updateState.isImmediate) {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(CircleShape)
+                            .clickable(role = Role.Button, onClick = onDismiss)
+                            .testTag("btn_banner_play_update_later")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Close,
+                            contentDescription = "Dismiss update banner",
+                            tint = palette.inkSecondary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+            }
+            PlayUpdateUiState.ReadyToInstall -> {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .heightIn(min = 48.dp)
+                        .clip(RoundedCornerShape(buttonCorner))
+                        .background(palette.accentMint)
+                        .clickable(role = Role.Button, onClick = onInstallReady)
+                        .padding(horizontal = 14.dp, vertical = 8.dp)
+                        .testTag("btn_banner_play_restart_install")
+                ) {
+                    Text(
+                        text = "Restart",
+                        style = MaterialTheme.typography.labelMedium.copy(
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold
+                        )
+                    )
+                }
+            }
+            else -> Unit
+        }
+    }
+}
+
+@Composable
+private fun GoogleSignInMandatoryGateDialog(
+    isSigningIn: Boolean,
+    onContinueWithGoogle: () -> Unit,
+    onContinueOcrOnly: () -> Unit
+) {
+    val palette = LocalWhiteGlassPalette.current
+    val themeSpec = LocalPrismThemeSpec.current
+    val cardCorner = PrismCurves.heroCorner(themeSpec)
+    val buttonCorner = PrismCurves.pillOrButtonCorner(themeSpec)
+    val stripCorner = PrismCurves.innerStripCorner(themeSpec)
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(palette.canvasTop.copy(alpha = 0.90f))
+            .clickable(enabled = false, onClick = {})
+            .padding(horizontal = 20.dp, vertical = 24.dp)
+            .testTag("google_signin_mandatory_gate"),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .widthIn(max = 460.dp)
+                .clip(RoundedCornerShape(cardCorner))
+                .background(palette.glassStrong)
+                .border(1.dp, palette.cardHairlineBorder, RoundedCornerShape(cardCorner))
+                .padding(22.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(46.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(palette.accentSky.copy(alpha = 0.16f))
+                        .border(1.dp, palette.accentSky.copy(alpha = 0.55f), RoundedCornerShape(14.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    RedPrismLogoMark(
+                        modifier = Modifier.size(28.dp),
+                        animated = true
+                    )
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Sign in with Google",
+                        style = MaterialTheme.typography.titleLarge.copy(
+                            color = palette.inkPrimary,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 20.sp
+                        )
+                    )
+                    Text(
+                        text = "Save your settings and unlock Best Accuracy",
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            color = palette.inkSecondary,
+                            fontSize = 12.5.sp
+                        )
+                    )
+                }
+            }
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(stripCorner))
+                    .background(palette.canvasBottom)
+                    .border(1.dp, palette.cardHairlineBorder, RoundedCornerShape(stripCorner))
+                    .padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text(
+                    text = "Good to know",
+                    style = MaterialTheme.typography.labelLarge.copy(
+                        color = palette.inkPrimary,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 13.sp
+                    )
+                )
+                Text(
+                    text = "• Signing in unlocks Best Accuracy, Photo & Diagrams, and Form Auto-Fill.\n• If a school Google Form is private, the form page may ask for your student login separately.",
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        color = palette.inkSecondary,
+                        fontSize = 12.sp,
+                        lineHeight = 17.sp
+                    )
+                )
+            }
+
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .minimumInteractiveComponentSize()
+                    .clip(RoundedCornerShape(buttonCorner))
+                    .background(palette.accentSky)
+                    .clickable(enabled = !isSigningIn, role = Role.Button, onClick = onContinueWithGoogle)
+                    .padding(vertical = 14.dp, horizontal = 16.dp)
+                    .testTag("btn_gate_google_signin")
+            ) {
+                Text(
+                    text = if (isSigningIn) "Connecting Google Account..." else "Continue with Google",
+                    style = MaterialTheme.typography.labelLarge.copy(
+                        color = palette.onAccentInk,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.5.sp
+                    )
+                )
+            }
+
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .minimumInteractiveComponentSize()
+                    .clip(RoundedCornerShape(buttonCorner))
+                    .background(palette.glassSubtle)
+                    .border(1.dp, palette.cardHairlineBorder, RoundedCornerShape(buttonCorner))
+                    .clickable(enabled = !isSigningIn, role = Role.Button, onClick = onContinueOcrOnly)
+                    .padding(vertical = 13.dp, horizontal = 16.dp)
+                    .testTag("btn_gate_ocr_only")
+            ) {
+                Text(
+                    text = "Skip for Now (Free Screen Reader)",
+                    style = MaterialTheme.typography.labelLarge.copy(
+                        color = palette.inkPrimary,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 13.5.sp
+                    )
+                )
+            }
+        }
+    }
+}
+
+private enum class PrePermissionPrompt {
+    OVERLAY_SETTING,
+    SCREEN_CAPTURE
+}
+
+@Composable
+private fun PrePermissionExplainerDialog(
+    step: PrePermissionPrompt,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val palette = LocalWhiteGlassPalette.current
+    val themeSpec = LocalPrismThemeSpec.current
+    val cardCorner = PrismCurves.heroCorner(themeSpec)
+    val buttonCorner = PrismCurves.pillOrButtonCorner(themeSpec)
+    val isOverlay = step == PrePermissionPrompt.OVERLAY_SETTING
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(palette.canvasTop.copy(alpha = 0.88f))
+            .clickable(enabled = true, onClick = onDismiss)
+            .padding(horizontal = 20.dp, vertical = 24.dp)
+            .testTag("dialog_pre_permission_explainer"),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .widthIn(max = 440.dp)
+                .clip(RoundedCornerShape(cardCorner))
+                .background(palette.glassStrong)
+                .border(1.dp, palette.cardHairlineBorder, RoundedCornerShape(cardCorner))
+                .clickable(enabled = false, onClick = {})
+                .padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(palette.accentSky.copy(alpha = 0.16f))
+                        .border(1.dp, palette.accentSky.copy(alpha = 0.55f), RoundedCornerShape(12.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.VerifiedUser,
+                        contentDescription = null,
+                        tint = palette.accentSky,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = if (isOverlay) "Step 1 of 2: Show Floating Pill" else "Step 2 of 2: Screen Reading",
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            color = palette.inkPrimary,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 17.sp
+                        )
+                    )
+                    Text(
+                        text = if (isOverlay) {
+                            "Needed so the answer pill can stay on top of your quiz app."
+                        } else {
+                            "Android shows a 'Start recording or casting' box next — don't worry."
+                        },
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            color = palette.inkSecondary,
+                            fontSize = 12.sp
+                        )
+                    )
+                }
+            }
+
+            Text(
+                text = if (isOverlay) {
+                    "Find Prism Solver in the list, turn on 'Allow display over other apps', then come right back."
+                } else {
+                    "We only read the question on your screen when you tap the top pill. Nothing is recorded, stored, or shared."
+                },
+                style = MaterialTheme.typography.bodyMedium.copy(
+                    color = palette.inkPrimary,
+                    fontSize = 13.sp,
+                    lineHeight = 19.sp
+                )
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .weight(1f)
+                        .minimumInteractiveComponentSize()
+                        .clip(RoundedCornerShape(buttonCorner))
+                        .background(palette.glassSubtle)
+                        .border(1.dp, palette.cardHairlineBorder, RoundedCornerShape(buttonCorner))
+                        .clickable(role = Role.Button, onClick = onDismiss)
+                        .padding(vertical = 12.dp)
+                        .testTag("btn_pre_permission_cancel")
+                ) {
+                    Text(
+                        text = "Not Now",
+                        style = MaterialTheme.typography.labelLarge.copy(
+                            color = palette.inkPrimary,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    )
+                }
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .weight(1.4f)
+                        .minimumInteractiveComponentSize()
+                        .clip(RoundedCornerShape(buttonCorner))
+                        .background(palette.accentSky)
+                        .clickable(role = Role.Button, onClick = onConfirm)
+                        .padding(vertical = 12.dp)
+                        .testTag("btn_pre_permission_continue")
+                ) {
+                    Text(
+                        text = if (isOverlay) "Open Settings" else "Continue & Allow",
+                        style = MaterialTheme.typography.labelLarge.copy(
+                            color = palette.onAccentInk,
+                            fontWeight = FontWeight.Bold
+                        )
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun OverlappingDynamicIslandSpawnPulseOverlay(
+    triggerTick: Int,
+    modifier: Modifier = Modifier
+) {
+    val reducedMotion = LocalReducedMotion.current
+    val palette = LocalWhiteGlassPalette.current
+    var visible by remember { mutableStateOf(false) }
+    val scaleAnim = remember { Animatable(0.32f) }
+    val sweepAnim = remember { Animatable(0f) }
+
+    LaunchedEffect(triggerTick, reducedMotion) {
+        if (triggerTick <= 0 || reducedMotion) {
+            visible = false
+            return@LaunchedEffect
+        }
+        visible = true
+        scaleAnim.snapTo(0.32f)
+        sweepAnim.snapTo(0f)
+        launch {
+            scaleAnim.animateTo(
+                targetValue = 1f,
+                animationSpec = spring(dampingRatio = 0.56f, stiffness = 420f)
+            )
+        }
+        launch {
+            sweepAnim.animateTo(
+                targetValue = 360f,
+                animationSpec = tween(durationMillis = 1050, easing = FastOutSlowInEasing)
+            )
+        }
+        delay(1250L)
+        visible = false
+    }
+
+    AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn(tween(140)) + slideInVertically { -it / 2 },
+        exit = fadeOut(tween(280)) + scaleOut(targetScale = 0.72f),
+        modifier = modifier
+            .statusBarsPadding()
+            .padding(top = 8.dp)
+    ) {
+        val accent = palette.accentSky
+        val accentBright = palette.accentSkyBright
+        Box(
+            modifier = Modifier
+                .scale(scaleAnim.value)
+                .shadow(
+                    elevation = 14.dp,
+                    shape = RoundedCornerShape(999.dp),
+                    ambientColor = accent,
+                    spotColor = accentBright
+                )
+                .clip(RoundedCornerShape(999.dp))
+                .background(Color(0xFF040507))
+                .testTag("overlapping_island_spawn_overlay"),
+            contentAlignment = Alignment.Center
+        ) {
+            Canvas(modifier = Modifier.matchParentSize()) {
+                val corner = size.height / 2f
+                rotate(degrees = sweepAnim.value) {
+                    drawRoundRect(
+                        brush = Brush.sweepGradient(
+                            colors = listOf(
+                                accent.copy(alpha = 0.25f),
+                                accentBright,
+                                Color.White,
+                                accent,
+                                accent.copy(alpha = 0.25f)
+                            )
+                        ),
+                        cornerRadius = CornerRadius(corner, corner),
+                        style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round)
+                    )
+                }
+            }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.padding(horizontal = 18.dp, vertical = 10.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(9.dp)
+                        .clip(CircleShape)
+                        .background(palette.accentMint)
+                )
+                Text(
+                    text = "Floating Pill Ready",
+                    style = MaterialTheme.typography.labelMedium.copy(
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold
+                    )
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun WhiteGlassTopHeader(
     isOverlayRunning: Boolean,
+    isNotifPinned: Boolean = false,
     selectedTab: AppTab,
+    homeSubScreen: HomeSubScreen = HomeSubScreen.MAIN,
+    onBackFromSubScreen: () -> Unit = {},
     onToggleSettings: () -> Unit,
     onShowNotifications: () -> Unit = {}
 ) {
     val palette = LocalWhiteGlassPalette.current
+    val themeSpec = LocalPrismThemeSpec.current
+    val archetype = themeSpec.layoutArchetype
+    val headerBtnCorner = PrismCurves.iconWellCorner(themeSpec)
+    val actionShape = when (archetype) {
+        ThemeLayoutArchetype.ATELIER_BENTO -> RoundedCornerShape(12.dp)
+        ThemeLayoutArchetype.TELEMETRY_HUD -> RoundedCornerShape(8.dp)
+        ThemeLayoutArchetype.KINETIC_DECK -> RoundedCornerShape(14.dp)
+        ThemeLayoutArchetype.IOS_LIQUID_LIGHT,
+        ThemeLayoutArchetype.EDITORIAL_MONOGRAPH,
+        ThemeLayoutArchetype.CLASSIC_PRISM -> CircleShape
+    }
+    val showBottomHairline = archetype == ThemeLayoutArchetype.ATELIER_BENTO ||
+        archetype == ThemeLayoutArchetype.TELEMETRY_HUD
 
-    Box(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .statusBarsPadding()
-            .padding(horizontal = 20.dp, vertical = 10.dp),
-        contentAlignment = Alignment.Center
+            .statusBarsPadding(),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Row(
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .widthIn(max = 680.dp)
-                .testTag("top_glass_header"),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+                .padding(horizontal = 18.dp, vertical = 10.dp),
+            contentAlignment = Alignment.Center
         ) {
-            // Left: Logo & Title matching HTML
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                // Diamond Prism Logo
-                Box(
-                    modifier = Modifier
-                        .size(48.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(
-                            Brush.linearGradient(
-                                listOf(Color(0xFF1D1F25), Color(0xFF15161A), Color(0xFF0D0E11))
-                            )
-                        )
-                        .border(1.2.dp, Color(0xFF2B2D34), RoundedCornerShape(16.dp))
-                        .padding(2.5.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    // Diamond Shape with Crimson / Scarlet gradient
-                    Box(
-                        modifier = Modifier
-                            .size(24.dp)
-                            .rotate(45f)
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(
-                                Brush.linearGradient(
-                                    listOf(Color(0xFFD71921), Color(0xFF7A0A0F))
-                                )
-                            )
-                            .border(1.5.dp, Color(0xFFFF4D4D), RoundedCornerShape(4.dp)),
-                        contentAlignment = Alignment.Center
+            val isKineticBar = archetype == ThemeLayoutArchetype.KINETIC_DECK &&
+                selectedTab != AppTab.Settings &&
+                !(selectedTab == AppTab.Home && homeSubScreen != HomeSubScreen.MAIN)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .widthIn(max = 600.dp)
+                    .then(
+                        if (isKineticBar) {
+                            Modifier
+                                .clip(RoundedCornerShape(18.dp))
+                                .background(palette.glassStrong)
+                                .border(1.dp, palette.cardHairlineBorder, RoundedCornerShape(18.dp))
+                                .padding(horizontal = 10.dp, vertical = 6.dp)
+                        } else {
+                            Modifier
+                        }
+                    )
+                    .testTag("top_glass_header"),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                if (selectedTab == AppTab.Settings || (selectedTab == AppTab.Home && homeSubScreen != HomeSubScreen.MAIN)) {
+                    val isSubScreen = selectedTab == AppTab.Home && homeSubScreen != HomeSubScreen.MAIN
+                    val headerTitle = if (isSubScreen) homeSubScreen.title else "Settings"
+                    val headerSubtitle = if (isSubScreen) homeSubScreen.subtitle else "Manage your app preferences"
+                    val backAction = if (isSubScreen) onBackFromSubScreen else onToggleSettings
+                    val titleFont = when (archetype) {
+                        ThemeLayoutArchetype.TELEMETRY_HUD -> FontFamily.Monospace
+                        ThemeLayoutArchetype.EDITORIAL_MONOGRAPH -> FontFamily.Serif
+                        else -> FontFamily.Default
+                    }
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(9.dp)
-                                .clip(CircleShape)
-                                .background(Color.White.copy(alpha = 0.85f))
+                                .size(48.dp)
+                                .clip(actionShape)
+                                .background(palette.glassMedium)
+                                .border(1.dp, palette.cardHairlineBorder, actionShape)
+                                .clickable(role = Role.Button, onClick = backAction)
+                                .testTag("btn_header_back"),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Back",
+                                tint = palette.inkPrimary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = if (archetype == ThemeLayoutArchetype.TELEMETRY_HUD) headerTitle.uppercase() else headerTitle,
+                                style = MaterialTheme.typography.headlineSmall.copy(
+                                    fontSize = if (archetype == ThemeLayoutArchetype.TELEMETRY_HUD) 18.sp else 21.sp,
+                                    fontFamily = titleFont,
+                                    fontWeight = FontWeight.Bold,
+                                    color = palette.inkPrimary,
+                                    letterSpacing = if (archetype == ThemeLayoutArchetype.TELEMETRY_HUD) 0.5.sp else (-0.4).sp
+                                ),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = headerSubtitle,
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    fontSize = 12.sp,
+                                    color = palette.inkSecondary
+                                ),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+
+                    // Right Settings / Action Button (preserving testTag("btn_header_account"))
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(actionShape)
+                            .background(palette.glassMedium)
+                            .border(1.dp, palette.cardHairlineBorder, actionShape)
+                            .clickable(role = Role.Button, onClick = onToggleSettings)
+                            .testTag("btn_header_account"),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = if (isSubScreen) Icons.Filled.Settings else Icons.Filled.DarkMode,
+                            contentDescription = "Settings",
+                            tint = palette.inkPrimary,
+                            modifier = Modifier.size(20.dp)
                         )
                     }
-                }
-
-                Spacer(modifier = Modifier.width(13.dp))
-
-                Column {
-                    Text(
-                        text = "Prism OCR Solver",
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = palette.inkPrimary,
-                            letterSpacing = (-0.4).sp
+                } else if (archetype == ThemeLayoutArchetype.EDITORIAL_MONOGRAPH) {
+                    // EDITORIAL MONOGRAPH: Symmetrical centered serif masthead with flanked ghost actions
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(CircleShape)
+                            .background(palette.glassMedium.copy(alpha = 0.7f))
+                            .border(
+                                1.dp,
+                                if (isNotifPinned) palette.accentMint.copy(alpha = 0.6f) else palette.cardHairlineBorder,
+                                CircleShape
+                            )
+                            .clickable(role = Role.Button, onClick = onShowNotifications)
+                            .testTag("btn_header_notifications"),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = if (isOverlayRunning || isNotifPinned) Icons.Filled.NotificationsActive else Icons.Filled.Notifications,
+                            contentDescription = "Notifications",
+                            tint = if (isNotifPinned || isOverlayRunning) palette.accentMint else palette.inkPrimary,
+                            modifier = Modifier.size(19.dp)
                         )
-                    )
-                    Text(
-                        text = "Instant Floating Solver",
-                        style = MaterialTheme.typography.bodySmall.copy(
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = palette.inkSecondary
+                    }
+
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(horizontal = 8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "Prism Solver",
+                            style = MaterialTheme.typography.headlineSmall.copy(
+                                fontSize = 21.sp,
+                                fontFamily = FontFamily.Serif,
+                                fontWeight = FontWeight.Bold,
+                                color = palette.inkPrimary,
+                                letterSpacing = 0.2.sp
+                            ),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            textAlign = TextAlign.Center
                         )
-                    )
+                        Text(
+                            text = if (isOverlayRunning) "LIVE OVERLAY" else themeSpec.name.uppercase(),
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontSize = 9.5.sp,
+                                letterSpacing = 1.6.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (isOverlayRunning) palette.accentMint else palette.inkSecondary
+                            ),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(CircleShape)
+                            .background(palette.glassMedium.copy(alpha = 0.7f))
+                            .border(1.dp, palette.cardHairlineBorder, CircleShape)
+                            .clickable(role = Role.Button, onClick = onToggleSettings)
+                            .testTag("btn_header_account"),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Settings,
+                            contentDescription = "Settings",
+                            tint = palette.inkPrimary,
+                            modifier = Modifier.size(19.dp)
+                        )
+                    }
+                } else {
+                    // Classic Prism, Atelier Bento, Telemetry HUD, and Kinetic Deck Headers
+                    val isHud = archetype == ThemeLayoutArchetype.TELEMETRY_HUD
+                    val isAtelier = archetype == ThemeLayoutArchetype.ATELIER_BENTO
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(if (isKineticBar) 42.dp else 46.dp)
+                                .shadow(
+                                    elevation = 4.dp,
+                                    shape = RoundedCornerShape(if (isHud) 8.dp else headerBtnCorner),
+                                    ambientColor = Color.Black,
+                                    spotColor = palette.accentSky.copy(alpha = 0.33f)
+                                )
+                                .clip(RoundedCornerShape(if (isHud) 8.dp else headerBtnCorner))
+                                .background(palette.canvasTop)
+                                .border(
+                                    width = 1.dp,
+                                    color = palette.accentSky.copy(alpha = 0.55f),
+                                    shape = RoundedCornerShape(if (isHud) 8.dp else headerBtnCorner)
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            RedPrismLogoMark(
+                                modifier = Modifier.size(if (isKineticBar) 26.dp else 30.dp),
+                                animated = true
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(12.dp))
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    text = when {
+                                        isHud -> "PRISM // HUD"
+                                        isAtelier -> "Prism Atelier"
+                                        else -> "Prism Solver"
+                                    },
+                                    style = MaterialTheme.typography.headlineSmall.copy(
+                                        fontSize = if (isHud) 17.5.sp else 19.5.sp,
+                                        fontFamily = if (isHud) FontFamily.Monospace else FontFamily.Default,
+                                        fontWeight = FontWeight.Bold,
+                                        color = palette.inkPrimary,
+                                        letterSpacing = if (isHud) 0.6.sp else (-0.3).sp
+                                    ),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f, fill = false)
+                                )
+                                if (isOverlayRunning) {
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(if (isHud) 4.dp else 50.dp))
+                                            .background(palette.accentMintContainer)
+                                            .border(1.dp, palette.accentMint.copy(alpha = 0.6f), RoundedCornerShape(if (isHud) 4.dp else 50.dp))
+                                            .padding(horizontal = 7.dp, vertical = 2.dp)
+                                    ) {
+                                        Text(
+                                            text = if (isHud) "[LIVE]" else "LIVE",
+                                            style = MaterialTheme.typography.labelSmall.copy(
+                                                fontSize = 9.5.sp,
+                                                fontFamily = if (isHud) FontFamily.Monospace else FontFamily.Default,
+                                                fontWeight = FontWeight.ExtraBold,
+                                                color = palette.accentMint
+                                            ),
+                                            maxLines = 1
+                                        )
+                                    }
+                                }
+                            }
+                            Text(
+                                text = when {
+                                    isHud -> "${themeSpec.name.uppercase()} • READY"
+                                    isAtelier -> "${themeSpec.layoutArchetype.shortBadge} • ${themeSpec.name}"
+                                    else -> "Instant screen & quiz helper"
+                                },
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    fontSize = if (isHud) 10.5.sp else 12.sp,
+                                    fontFamily = if (isHud) FontFamily.Monospace else FontFamily.Default,
+                                    fontWeight = FontWeight.Normal,
+                                    color = palette.inkSecondary
+                                ),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    // Right: Status Button + Settings Gear Button
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(actionShape)
+                                .background(if (isKineticBar) palette.canvasTop else palette.glassStrong)
+                                .border(
+                                    1.dp,
+                                    if (isNotifPinned) palette.accentMint.copy(alpha = 0.6f) else palette.cardHairlineBorder,
+                                    actionShape
+                                )
+                                .clickable(role = Role.Button, onClick = onShowNotifications)
+                                .testTag("btn_header_notifications"),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = if (isOverlayRunning || isNotifPinned) Icons.Filled.NotificationsActive else Icons.Filled.Notifications,
+                                contentDescription = "Notifications",
+                                tint = if (isNotifPinned || isOverlayRunning) palette.accentMint else palette.inkPrimary,
+                                modifier = Modifier.size(19.dp)
+                            )
+                        }
+
+                        // Settings Button (preserving testTag("btn_header_account"))
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(actionShape)
+                                .background(if (isKineticBar) palette.canvasTop else palette.glassStrong)
+                                .border(1.dp, palette.cardHairlineBorder, actionShape)
+                                .clickable(role = Role.Button, onClick = onToggleSettings)
+                                .testTag("btn_header_account"),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Settings,
+                                contentDescription = "Settings",
+                                tint = palette.inkPrimary,
+                                modifier = Modifier.size(19.dp)
+                            )
+                        }
+                    }
                 }
             }
+        }
 
-            // Right: Action Buttons (Notification & Settings) matching HTML
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                // Notification Button
-                Box(
-                    modifier = Modifier
-                        .size(40.dp)
-                        .clip(CircleShape)
-                        .background(if (palette.isDarkObsidian) Color(0xFF16171B) else Color.White.copy(alpha = 0.9f))
-                        .border(
-                            1.dp,
-                            if (palette.isDarkObsidian) Color(0xFF23252A) else Color(0x99CBD5E1),
-                            CircleShape
-                        )
-                        .clickable(role = Role.Button, onClick = onShowNotifications),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.NotificationsActive,
-                        contentDescription = "Notifications",
-                        tint = palette.inkPrimary,
-                        modifier = Modifier.size(17.dp)
-                    )
+        if (showBottomHairline) {
+            HorizontalDivider(
+                color = if (archetype == ThemeLayoutArchetype.TELEMETRY_HUD) {
+                    palette.accentSky.copy(alpha = 0.35f)
+                } else {
+                    palette.cardHairlineBorder
                 }
-
-                // Settings Button (preserving testTag("btn_header_account"))
-                Box(
-                    modifier = Modifier
-                        .size(40.dp)
-                        .clip(CircleShape)
-                        .background(
-                            if (selectedTab == AppTab.Settings) Color(0xFF2A1315)
-                            else if (palette.isDarkObsidian) Color(0xFF16171B)
-                            else Color.White.copy(alpha = 0.9f)
-                        )
-                        .border(
-                            1.dp,
-                            if (selectedTab == AppTab.Settings) Color(0xFFD71921)
-                            else if (palette.isDarkObsidian) Color(0xFF23252A)
-                            else Color(0x99CBD5E1),
-                            CircleShape
-                        )
-                        .clickable(role = Role.Button, onClick = onToggleSettings)
-                        .testTag("btn_header_account"),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.Settings,
-                        contentDescription = "Settings",
-                        tint = if (selectedTab == AppTab.Settings) Color(0xFFD71921)
-                        else palette.inkPrimary,
-                        modifier = Modifier.size(17.dp)
-                    )
-                }
-            }
+            )
         }
     }
 }

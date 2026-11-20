@@ -16,17 +16,17 @@ enum class QuestionSolveMode(
     STANDARD(
         id = "STANDARD",
         chipLabel = "STD",
-        fullLabel = "Standard Fast"
+        fullLabel = "Quick MCQ"
     ),
     MATCH_FOLLOWING(
         id = "MATCH",
         chipLabel = "MATCH",
-        fullLabel = "Match the Following"
+        fullLabel = "Match Columns"
     ),
     COMPLEX_MATH(
         id = "COMPLEX_MATH",
         chipLabel = "MATH+",
-        fullLabel = "Complicated Math+"
+        fullLabel = "Math & Steps"
     );
 
     companion object {

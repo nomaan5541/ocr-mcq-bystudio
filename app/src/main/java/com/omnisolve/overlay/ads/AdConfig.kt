@@ -1,36 +1,42 @@
 package com.omnisolve.overlay.ads
 
+import com.omnisolve.overlay.BuildConfig
+
 /**
- * Google AdMob Central Configuration
+ * Google AdMob Central Configuration.
  *
- * NOTE FOR PRODUCTION PLAY STORE RELEASE:
- * 1. Create your app in Google AdMob Console (https://admob.google.com/v2/apps/list).
- * 2. Put your real AdMob App ID in AndroidManifest.xml:
- *      <meta-data android:name="com.google.android.gms.ads.APPLICATION_ID" android:value="ca-app-pub-XXXXXXXXXXXXXXXX~YYYYYYYYYY" />
- * 3. Replace the test ad unit IDs below with your production Ad Unit IDs.
+ * - AdMob App ID (AndroidManifest.xml): ca-app-pub-6628813367564084~2373198575
+ * - Banner Ad Unit (Prism_Main_Banner): ca-app-pub-6628813367564084/4121394511
+ * - app-ads.txt entry: google.com, pub-6628813367564084, DIRECT, f08c47fec0942fa0
  *
- * Current defaults use official Google sample test ad units to prevent account suspension
- * during development and testing.
+ * Uses official Google test Ad Unit IDs automatically in DEBUG builds to protect
+ * the AdMob account during development and automated testing, and serves only
+ * verified live units in RELEASE builds.
  */
 object AdConfig {
-    /** Global master switch to enable/disable ads in the app */
+    /** Global master switch to enable/disable in-app ads */
     const val ADS_ENABLED: Boolean = true
 
-    /**
-     * Google AdMob Banner Ad Unit ID (Prism_Main_Banner)
-     */
-    const val BANNER_AD_UNIT_ID: String = "ca-app-pub-6628813367564084/4121394511"
+    private const val TEST_BANNER_ID = "ca-app-pub-3940256099942544/6300978111"
+    private const val TEST_INTERSTITIAL_ID = "ca-app-pub-3940256099942544/1033173712"
+    private const val TEST_APP_OPEN_ID = "ca-app-pub-3940256099942544/9257395921"
 
-    /**
-     * Google AdMob Interstitial Ad Unit ID
-     * Test ID: "ca-app-pub-3940256099942544/1033173712"
-     * Replace with: "ca-app-pub-XXXXXXXXXXXXXXXX/WWWWWWWWWW"
-     */
-    const val INTERSTITIAL_AD_UNIT_ID: String = "ca-app-pub-3940256099942544/1033173712"
+    private const val PROD_BANNER_ID = "ca-app-pub-6628813367564084/4121394511"
+    private const val PROD_INTERSTITIAL_ID = ""
+    private const val PROD_APP_OPEN_ID = ""
 
-    /**
-     * Google AdMob App Open Ad Unit ID (Optional)
-     * Test ID: "ca-app-pub-3940256099942544/9257395921"
-     */
-    const val APP_OPEN_AD_UNIT_ID: String = "ca-app-pub-3940256099942544/9257395921"
+    val BANNER_AD_UNIT_ID: String
+        get() = if (BuildConfig.DEBUG) TEST_BANNER_ID else PROD_BANNER_ID
+
+    val INTERSTITIAL_ENABLED: Boolean
+        get() = ADS_ENABLED && (BuildConfig.DEBUG || PROD_INTERSTITIAL_ID.isNotBlank())
+
+    val APP_OPEN_ENABLED: Boolean
+        get() = ADS_ENABLED && (BuildConfig.DEBUG || PROD_APP_OPEN_ID.isNotBlank())
+
+    val INTERSTITIAL_AD_UNIT_ID: String
+        get() = if (BuildConfig.DEBUG) TEST_INTERSTITIAL_ID else PROD_INTERSTITIAL_ID
+
+    val APP_OPEN_AD_UNIT_ID: String
+        get() = if (BuildConfig.DEBUG) TEST_APP_OPEN_ID else PROD_APP_OPEN_ID
 }

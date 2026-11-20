@@ -18,7 +18,11 @@ function nowTimestamp() {
   return new Date(Date.now() - 500);
 }
 
-function validPayload(uid = ALICE_UID, overrides = {}) {
+function futureTimestamp() {
+  return new Date(Date.now() + 3600 * 1000);
+}
+
+function validSolvedPayload(uid = ALICE_UID, overrides = {}) {
   const ts = nowTimestamp();
   return {
     userId: uid,
@@ -34,6 +38,61 @@ function validPayload(uid = ALICE_UID, overrides = {}) {
     mistakeDeck: false,
     createdAt: ts,
     updatedAt: ts,
+    ...overrides,
+  };
+}
+
+function validProfilePayload(uid = ALICE_UID, overrides = {}) {
+  const ts = nowTimestamp();
+  return {
+    userId: uid,
+    displayName: "Alice Student",
+    email: "alice@example.com",
+    appVersion: "3.5.2",
+    totalRequests: 4,
+    firebaseRequests: 2,
+    cloudflareRequests: 1,
+    cacheHits: 1,
+    failedRequests: 0,
+    totalLatencyMs: 6800,
+    avgLatencyMs: 1700,
+    totalActiveSeconds: 185,
+    activeSessionsCount: 3,
+    lastFeatureUsed: "DYNAMIC_ISLAND",
+    lastBackendUsed: "FIREBASE_AI",
+    lastActiveAt: ts,
+    createdAt: ts,
+    updatedAt: ts,
+    ...overrides,
+  };
+}
+
+function validRequestLogPayload(uid = ALICE_UID, overrides = {}) {
+  return {
+    userId: uid,
+    userEmail: "alice@example.com",
+    feature: "DYNAMIC_ISLAND",
+    backend: "FIREBASE_AI",
+    modelUsed: "gemini-3.5-flash-lite",
+    latencyMs: 1840,
+    status: "SUCCESS",
+    questionPreview: "Which cell organelle generates ATP?",
+    answerBadge: "B",
+    createdAt: nowTimestamp(),
+    ...overrides,
+  };
+}
+
+function validSessionPayload(uid = ALICE_UID, overrides = {}) {
+  return {
+    userId: uid,
+    userEmail: "alice@example.com",
+    source: "DYNAMIC_ISLAND",
+    durationSeconds: 120,
+    requestsCount: 3,
+    deviceModel: "Pixel 8",
+    appVersion: "3.5.2",
+    endedAt: nowTimestamp(),
     ...overrides,
   };
 }
@@ -62,90 +121,140 @@ beforeEach(async () => {
   }
 });
 
-test("1. Unauthenticated user cannot list or get solvedQuestions", async () => {
+test("1. Unauthenticated user cannot read or write any collection", async () => {
   const unauthDb = testEnv.unauthenticatedContext().firestore();
-  await assertFails(
-    unauthDb.collection("users").doc(ALICE_UID).collection("solvedQuestions").get()
-  );
-  await assertFails(
-    unauthDb.collection("users").doc(ALICE_UID).collection("solvedQuestions").doc("q_1").get()
-  );
+  await assertFails(unauthDb.collection("users").doc(ALICE_UID).get());
+  await assertFails(unauthDb.collection("users").doc(ALICE_UID).collection("solvedQuestions").get());
+  await assertFails(unauthDb.collection("users").doc(ALICE_UID).collection("requestLogs").get());
+  await assertFails(unauthDb.collection("users").doc(ALICE_UID).collection("activeSessions").get());
+  await assertFails(unauthDb.collection("users").doc(ALICE_UID).set(validProfilePayload(ALICE_UID)));
 });
 
-test("2. Authenticated owner can create, get, list (matching userId filter), bookmark-update, and delete", async () => {
+test("2. SolvedQuestions: owner CRUD works and cross-user/spoof/ghost fields fail", async () => {
   const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
+  const bobDb = testEnv.authenticatedContext(BOB_UID).firestore();
   const docRef = aliceDb.collection("users").doc(ALICE_UID).collection("solvedQuestions").doc("q_valid_1");
 
-  await assertSucceeds(docRef.set(validPayload(ALICE_UID)));
+  await assertSucceeds(docRef.set(validSolvedPayload(ALICE_UID)));
   await assertSucceeds(docRef.get());
-  await assertSucceeds(
-    aliceDb
-      .collection("users")
-      .doc(ALICE_UID)
-      .collection("solvedQuestions")
-      .where("userId", "==", ALICE_UID)
-      .get()
-  );
+  await assertSucceeds(aliceDb.collection("users").doc(ALICE_UID).collection("solvedQuestions").get());
+  await assertSucceeds(docRef.update({ bookmarked: true, mistakeDeck: true, updatedAt: nowTimestamp() }));
 
-  await assertSucceeds(
-    docRef.update({
-      bookmarked: true,
-      mistakeDeck: true,
-      updatedAt: nowTimestamp(),
-    })
-  );
+  // Cross-user isolation
+  await assertFails(bobDb.collection("users").doc(ALICE_UID).collection("solvedQuestions").doc("q_valid_1").get());
+  await assertFails(bobDb.collection("users").doc(ALICE_UID).collection("solvedQuestions").doc("q_valid_1").delete());
+
+  // Ghost field & spoof
+  await assertFails(aliceDb.collection("users").doc(ALICE_UID).collection("solvedQuestions").doc("spoof").set(validSolvedPayload(BOB_UID)));
+  await assertFails(aliceDb.collection("users").doc(ALICE_UID).collection("solvedQuestions").doc("ghost").set(validSolvedPayload(ALICE_UID, { isAdmin: true })));
 
   await assertSucceeds(docRef.delete());
 });
 
-test("3. Cross-user isolation: Alice cannot read, create, update, or delete Bob's solvedQuestions", async () => {
-  const bobDb = testEnv.authenticatedContext(BOB_UID).firestore();
-  await assertSucceeds(
-    bobDb.collection("users").doc(BOB_UID).collection("solvedQuestions").doc("bob_q1").set(validPayload(BOB_UID))
-  );
-
+test("3. UserActivityProfile: owner create/get/update works, list/cross-user/future-time/ghost fail", async () => {
   const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
-  const bobDocAsAlice = aliceDb.collection("users").doc(BOB_UID).collection("solvedQuestions").doc("bob_q1");
+  const bobDb = testEnv.authenticatedContext(BOB_UID).firestore();
+  const profileRef = aliceDb.collection("users").doc(ALICE_UID);
 
-  await assertFails(bobDocAsAlice.get());
-  await assertFails(
-    aliceDb.collection("users").doc(BOB_UID).collection("solvedQuestions").where("userId", "==", BOB_UID).get()
-  );
-  await assertFails(
-    aliceDb.collection("users").doc(BOB_UID).collection("solvedQuestions").doc("spoof").set(validPayload(ALICE_UID))
-  );
-  await assertFails(
-    bobDocAsAlice.update({
-      bookmarked: true,
+  await assertSucceeds(profileRef.set(validProfilePayload(ALICE_UID)));
+  await assertSucceeds(profileRef.get());
+  await assertSucceeds(
+    profileRef.update({
+      totalRequests: 5,
+      firebaseRequests: 3,
+      totalActiveSeconds: 240,
+      lastFeatureUsed: "GOOGLE_FORMS",
+      lastBackendUsed: "CLOUDFLARE_EDGE",
+      lastActiveAt: nowTimestamp(),
       updatedAt: nowTimestamp(),
     })
   );
-  await assertFails(bobDocAsAlice.delete());
+
+  // Listing all users is denied to clients (viewable via Firebase Console / Admin SDK)
+  await assertFails(aliceDb.collection("users").get());
+  // Cross-user access denied
+  await assertFails(bobDb.collection("users").doc(ALICE_UID).get());
+  await assertFails(bobDb.collection("users").doc(ALICE_UID).update({ totalRequests: 99, updatedAt: nowTimestamp() }));
+  // Future timestamp rejected
+  await assertFails(profileRef.update({ updatedAt: futureTimestamp() }));
+  // Ghost field rejected
+  await assertFails(profileRef.update({ role: "admin", updatedAt: nowTimestamp() }));
+  // Immutable createdAt cannot be mutated
+  await assertFails(profileRef.update({ createdAt: nowTimestamp(), updatedAt: nowTimestamp() }));
 });
 
-test("4. Identity spoofing & shadow ghost fields are rejected", async () => {
+test("4. UserRequestLog: owner create/get/list/delete works, update/cross-user/oversized/bad-enum fail", async () => {
   const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
-  const col = aliceDb.collection("users").doc(ALICE_UID).collection("solvedQuestions");
+  const bobDb = testEnv.authenticatedContext(BOB_UID).firestore();
+  const logsCol = aliceDb.collection("users").doc(ALICE_UID).collection("requestLogs");
+  const logRef = logsCol.doc("req_001");
 
-  // Spoof userId inside Alice's own subcollection
-  await assertFails(col.doc("spoof_uid").set(validPayload(BOB_UID)));
+  await assertSucceeds(logRef.set(validRequestLogPayload(ALICE_UID)));
+  await assertSucceeds(logRef.get());
+  await assertSucceeds(logsCol.get());
 
-  // Ghost field on create
-  await assertFails(col.doc("ghost_create").set(validPayload(ALICE_UID, { isAdmin: true })));
+  // Immutable log: update denied
+  await assertFails(logRef.update({ latencyMs: 100 }));
+  // Cross-user isolation
+  await assertFails(bobDb.collection("users").doc(ALICE_UID).collection("requestLogs").get());
+  await assertFails(bobDb.collection("users").doc(ALICE_UID).collection("requestLogs").doc("req_002").set(validRequestLogPayload(BOB_UID)));
+  // Bad enum & oversized preview
+  await assertFails(logsCol.doc("req_bad").set(validRequestLogPayload(ALICE_UID, { backend: "OPENAI_KEY" })));
+  await assertFails(logsCol.doc("req_big").set(validRequestLogPayload(ALICE_UID, { questionPreview: "x".repeat(300) })));
 
-  // Valid create, then ghost field or value poisoning on update
-  await assertSucceeds(col.doc("q_base").set(validPayload(ALICE_UID)));
+  await assertSucceeds(logRef.delete());
+});
+
+test("5. UserActiveSession: owner create/get/list/delete works, invalid duration/cross-user/update fail", async () => {
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
+  const bobDb = testEnv.authenticatedContext(BOB_UID).firestore();
+  const sessionsCol = aliceDb.collection("users").doc(ALICE_UID).collection("activeSessions");
+  const sessionRef = sessionsCol.doc("sess_001");
+
+  await assertSucceeds(sessionRef.set(validSessionPayload(ALICE_UID)));
+  await assertSucceeds(sessionRef.get());
+  await assertSucceeds(sessionsCol.get());
+
+  // Update denied (append-only sessions)
+  await assertFails(sessionRef.update({ durationSeconds: 999 }));
+  // Cross-user isolation
+  await assertFails(bobDb.collection("users").doc(ALICE_UID).collection("activeSessions").get());
+  // Zero duration rejected
+  await assertFails(sessionsCol.doc("sess_zero").set(validSessionPayload(ALICE_UID, { durationSeconds: 0 })));
+  // Ghost field rejected
+  await assertFails(sessionsCol.doc("sess_ghost").set(validSessionPayload(ALICE_UID, { extra: true })));
+
+  await assertSucceeds(sessionRef.delete());
+});
+
+test("6. SharedQuizCache allows authenticated get & hash-keyed create, rejects list/spoof/update/delete", async () => {
+  const validHash = "a".repeat(64);
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
+  const bobDb = testEnv.authenticatedContext(BOB_UID).firestore();
+  const unauthDb = testEnv.unauthenticatedContext().firestore();
+
+  const payload = {
+    questionHash: validHash,
+    createdByUid: ALICE_UID,
+    answerBadge: "B",
+    shortAnswer: "Mitochondria",
+    explanation: "Mitochondria generate ATP via oxidative phosphorylation.",
+    subject: "SCIENCE",
+    confidence: 95,
+    createdAt: nowTimestamp(),
+  };
+
+  await assertFails(unauthDb.collection("sharedQuizCache").doc(validHash).get());
+  await assertSucceeds(aliceDb.collection("sharedQuizCache").doc(validHash).set(payload));
+  await assertSucceeds(bobDb.collection("sharedQuizCache").doc(validHash).get());
+  await assertFails(bobDb.collection("sharedQuizCache").get());
+  await assertFails(bobDb.collection("sharedQuizCache").doc(validHash).update({ answerBadge: "A" }));
+  await assertFails(bobDb.collection("sharedQuizCache").doc(validHash).delete());
   await assertFails(
-    col.doc("q_base").update({
-      bookmarked: true,
-      isVerified: true,
-      updatedAt: nowTimestamp(),
-    })
-  );
-  await assertFails(
-    col.doc("q_base").update({
-      confidence: 150,
-      updatedAt: nowTimestamp(),
+    bobDb.collection("sharedQuizCache").doc("b".repeat(64)).set({
+      ...payload,
+      questionHash: "b".repeat(64),
+      createdByUid: ALICE_UID,
     })
   );
 });

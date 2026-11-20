@@ -1,10 +1,20 @@
 package com.omnisolve.overlay.ui.screens
 
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -12,87 +22,121 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AccessibilityNew
+import androidx.compose.material.icons.automirrored.filled.HelpOutline
+import androidx.compose.material.icons.automirrored.filled.ViewSidebar
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.BatteryChargingFull
+import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.BubbleChart
+import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.CropFree
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.FontDownload
 import androidx.compose.material.icons.filled.HorizontalSplit
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Layers
-import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.OfflineBolt
 import androidx.compose.material.icons.filled.OpenInFull
-import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Quiz
-import androidx.compose.material.icons.filled.SkipNext
-import androidx.compose.material.icons.filled.SmartToy
+import androidx.compose.material.icons.filled.RestartAlt
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.SpaceDashboard
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.filled.Swipe
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Timer
-import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material.icons.filled.Vibration
-import androidx.compose.material.icons.filled.ViewSidebar
 import androidx.compose.material.icons.filled.ViewStream
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
-import androidx.compose.material.icons.filled.Bolt
-import androidx.compose.material.icons.filled.Calculate
-import androidx.compose.material.icons.filled.Image
-import androidx.compose.material.icons.filled.SwapVert
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.omnisolve.overlay.BuildConfig
 import com.omnisolve.overlay.MainActivity
 import com.omnisolve.overlay.R
+import com.omnisolve.overlay.ads.AdBannerStyle
+import com.omnisolve.overlay.ads.InAppAdMobBanner
 import com.omnisolve.overlay.model.SolverMethod
+import com.omnisolve.overlay.service.OverlayService
 import com.omnisolve.overlay.ui.MainUiState
 import com.omnisolve.overlay.ui.PracticeSample
-import com.omnisolve.overlay.ui.components.FlashcardDeckSection
+import com.omnisolve.overlay.util.BatterySurvivalHelper
 import com.omnisolve.overlay.ui.components.LivingOptionChoiceCard
 import com.omnisolve.overlay.ui.components.LivingPrimaryButton
 import com.omnisolve.overlay.ui.components.LivingSecondaryButton
 import com.omnisolve.overlay.ui.components.LivingSwitchRow
-import com.omnisolve.overlay.ui.physics.GlassMaterialStrength
-import com.omnisolve.overlay.ui.physics.livingGlassSurface
+import com.omnisolve.overlay.ui.theme.LocalPrismThemeSpec
 import com.omnisolve.overlay.ui.theme.LocalWhiteGlassPalette
+import com.omnisolve.overlay.ui.theme.NORMAL_DEFAULT_THEME
+import com.omnisolve.overlay.ui.theme.RemoteThemeSpec
+import com.omnisolve.overlay.ui.theme.SIGNATURE_ATELIER_THEMES
+import com.omnisolve.overlay.ui.theme.ThemeLayoutArchetype
+import com.omnisolve.overlay.ui.theme.parseHexColorOr
+import com.omnisolve.overlay.util.AppShareHelper
+import com.omnisolve.overlay.util.PlayUpdateUiState
 import kotlin.math.roundToInt
 
 @Composable
@@ -107,9 +151,9 @@ fun SettingsScreen(
     onToggleChargingCamo: (Boolean) -> Unit,
     onSignInGoogle: () -> Unit,
     onSignOutGoogle: () -> Unit,
+    onDeleteGoogleAccount: () -> Unit = {},
     onOpenGeminiWebLogin: () -> Unit,
     onRequestOverlayPermission: () -> Unit,
-    onOpenAccessibilitySettings: () -> Unit,
     onSelectHudStyle: (String) -> Unit,
     onSetCustomOpacityPct: (Int) -> Unit,
     onToggleDfTwoPartCapture: (Boolean) -> Unit,
@@ -121,8 +165,6 @@ fun SettingsScreen(
     onToggleHaptics: (Boolean) -> Unit,
     onTestVibration: () -> Unit,
     onToggleInstantDetect: (Boolean) -> Unit,
-    onToggleAutoClick: (Boolean) -> Unit,
-    onToggleAutoNext: (Boolean) -> Unit,
     onSolvePractice: () -> Unit,
     onNextPractice: () -> Unit,
     onClearHistory: () -> Unit,
@@ -140,438 +182,206 @@ fun SettingsScreen(
     onToggleAdvSplitScreenRail: (Boolean) -> Unit,
     onToggleAdvQuickTileNotif: (Boolean) -> Unit,
     onToggleDualVerify: (Boolean) -> Unit,
+    onToggleFluidAnimations: (Boolean) -> Unit = {},
     onFlashcardSearchChange: (String) -> Unit,
     onFlashcardSubjectFilterChange: (String) -> Unit,
     onToggleFlashcardBookmarkedOnly: (Boolean) -> Unit,
     onToggleBookmarkEntry: (Long) -> Unit,
     onShowBannerMessage: (String) -> Unit,
+    onOpenNotificationStudio: () -> Unit = {},
+    onReplayOnboardingGuide: () -> Unit = {},
+    onOpenThemeStudio: () -> Unit = {},
+    onSelectLocalThemePreset: (RemoteThemeSpec) -> Unit = {},
+    onRevertToNormalDefaultTheme: () -> Unit = {},
+    onClearOfflineRoomCache: () -> Unit = {},
+    onOpenHistoryVault: () -> Unit = {},
+    playUpdateState: PlayUpdateUiState = PlayUpdateUiState.Idle,
+    onCheckForPlayUpdates: () -> Unit = {},
+    onInstallReadyUpdate: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val palette = LocalWhiteGlassPalette.current
-    val dividerColor = palette.cardHairlineBorder
+    val themeSpec = LocalPrismThemeSpec.current
+    val context = LocalContext.current
+    val hasOverlayPermission = try {
+        Settings.canDrawOverlays(context)
+    } catch (_: Exception) {
+        state.isOverlayRunning
+    }
+    val isGoogleSignedIn = !state.firebaseUserId.isNullOrBlank()
+    val isOverlappingActive = state.solverMethod == SolverMethod.OVERLAPPING_GOOGLE
+
+    var expandedAccount by rememberSaveable { mutableStateOf(true) }
+    var expandedPermissions by rememberSaveable { mutableStateOf(true) }
+    var expandedAnswerLook by rememberSaveable { mutableStateOf(false) }
+    var expandedHelpPrivacy by rememberSaveable { mutableStateOf(false) }
+    var expandedAdvanced by rememberSaveable { mutableStateOf(false) }
 
     var nvidiaInput by rememberSaveable(state.nvidiaApiKey) { mutableStateOf(state.nvidiaApiKey) }
     var openRouterInput by rememberSaveable(state.openRouterApiKey) { mutableStateOf(state.openRouterApiKey) }
     var geminiInput by rememberSaveable(state.geminiApiKey) { mutableStateOf(state.geminiApiKey) }
     var openAiInput by rememberSaveable(state.openAiApiKey) { mutableStateOf(state.openAiApiKey) }
     var showKeysPlaintext by rememberSaveable { mutableStateOf(false) }
+    var showPrivacyPolicyModal by rememberSaveable { mutableStateOf(false) }
+    var showDeleteAccountDialog by rememberSaveable { mutableStateOf(false) }
+
+    if (showPrivacyPolicyModal) {
+        PrivacyPolicyModalDialog(
+            onDismiss = { showPrivacyPolicyModal = false },
+            onClearSolvedHistory = onClearHistory,
+            onClearLocalApiKeys = onClearApiKeys
+        )
+    }
+
+    if (showDeleteAccountDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                if (!state.isDeletingAccount) showDeleteAccountDialog = false
+            },
+            containerColor = palette.glassStrong,
+            titleContentColor = palette.inkPrimary,
+            textContentColor = palette.inkSecondary,
+            title = {
+                Text(
+                    text = "Delete Account & Saved History?",
+                    fontWeight = FontWeight.Bold,
+                    color = palette.inkPrimary
+                )
+            },
+            text = {
+                Text(
+                    text = "This permanently removes your saved cloud history and disconnects your Google account from Prism Solver. You can still use the free Screen Reader anytime.",
+                    color = palette.inkSecondary,
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showDeleteAccountDialog = false
+                        onDeleteGoogleAccount()
+                    },
+                    enabled = !state.isDeletingAccount,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = palette.accentSky,
+                        contentColor = palette.onAccentInk
+                    ),
+                    modifier = Modifier.testTag("btn_confirm_delete_account")
+                ) {
+                    Text(
+                        text = if (state.isDeletingAccount) "Deleting..." else "Delete Permanently",
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    onClick = { showDeleteAccountDialog = false },
+                    enabled = !state.isDeletingAccount,
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = palette.inkPrimary),
+                    modifier = Modifier.testTag("btn_cancel_delete_account")
+                ) {
+                    Text("Cancel")
+                }
+            },
+            modifier = Modifier.testTag("dialog_delete_google_account")
+        )
+    }
 
     LazyColumn(
         state = listState,
         modifier = modifier
             .fillMaxSize()
+            .navigationBarsPadding()
             .testTag("settings_screen_list"),
-        contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 8.dp, bottom = 108.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 40.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // 1. Answer Display Format: Option ABCD vs Charging 91, 92, 93, 94
-        item(key = "answer_format_section") {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .livingGlassSurface(
-                        strength = GlassMaterialStrength.Card,
-                        cornerRadius = 22.dp
-                    )
-                    .padding(18.dp)
-            ) {
-                Text(
-                    text = stringResource(R.string.settings_format_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = palette.inkPrimary
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = stringResource(R.string.settings_format_subtitle),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = palette.inkSecondary
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                LivingOptionChoiceCard(
-                    title = stringResource(R.string.format_abcd_title),
-                    subtitle = stringResource(R.string.format_abcd_desc),
-                    selected = !state.batteryCamouflage,
-                    icon = Icons.Filled.FontDownload,
-                    badgeText = "ABCD",
-                    onClick = { onToggleChargingCamo(false) },
-                    testTag = "option_format_abcd"
-                )
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                LivingOptionChoiceCard(
-                    title = stringResource(R.string.format_charging_title),
-                    subtitle = stringResource(R.string.format_charging_desc),
-                    selected = state.batteryCamouflage,
-                    icon = Icons.Filled.BatteryChargingFull,
-                    badgeText = "91–94%",
-                    onClick = { onToggleChargingCamo(true) },
-                    testTag = "option_format_charging"
-                )
-            }
+        // ── 0. SIMPLE QUICK STATUS CARD ────────────────────────────────────
+        item(key = "settings_overview_card") {
+            SystemReadinessHeroCard(
+                hasOverlayPermission = hasOverlayPermission,
+                isGoogleSignedIn = isGoogleSignedIn,
+                activeMethod = state.solverMethod.title,
+                onFixNext = {
+                    when {
+                        !hasOverlayPermission -> onRequestOverlayPermission()
+                        !isGoogleSignedIn -> onSignInGoogle()
+                        else -> onShowBannerMessage("Everything is ready to solve")
+                    }
+                }
+            )
         }
 
-        // 2. Local API Keys Vault (Stored Strictly Locally on Device)
+        // ── 0B. LIVE THEME & COMPLETE LAYOUT REARRANGEMENT SWITCHER ────────
+        item(key = "settings_theme_studio_control") {
+            SettingsThemeControlCard(
+                activeSpec = state.effectiveThemeSpec,
+                preferLocalDefault = state.preferLocalDefaultTheme,
+                onOpenThemeStudio = onOpenThemeStudio,
+                onSelectLocalThemePreset = onSelectLocalThemePreset,
+                onRevertToNormalDefault = onRevertToNormalDefaultTheme
+            )
+        }
+
+        // ── 0C. SPONSORED BANNER CARD (IN-APP SETTINGS SLOT) ───────────────
+        item(key = "settings_inline_ad_slot") {
+            InAppAdMobBanner(
+                placementTag = "settings_inline_card",
+                style = AdBannerStyle.INLINE_CARD
+            )
+        }
+
+        // ── 1. ACCOUNT & FORM BROWSER LOGIN ────────────────────────────────
         item(key = "local_api_keys_section") {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .livingGlassSurface(
-                        strength = GlassMaterialStrength.Card,
-                        cornerRadius = 22.dp
-                    )
-                    .padding(18.dp)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Filled.Lock,
-                            contentDescription = null,
-                            tint = palette.accentEmerald,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Local Device Storage Only",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = palette.accentEmerald
-                        )
-                    }
-
-                    LivingSecondaryButton(
-                        text = if (showKeysPlaintext) "Hide" else "Show",
-                        icon = if (showKeysPlaintext) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
-                        onClick = { showKeysPlaintext = !showKeysPlaintext },
-                        testTag = "btn_toggle_show_keys",
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = stringResource(R.string.settings_keys_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = palette.inkPrimary
-                )
-                Spacer(modifier = Modifier.height(3.dp))
-                Text(
-                    text = stringResource(R.string.settings_keys_subtitle),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = palette.inkSecondary
-                )
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                LocalApiKeyField(
-                    label = "NVIDIA Free API Key (build.nvidia.com)",
-                    placeholder = "nvapi-...",
-                    badge = "FREE FOR ALL",
-                    value = nvidiaInput,
-                    onValueChange = { nvidiaInput = it },
-                    showPlaintext = showKeysPlaintext,
-                    testTag = "input_nvidia_key"
-                )
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                LocalApiKeyField(
-                    label = "OpenRouter API Key (openrouter.ai)",
-                    placeholder = "sk-or-v1-...",
-                    badge = "FREE MODELS",
-                    value = openRouterInput,
-                    onValueChange = { openRouterInput = it },
-                    showPlaintext = showKeysPlaintext,
-                    testTag = "input_openrouter_key"
-                )
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                LocalApiKeyField(
-                    label = "Gemini API Key (aistudio.google.com)",
-                    placeholder = "AIzaSy...",
-                    badge = "FREE TIER",
-                    value = geminiInput,
-                    onValueChange = { geminiInput = it },
-                    showPlaintext = showKeysPlaintext,
-                    testTag = "input_gemini_key"
-                )
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                LocalApiKeyField(
-                    label = "OpenAI API Key (platform.openai.com)",
-                    placeholder = "sk-proj-...",
-                    badge = "OPTIONAL",
-                    value = openAiInput,
-                    onValueChange = { openAiInput = it },
-                    showPlaintext = showKeysPlaintext,
-                    testTag = "input_openai_key"
-                )
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    LivingPrimaryButton(
-                        text = "Save Keys (${state.configuredKeyCount} Active)",
-                        icon = Icons.Filled.Key,
-                        onClick = {
-                            onSaveApiKeys(
-                                nvidiaInput,
-                                openRouterInput,
-                                geminiInput,
-                                openAiInput
-                            )
-                        },
-                        testTag = "btn_save_api_keys",
-                        modifier = Modifier.weight(1f)
-                    )
-                    LivingSecondaryButton(
-                        text = if (state.isTestingApiKeys) "Testing..." else "Test Keys",
-                        icon = Icons.Filled.Bolt,
-                        onClick = {
-                            onTestApiKeys(
-                                nvidiaInput,
-                                openRouterInput,
-                                geminiInput,
-                                openAiInput
-                            )
-                        },
-                        testTag = "btn_test_api_keys"
-                    )
-                    if (state.configuredKeyCount > 0 ||
-                        nvidiaInput.isNotBlank() ||
-                        openRouterInput.isNotBlank() ||
-                        geminiInput.isNotBlank() ||
-                        openAiInput.isNotBlank()
-                    ) {
-                        LivingSecondaryButton(
-                            text = "Clear",
-                            icon = Icons.Filled.DeleteOutline,
-                            onClick = {
-                                nvidiaInput = ""
-                                openRouterInput = ""
-                                geminiInput = ""
-                                openAiInput = ""
-                                onClearApiKeys()
-                            },
-                            testTag = "btn_clear_api_keys"
-                        )
-                    }
-                }
-
-                if (!state.apiKeysTestSummary.isNullOrBlank()) {
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(palette.accentSkyContainer)
-                            .border(1.dp, palette.accentSky, RoundedCornerShape(12.dp))
-                            .padding(horizontal = 12.dp, vertical = 9.dp)
-                            .testTag("txt_api_keys_test_summary")
-                    ) {
-                        Text(
-                            text = state.apiKeysTestSummary,
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = palette.inkPrimary
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-                HorizontalDivider(color = dividerColor)
-                Spacer(modifier = Modifier.height(6.dp))
-
-                LivingSwitchRow(
-                    title = "Instant Auto-Switch on Error or Quota",
-                    subtitle = "Immediately shifts to the next working AI key (NVIDIA ↔ OpenRouter ↔ Gemini ↔ OpenAI) on any error or quota limit.",
-                    checked = state.autoFailoverEnabled,
-                    onCheckedChange = onToggleAutoFailover,
-                    icon = Icons.Filled.AutoAwesome,
-                    testTag = "switch_auto_failover"
-                )
-            }
-        }
-
-        // 2B. Dynamic Flow Bar Options (Individual ON/OFF Toggles for Floating Island Controls)
-        item(key = "dynamic_flow_options_section") {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .livingGlassSurface(
-                        strength = GlassMaterialStrength.Card,
-                        cornerRadius = 22.dp
-                    )
-                    .padding(18.dp)
-                    .testTag("section_dynamic_flow_options")
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Filled.ViewStream,
-                            contentDescription = null,
-                            tint = palette.accentSky,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Dynamic Flow Bar Options",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = palette.inkPrimary
-                        )
-                    }
-                    Text(
-                        text = "CUSTOMIZE BAR",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = palette.accentEmerald,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(999.dp))
-                            .background(palette.accentEmeraldContainer)
-                            .padding(horizontal = 8.dp, vertical = 3.dp)
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = "Play, Eye, Bot & Opacity% buttons are removed from the floating bar for a clean workflow. Toggle ON/OFF which smart helper tools appear when you tap the Dynamic Island orb:",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = palette.inkSecondary
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                LivingSwitchRow(
-                    title = "2-View Split Capture (1st + 2nd)",
-                    subtitle = "Tap '1st' on Question + Diagram, scroll down to Options, then tap '2nd' to stitch & solve the complete problem.",
-                    checked = state.dfTwoPartCaptureEnabled,
-                    onCheckedChange = onToggleDfTwoPartCapture,
-                    icon = Icons.Filled.HorizontalSplit,
-                    testTag = "switch_df_two_part"
-                )
-
-                HorizontalDivider(color = dividerColor, modifier = Modifier.padding(vertical = 4.dp))
-
-                LivingSwitchRow(
-                    title = "2-Second Scroll-Capture Timer (2s↓)",
-                    subtitle = "Captures View 1 immediately, gives a 2-second countdown while you scroll to options, then auto-captures View 2 & solves.",
-                    checked = state.dfScrollTimerEnabled,
-                    onCheckedChange = onToggleDfScrollTimer,
-                    icon = Icons.Filled.Timer,
-                    testTag = "switch_df_scroll_timer"
-                )
-
-                HorizontalDivider(color = dividerColor, modifier = Modifier.padding(vertical = 4.dp))
-
-                LivingSwitchRow(
-                    title = "Match-the-Following & Math+ Mode (STD / MATCH / MATH+)",
-                    subtitle = "Quick chip to switch between Standard MCQ, Column I/II Match-the-Following, and Complicated Math reasoning.",
-                    checked = state.dfComplexModeEnabled,
-                    onCheckedChange = onToggleDfComplexMode,
-                    icon = Icons.Filled.Calculate,
-                    testTag = "switch_df_complex_mode"
-                )
-
-                HorizontalDivider(color = dividerColor, modifier = Modifier.padding(vertical = 4.dp))
-
-                LivingSwitchRow(
-                    title = "Swipe-Down Looping 3-Method Switcher",
-                    subtitle = "Swipe down on the Dynamic Island to scroll a continuous loop of 1) Server Sol ↻ 2) OCR Text ↻ 3) API Key and tap to lock it in.",
-                    checked = state.dfSwipeMethodLoopEnabled,
-                    onCheckedChange = onToggleDfSwipeMethodLoop,
-                    icon = Icons.Filled.SwapVert,
-                    testTag = "switch_df_swipe_method_loop"
-                )
-
-                HorizontalDivider(color = dividerColor, modifier = Modifier.padding(vertical = 4.dp))
-
-                LivingSwitchRow(
-                    title = "Diagram Vision Boost Chip (IMG)",
-                    subtitle = "Forces full diagram/circuit/graph image attachment alongside OCR text when enabled.",
-                    checked = state.dfDiagramVisionEnabled,
-                    onCheckedChange = onToggleDfDiagramVision,
-                    icon = Icons.Filled.Image,
-                    testTag = "switch_df_diagram_vision"
-                )
-
-                HorizontalDivider(color = dividerColor, modifier = Modifier.padding(vertical = 4.dp))
-
-                LivingSwitchRow(
-                    title = "Quick Region Box Snip Chip (Box)",
-                    subtitle = "Adds a 1-tap 'Box' button in the Dynamic Flow bar to drag-snip a single diagram or sub-question.",
-                    checked = state.dfQuickCropEnabled,
-                    onCheckedChange = onToggleDfQuickCrop,
-                    icon = Icons.Filled.CropFree,
-                    testTag = "switch_df_quick_crop"
-                )
-            }
-        }
-
-        // 3. Server Sol & Background Gemini Logins + Permissions
-        item(key = "logins_and_permissions_section") {
-            val isGoogleSignedIn = !state.firebaseUserId.isNullOrBlank()
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .livingGlassSurface(
-                        strength = GlassMaterialStrength.Card,
-                        cornerRadius = 22.dp
-                    )
-                    .padding(18.dp)
+            SettingsAccordionCard(
+                icon = Icons.Filled.AccountCircle,
+                title = "Account",
+                subtitle = if (isGoogleSignedIn) {
+                    state.firebaseUserEmail ?: "Signed in"
+                } else {
+                    "App account & school form login"
+                },
+                statusBadge = if (isGoogleSignedIn) "Signed In" else "Free Mode",
+                isExpanded = expandedAccount,
+                onToggleExpand = { expandedAccount = !expandedAccount }
             ) {
                 Text(
-                    text = stringResource(R.string.settings_logins_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = palette.inkPrimary
+                    text = "App account saves your history and unlocks Google Forms solving. Private school or college forms may also ask you to sign in inside the form browser.",
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        color = palette.inkSecondary,
+                        fontSize = 11.5.sp,
+                        lineHeight = 16.sp
+                    )
                 )
-                Spacer(modifier = Modifier.height(12.dp))
 
-                // Server Sol Login
                 if (isGoogleSignedIn) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(14.dp))
                             .background(palette.accentEmeraldContainer)
-                            .border(1.dp, palette.accentEmerald, RoundedCornerShape(14.dp))
+                            .border(1.dp, palette.accentEmerald.copy(alpha = 0.65f), RoundedCornerShape(14.dp))
                             .padding(12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
-                            imageVector = Icons.Filled.CheckCircle,
-                            contentDescription = null,
+                            Icons.Filled.CheckCircle,
+                            null,
                             tint = palette.accentEmerald,
-                            modifier = Modifier.size(22.dp)
+                            modifier = Modifier.size(20.dp)
                         )
-                        Spacer(modifier = Modifier.width(10.dp))
+                        Spacer(Modifier.width(10.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = state.firebaseUserName?.takeIf { it.isNotBlank() } ?: "Server Connected",
+                                text = state.firebaseUserName?.takeIf { it.isNotBlank() } ?: "Google Account Connected",
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.Bold,
                                 color = palette.inkPrimary
                             )
                             Text(
-                                text = state.firebaseUserEmail ?: "Ready for Method 1 (Server Sol)",
+                                text = state.firebaseUserEmail ?: "Cloud account active",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = palette.inkSecondary
                             )
@@ -583,21 +393,28 @@ fun SettingsScreen(
                             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
                         )
                     }
+
+                    LivingSecondaryButton(
+                        text = if (state.isDeletingAccount) "Deleting Account & History..." else "Delete Account & Cloud Data",
+                        icon = Icons.Filled.DeleteOutline,
+                        onClick = {
+                            if (!state.isDeletingAccount) showDeleteAccountDialog = true
+                        },
+                        testTag = "btn_delete_google_account",
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 } else {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
+                    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         if (state.isSigningInGoogle) {
                             CircularProgressIndicator(
-                                modifier = Modifier.size(22.dp),
+                                modifier = Modifier.size(20.dp),
                                 strokeWidth = 2.5.dp,
                                 color = palette.accentSky
                             )
-                            Spacer(modifier = Modifier.width(10.dp))
+                            Spacer(Modifier.width(10.dp))
                         }
                         LivingPrimaryButton(
-                            text = if (state.isSigningInGoogle) "Signing in..." else "Log in on Server (Google)",
+                            text = if (state.isSigningInGoogle) "Signing in..." else "Sign in with Google",
                             icon = Icons.Filled.AccountCircle,
                             onClick = { if (!state.isSigningInGoogle) onSignInGoogle() },
                             testTag = "btn_google_login",
@@ -606,14 +423,11 @@ fun SettingsScreen(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(10.dp))
-
-                // Background Gemini Web Login
                 LivingSecondaryButton(
                     text = if (state.isGoogleWebLoggedIn) {
-                        "Background Gemini Connected (Tap to Refresh)"
+                        "Form Browser Account: Signed In"
                     } else {
-                        "Connect Background Gemini Session"
+                        "Optional: Sign In Inside Form Browser"
                     },
                     icon = Icons.Filled.AutoAwesome,
                     selected = state.isGoogleWebLoggedIn,
@@ -621,83 +435,96 @@ fun SettingsScreen(
                     testTag = "btn_gemini_web_session",
                     modifier = Modifier.fillMaxWidth()
                 )
-
-                Spacer(modifier = Modifier.height(12.dp))
-                HorizontalDivider(color = dividerColor)
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // System Permissions
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    LivingSecondaryButton(
-                        text = if (state.hasOverlayPermission) "Overlay: Allowed" else "Allow Overlay",
-                        icon = Icons.Filled.Layers,
-                        selected = state.hasOverlayPermission,
-                        onClick = onRequestOverlayPermission,
-                        testTag = "btn_settings_perm_overlay",
-                        modifier = Modifier.weight(1f)
-                    )
-                    LivingSecondaryButton(
-                        text = if (state.isAccessibilityEnabled) "Auto-Tap: Ready" else "Enable Auto-Tap",
-                        icon = Icons.Filled.AccessibilityNew,
-                        selected = state.isAccessibilityEnabled,
-                        onClick = onOpenAccessibilitySettings,
-                        testTag = "btn_perm_accessibility",
-                        modifier = Modifier.weight(1f)
-                    )
-                }
             }
         }
 
-        // 4. Floating Overlay Appearance, Opacity, Vibration & Auto-Tap
-        item(key = "overlay_controls_section") {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .livingGlassSurface(
-                        strength = GlassMaterialStrength.Card,
-                        cornerRadius = 22.dp
-                    )
-                    .padding(18.dp)
+        // ── 2. PERMISSIONS & NOTIFICATIONS ─────────────────────────────────
+        item(key = "settings_permissions_section") {
+            val readyCount = listOf(hasOverlayPermission, state.hasNotificationPermission).count { it }
+            SettingsAccordionCard(
+                icon = Icons.Filled.Layers,
+                title = "Permissions & Alerts",
+                subtitle = "Allow floating helper & answer bar",
+                statusBadge = "$readyCount/2 Ready",
+                isExpanded = expandedPermissions,
+                onToggleExpand = { expandedPermissions = !expandedPermissions }
             ) {
-                Text(
-                    text = stringResource(R.string.settings_overlay_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = palette.inkPrimary
+                SettingsStatusActionRow(
+                    title = "Display Over Other Apps",
+                    subtitle = if (hasOverlayPermission) {
+                        "Allowed • We only read your screen when you tap the pill"
+                    } else {
+                        "Needed to show the floating pill above your quiz app"
+                    },
+                    statusText = if (hasOverlayPermission) "Allowed" else "Allow",
+                    isReady = hasOverlayPermission,
+                    icon = Icons.Filled.Layers,
+                    testTag = "btn_settings_perm_overlay",
+                    onClick = onRequestOverlayPermission
                 )
-                Spacer(modifier = Modifier.height(12.dp))
+
+                SettingsStatusActionRow(
+                    title = "Pinned Answer Notification",
+                    subtitle = if (state.customPinConfig.isPinned) {
+                        "Pinned live • Tap to edit or unpin bar"
+                    } else {
+                        "Keep form answers handy in your top notification shade"
+                    },
+                    statusText = if (state.customPinConfig.isPinned) "Pinned" else "Open",
+                    isReady = state.customPinConfig.isPinned,
+                    icon = Icons.Filled.NotificationsActive,
+                    testTag = "btn_settings_open_notification_studio",
+                    onClick = onOpenNotificationStudio
+                )
+
+                LivingSwitchRow(
+                    title = "Quick Notification Controls",
+                    subtitle = "Shows Solve & Stop buttons in your notification bar while active.",
+                    checked = state.advQuickTileNotifEnabled,
+                    onCheckedChange = onToggleAdvQuickTileNotif,
+                    icon = Icons.Filled.NotificationsActive,
+                    testTag = "switch_adv_quick_tile_notif"
+                )
+            }
+        }
+
+        // ── 3. ANSWER LOOK & VIBRATION ──────────────────────────────────────
+        item(key = "answer_format_section") {
+            SettingsAccordionCard(
+                icon = Icons.Filled.ViewStream,
+                title = "Answer Look & Sound",
+                subtitle = "A/B/C/D vs Charging %, transparency & vibration",
+                statusBadge = if (state.batteryCamouflage) "Charging %" else "A / B / C / D",
+                isExpanded = expandedAnswerLook,
+                onToggleExpand = { expandedAnswerLook = !expandedAnswerLook }
+            ) {
+                LivingOptionChoiceCard(
+                    title = stringResource(R.string.format_abcd_title),
+                    subtitle = stringResource(R.string.format_abcd_desc),
+                    selected = !state.batteryCamouflage,
+                    icon = Icons.Filled.FontDownload,
+                    badgeText = "A B C D",
+                    onClick = { onToggleChargingCamo(false) },
+                    testTag = "option_format_abcd"
+                )
 
                 LivingOptionChoiceCard(
-                    title = stringResource(R.string.style_island_title),
-                    subtitle = stringResource(R.string.style_island_desc),
-                    selected = state.hudStyle == MainActivity.HUD_STYLE_ISLAND,
-                    icon = Icons.Filled.ViewStream,
-                    onClick = { onSelectHudStyle(MainActivity.HUD_STYLE_ISLAND) },
-                    testTag = "option_hud_island"
+                    title = stringResource(R.string.format_charging_title),
+                    subtitle = stringResource(R.string.format_charging_desc),
+                    selected = state.batteryCamouflage,
+                    icon = Icons.Filled.BatteryChargingFull,
+                    badgeText = "91–94%",
+                    onClick = { onToggleChargingCamo(true) },
+                    testTag = "option_format_charging"
                 )
 
-                Spacer(modifier = Modifier.height(10.dp))
-
-                LivingOptionChoiceCard(
-                    title = stringResource(R.string.style_bubble_title),
-                    subtitle = stringResource(R.string.style_bubble_desc),
-                    selected = state.hudStyle == MainActivity.HUD_STYLE_BUBBLE,
-                    icon = Icons.Filled.BubbleChart,
-                    onClick = { onSelectHudStyle(MainActivity.HUD_STYLE_BUBBLE) },
-                    testTag = "option_hud_bubble"
-                )
-
-                Spacer(modifier = Modifier.height(14.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
-                        text = "${stringResource(R.string.opacity_label)} (20%–100%, also on Home)",
+                        text = "Pill Transparency",
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.SemiBold,
                         color = palette.inkPrimary
@@ -715,27 +542,44 @@ fun SettingsScreen(
                     valueRange = 20f..100f,
                     colors = SliderDefaults.colors(
                         thumbColor = palette.accentSky,
-                        activeTrackColor = palette.accentSky
+                        activeTrackColor = palette.accentSky,
+                        inactiveTrackColor = palette.cardHairlineBorder
                     ),
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("slider_settings_opacity_pct")
                 )
 
-                Spacer(modifier = Modifier.height(12.dp))
-                HorizontalDivider(color = dividerColor)
-                Spacer(modifier = Modifier.height(8.dp))
+                LivingOptionChoiceCard(
+                    title = stringResource(R.string.style_island_title),
+                    subtitle = stringResource(R.string.style_island_desc),
+                    selected = state.hudStyle == MainActivity.HUD_STYLE_ISLAND,
+                    icon = Icons.Filled.ViewStream,
+                    badgeText = "Normal Pill",
+                    onClick = { onSelectHudStyle(MainActivity.HUD_STYLE_ISLAND) },
+                    testTag = "option_hud_island"
+                )
+
+                LivingOptionChoiceCard(
+                    title = stringResource(R.string.style_bubble_title),
+                    subtitle = stringResource(R.string.style_bubble_desc),
+                    selected = state.hudStyle == MainActivity.HUD_STYLE_BUBBLE,
+                    icon = Icons.Filled.BubbleChart,
+                    badgeText = "Round Bubble",
+                    onClick = { onSelectHudStyle(MainActivity.HUD_STYLE_BUBBLE) },
+                    testTag = "option_hud_bubble"
+                )
+
+                HorizontalDivider(color = palette.cardHairlineBorder)
 
                 LivingSwitchRow(
                     title = stringResource(R.string.haptic_title),
                     subtitle = stringResource(R.string.haptic_desc),
                     checked = state.hapticEnabled,
                     onCheckedChange = onToggleHaptics,
-                    icon = Icons.Filled.Vibration,
-                    testTag = "switch_haptics"
+                    testTag = "switch_haptics",
+                    icon = Icons.Filled.Vibration
                 )
-
-                Spacer(modifier = Modifier.height(6.dp))
                 LivingSecondaryButton(
                     text = stringResource(R.string.btn_test_vibration),
                     icon = Icons.Filled.Vibration,
@@ -743,613 +587,1223 @@ fun SettingsScreen(
                     testTag = "btn_test_vibration",
                     modifier = Modifier.fillMaxWidth()
                 )
+            }
+        }
 
-                Spacer(modifier = Modifier.height(10.dp))
-                HorizontalDivider(color = dividerColor)
-                Spacer(modifier = Modifier.height(8.dp))
+        // ── 4. UPDATES, OFFLINE CACHE, HELP & PRIVACY ──────────────────────
+        item(key = "settings_updates_and_share_card") {
+            val updateStatusText = when (playUpdateState) {
+                PlayUpdateUiState.Checking -> "Checking..."
+                is PlayUpdateUiState.Available -> "Update Ready"
+                is PlayUpdateUiState.Downloading -> "${playUpdateState.progressPct}%"
+                PlayUpdateUiState.ReadyToInstall -> "Restart Now"
+                PlayUpdateUiState.UpToDate -> "Up to Date"
+                is PlayUpdateUiState.Unavailable -> "Play Store"
+                PlayUpdateUiState.Idle -> "Check"
+            }
+            val updateSubtitle = when (playUpdateState) {
+                PlayUpdateUiState.Checking -> "Checking Google Play Store for a newer release..."
+                is PlayUpdateUiState.Available -> "A newer Prism Solver release is available on Google Play"
+                is PlayUpdateUiState.Downloading -> "Downloading update in background (${playUpdateState.progressPct}%)"
+                PlayUpdateUiState.ReadyToInstall -> "Update downloaded — tap to restart & install"
+                PlayUpdateUiState.UpToDate -> "v${BuildConfig.VERSION_NAME} • You have the latest version"
+                is PlayUpdateUiState.Unavailable -> "v${BuildConfig.VERSION_NAME} • Tap to check on Google Play"
+                PlayUpdateUiState.Idle -> "v${BuildConfig.VERSION_NAME} • Check Google Play for improvements"
+            }
 
-                LivingSwitchRow(
-                    title = stringResource(R.string.instant_detect_title),
-                    subtitle = stringResource(R.string.instant_detect_desc),
-                    checked = state.instantTriggerEnabled,
-                    onCheckedChange = onToggleInstantDetect,
-                    icon = Icons.Filled.AutoAwesome,
-                    testTag = "switch_instant_detect"
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(palette.glassStrong)
+                    .border(1.dp, palette.cardHairlineBorder, RoundedCornerShape(16.dp))
+                    .padding(14.dp)
+                    .testTag("card_settings_updates_and_share"),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                SettingsStatusActionRow(
+                    title = "Play Store App Updates",
+                    subtitle = updateSubtitle,
+                    statusText = updateStatusText,
+                    isReady = playUpdateState is PlayUpdateUiState.UpToDate || playUpdateState is PlayUpdateUiState.ReadyToInstall,
+                    icon = Icons.Filled.SystemUpdate,
+                    testTag = "btn_check_play_updates",
+                    onClick = {
+                        if (playUpdateState is PlayUpdateUiState.ReadyToInstall) {
+                            onInstallReadyUpdate()
+                        } else {
+                            onCheckForPlayUpdates()
+                        }
+                    }
                 )
 
-                LivingSwitchRow(
-                    title = stringResource(R.string.autotap_answer_title),
-                    subtitle = stringResource(R.string.autotap_answer_desc),
-                    checked = state.autoClickEnabled,
-                    onCheckedChange = onToggleAutoClick,
-                    icon = Icons.Filled.TouchApp,
-                    testTag = "switch_auto_tap"
+                SettingsStatusActionRow(
+                    title = "Offline Room Cache (${maxOf(state.offlineCacheCount, state.historyEntries.size)} Saved)",
+                    subtitle = "${state.offlineCacheSavedCalls} AI calls saved • View history offline anytime",
+                    statusText = "Open",
+                    isReady = true,
+                    icon = Icons.Filled.OfflineBolt,
+                    testTag = "btn_settings_open_offline_cache",
+                    onClick = onOpenHistoryVault
                 )
 
-                LivingSwitchRow(
-                    title = stringResource(R.string.autotap_next_title),
-                    subtitle = stringResource(R.string.autotap_next_desc),
-                    checked = state.afkAutoAdvanceEnabled,
-                    onCheckedChange = onToggleAutoNext,
-                    icon = Icons.Filled.SmartToy,
-                    testTag = "switch_auto_next"
+                LivingSecondaryButton(
+                    text = "Share Prism Solver with Friends",
+                    icon = Icons.Filled.Share,
+                    onClick = { AppShareHelper.shareAppWithFriends(context) },
+                    testTag = "btn_share_with_friends",
+                    modifier = Modifier.fillMaxWidth()
                 )
             }
         }
 
-        // 5. Quick Practice Test & Solved History
-        item(key = "quick_test_and_history_section") {
+        // ── 4B. KEEP DYNAMIC ISLAND ALIVE (BATTERY SAVER & OEM GUARD) ───────
+        item(key = "settings_keep_island_alive_card") {
+            val batteryStatus = remember(state.isOverlayRunning) { BatterySurvivalHelper.inspect(context) }
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .livingGlassSurface(
-                        strength = GlassMaterialStrength.Card,
-                        cornerRadius = 22.dp
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(palette.glassStrong)
+                    .border(
+                        width = 1.dp,
+                        color = if (batteryStatus.isProtected) {
+                            palette.accentEmerald.copy(alpha = 0.45f)
+                        } else {
+                            palette.warningAmber.copy(alpha = 0.55f)
+                        },
+                        shape = RoundedCornerShape(18.dp)
                     )
-                    .padding(18.dp)
+                    .padding(16.dp)
+                    .testTag("card_settings_battery_keep_alive"),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                // Feature Guide & Operational Manual (Comprehensive explanation of every feature)
-                Text(
-                    text = stringResource(R.string.feature_guide_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = palette.inkPrimary
-                )
-                Text(
-                    text = stringResource(R.string.feature_guide_subtitle),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = palette.inkSecondary
-                )
-                Spacer(modifier = Modifier.height(10.dp))
-
-                FeatureExplanationCard(
-                    title = "1. Floating Dynamic Island & 1-Tap Solving",
-                    description = "A compact, draggable pill docked at the top of your screen. Tap anywhere on the pill body to instantly scan and solve the visible question. The pill displays the solved option badge (e.g. Option B) with zero lag.",
-                    palette = palette
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-
-                FeatureExplanationCard(
-                    title = "2. 2-View Split Capture (1st + 2nd)",
-                    description = "Solves long questions where diagrams or equations are at the top and multiple choice options are below the fold. Tap '1st' to capture the question/diagram, scroll down to options, and tap '2nd' — prism-ocr-solver stitches both images and analyzes the full context.",
-                    palette = palette
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-
-                FeatureExplanationCard(
-                    title = "3. 2-Second Scroll-Capture Timer (2s↓)",
-                    description = "One-tap automated capture: instantly snapshots View 1, gives you a live 2-second countdown while you scroll down to options, and automatically snapshots View 2 without requiring a second tap.",
-                    palette = palette
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-
-                FeatureExplanationCard(
-                    title = "4. Match-the-Following & Math+ Modes",
-                    description = "Switch between Standard MCQ, Column I & Column II matching (outputs structured pairings like A-2, B-4, C-1, D-3), and Complicated Math+ multi-step equation reasoning.",
-                    palette = palette
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-
-                FeatureExplanationCard(
-                    title = "5. Swipe-Down Looping Method Selector",
-                    description = "Swipe down directly on the floating Dynamic Island to reveal an infinite loop of the 3 solving engines: 1) Server Sol, 2) OCR Text Extractor, and 3) Local API Keys. Tap any method to instantly switch on the fly.",
-                    palette = palette
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-
-                FeatureExplanationCard(
-                    title = "6. Local API Keys & Instant Auto-Failover",
-                    description = "Supports NVIDIA NIM, OpenRouter, OpenAI, and Google Gemini API keys. Keys are saved strictly on your local device. If a provider reaches rate limits or errors, prism-ocr-solver automatically fails over to the next configured provider in milliseconds.",
-                    palette = palette
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-
-                FeatureExplanationCard(
-                    title = "7. Start-Time Customizable Opacity (20% – 100%)",
-                    description = "Adjust overlay transparency from 20% to 100% directly from the Home screen or Settings with live numeric and slider inputs for distraction-free reading.",
-                    palette = palette
-                )
-
-                Spacer(modifier = Modifier.height(14.dp))
-                HorizontalDivider(color = dividerColor)
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // Legal & Privacy Documentation Hub
-                Text(
-                    text = stringResource(R.string.privacy_legal_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = palette.inkPrimary
-                )
-                Text(
-                    text = stringResource(R.string.privacy_legal_subtitle),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = palette.inkSecondary
-                )
-                Spacer(modifier = Modifier.height(10.dp))
-
-                val context = androidx.compose.ui.platform.LocalContext.current
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(if (palette.isDarkObsidian) Color(0xFF0F172A) else Color(0xFFF1F5F9))
-                        .border(1.dp, palette.accentSky.copy(alpha = 0.5f), RoundedCornerShape(14.dp))
-                        .clickable {
-                            val intent = android.content.Intent(
-                                android.content.Intent.ACTION_VIEW,
-                                android.net.Uri.parse(MainActivity.URL_PRIVACY_POLICY_WEB)
-                            )
-                            try {
-                                context.startActivity(intent)
-                            } catch (_: Exception) {
-                                onShowBannerMessage("Visit: virusboss.in/app/prism-ocr-solver/#privacy-policy")
-                            }
-                        }
-                        .padding(14.dp)
-                        .testTag("btn_open_public_privacy_policy"),
+                    modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(
+                                    if (batteryStatus.isProtected) palette.accentEmeraldContainer
+                                    else palette.warningContainer
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = if (batteryStatus.isProtected) Icons.Filled.Shield else Icons.Filled.BatteryChargingFull,
+                                contentDescription = null,
+                                tint = if (batteryStatus.isProtected) palette.accentEmerald else palette.warningAmber,
+                                modifier = Modifier.size(19.dp)
+                            )
+                        }
+                        Column {
+                            Text(
+                                text = "Keep Dynamic Island Alive",
+                                style = MaterialTheme.typography.titleSmall.copy(
+                                    color = palette.inkPrimary,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            )
+                            Text(
+                                text = "${batteryStatus.oemDisplayName} • ${batteryStatus.shortBadge}",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    color = if (batteryStatus.isProtected) palette.accentEmerald else palette.warningAmber,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            )
+                        }
+                    }
+                }
+
+                Text(
+                    text = batteryStatus.oemStepsHint,
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        color = palette.inkSecondary,
+                        fontSize = 12.sp,
+                        lineHeight = 17.sp
+                    )
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    LivingSecondaryButton(
+                        text = if (batteryStatus.isProtected) "Battery Settings" else "Disable Battery Opt.",
+                        icon = Icons.Filled.BatteryChargingFull,
+                        onClick = {
+                            BatterySurvivalHelper.openUnrestrictedBatterySettings(context)
+                            onShowBannerMessage("Set Battery → Unrestricted so Dynamic Island stays instant.")
+                        },
+                        testTag = "btn_disable_battery_optimization",
+                        modifier = Modifier.weight(1f)
+                    )
+                    if (state.isOverlayRunning) {
+                        LivingSecondaryButton(
+                            text = "Stop Island",
+                            icon = Icons.Filled.Stop,
+                            onClick = {
+                                try {
+                                    context.stopService(Intent(context, OverlayService::class.java))
+                                    onShowBannerMessage("Dynamic Island stopped.")
+                                } catch (_: Exception) {
+                                }
+                            },
+                            testTag = "btn_settings_stop_island",
+                            modifier = Modifier.weight(0.85f)
+                        )
+                    }
+                }
+            }
+        }
+
+        item(key = "settings_help_privacy_section") {
+            SettingsAccordionCard(
+                icon = Icons.AutoMirrored.Filled.HelpOutline,
+                title = "Help, History & Privacy",
+                subtitle = "5-second tour, saved offline cache & privacy policy",
+                statusBadge = "${state.historyEntries.size} Saved",
+                isExpanded = expandedHelpPrivacy,
+                onToggleExpand = { expandedHelpPrivacy = !expandedHelpPrivacy },
+                modifier = Modifier.testTag("section_advanced_system_options")
+            ) {
+                SettingsStatusActionRow(
+                    title = "Replay Quick Interactive Tour",
+                    subtitle = "Try the 5-second live MCQ & Math demo again",
+                    statusText = "Replay",
+                    isReady = true,
+                    icon = Icons.AutoMirrored.Filled.HelpOutline,
+                    testTag = "btn_replay_feature_guide",
+                    onClick = onReplayOnboardingGuide
+                )
+
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    LivingSecondaryButton(
+                        text = "Clear History (${state.historyEntries.size})",
+                        icon = Icons.Filled.DeleteOutline,
+                        onClick = {
+                            onClearHistory()
+                            onClearOfflineRoomCache()
+                            onShowBannerMessage("Cleared local history & offline cache")
+                        },
+                        testTag = "btn_clear_history",
+                        modifier = Modifier.weight(1f)
+                    )
+                    LivingSecondaryButton(
+                        text = "Privacy Policy",
+                        icon = Icons.Filled.VerifiedUser,
+                        onClick = { showPrivacyPolicyModal = true },
+                        testTag = "btn_open_public_privacy_policy",
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+
+                LivingSecondaryButton(
+                    text = "Open Web Privacy Policy",
+                    icon = Icons.Filled.OpenInFull,
+                    onClick = {
+                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(MainActivity.URL_PRIVACY_POLICY_WEB))
+                        try {
+                            context.startActivity(intent)
+                        } catch (_: Exception) {
+                            onShowBannerMessage("Could not open browser. Check your browser app or tap Privacy Policy above.")
+                        }
+                    },
+                    testTag = "btn_open_web_policy",
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        }
+
+        // ── 5. ADVANCED & BRING YOUR OWN KEY (COLLAPSED BY DEFAULT) ────────
+        item(key = "advanced_byok_and_power_controls") {
+            SettingsAccordionCard(
+                icon = Icons.Filled.Tune,
+                title = "Advanced & Bring Your Own Key",
+                subtitle = "Optional personal API keys, extra gestures, flashcards & physics",
+                statusBadge = if (state.configuredKeyCount > 0) "${state.configuredKeyCount} Key(s)" else "Optional",
+                isExpanded = expandedAdvanced,
+                onToggleExpand = { expandedAdvanced = !expandedAdvanced },
+                modifier = Modifier.testTag("btn_toggle_advanced_settings")
+            ) {
+                // Personal Keys Section
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(end = 8.dp)
+                    ) {
                         Text(
-                            text = "Official Privacy Policy & Disclosures",
-                            style = MaterialTheme.typography.labelLarge,
+                            text = "Personal API Keys (${state.configuredKeyCount} Saved)",
+                            style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold,
-                            color = palette.accentSky
+                            color = palette.inkPrimary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                         Text(
-                            text = "Hosted at virusboss.in/app/prism-ocr-solver/#privacy-policy",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = palette.inkSecondary
+                            text = "Optional — leave empty to use built-in solving",
+                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.5.sp),
+                            color = palette.inkMuted,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                     LivingSecondaryButton(
-                        text = "Open Web",
-                        icon = Icons.Filled.OpenInFull,
-                        onClick = {
-                            val intent = android.content.Intent(
-                                android.content.Intent.ACTION_VIEW,
-                                android.net.Uri.parse(MainActivity.URL_PRIVACY_POLICY_WEB)
-                            )
-                            try {
-                                context.startActivity(intent)
-                            } catch (_: Exception) {
-                                onShowBannerMessage("Visit: virusboss.in/app/prism-ocr-solver/#privacy-policy")
-                            }
-                        },
-                        testTag = "btn_open_web_policy"
+                        text = if (showKeysPlaintext) "Hide" else "Show",
+                        icon = if (showKeysPlaintext) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                        onClick = { showKeysPlaintext = !showKeysPlaintext },
+                        testTag = "btn_toggle_show_keys",
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
                     )
                 }
 
-                Spacer(modifier = Modifier.height(14.dp))
-                HorizontalDivider(color = dividerColor)
-                Spacer(modifier = Modifier.height(12.dp))
+                LocalApiKeyField("NVIDIA NIM Key", "nvapi-...", "OPTIONAL", nvidiaInput, { nvidiaInput = it }, showKeysPlaintext, "input_nvidia_key")
+                LocalApiKeyField("OpenRouter Key", "sk-or-v1-...", "OPTIONAL", openRouterInput, { openRouterInput = it }, showKeysPlaintext, "input_openrouter_key")
+                LocalApiKeyField("Google Gemini Key", "AIzaSy...", "OPTIONAL", geminiInput, { geminiInput = it }, showKeysPlaintext, "input_gemini_key")
+                LocalApiKeyField("OpenAI Key", "sk-proj-...", "OPTIONAL", openAiInput, { openAiInput = it }, showKeysPlaintext, "input_openai_key")
 
-                // Solved History Section
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Text(
-                        text = stringResource(R.string.history_title),
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = palette.inkPrimary
+                    LivingPrimaryButton(
+                        text = "Save Keys (${state.configuredKeyCount})",
+                        icon = Icons.Filled.Key,
+                        onClick = { onSaveApiKeys(nvidiaInput, openRouterInput, geminiInput, openAiInput) },
+                        testTag = "btn_save_api_keys",
+                        modifier = Modifier.weight(1f)
                     )
-                    if (state.historyEntries.isNotEmpty()) {
+                    LivingSecondaryButton(
+                        text = if (state.isTestingApiKeys) "Testing..." else "Test",
+                        icon = Icons.Filled.Bolt,
+                        onClick = { onTestApiKeys(nvidiaInput, openRouterInput, geminiInput, openAiInput) },
+                        testTag = "btn_test_api_keys"
+                    )
+                    if (state.configuredKeyCount > 0 || nvidiaInput.isNotBlank() || openRouterInput.isNotBlank() || geminiInput.isNotBlank() || openAiInput.isNotBlank()) {
                         LivingSecondaryButton(
-                            text = stringResource(R.string.btn_clear_history),
+                            text = "Clear",
                             icon = Icons.Filled.DeleteOutline,
-                            onClick = onClearHistory,
-                            testTag = "btn_clear_history",
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                            onClick = {
+                                nvidiaInput = ""
+                                openRouterInput = ""
+                                geminiInput = ""
+                                openAiInput = ""
+                                onClearApiKeys()
+                            },
+                            testTag = "btn_clear_api_keys"
                         )
                     }
                 }
 
-                if (state.historyEntries.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(12.dp))
-                    HorizontalDivider(color = dividerColor)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    state.historyEntries.take(4).forEach { entry ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(28.dp)
-                                    .clip(CircleShape)
-                                    .background(palette.accentSkyContainer),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = entry.answerLetter,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = palette.accentSky
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Text(
-                                text = entry.questionPreview,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = palette.inkPrimary,
-                                maxLines = 1,
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        // 6. ADVANCED OPTIONS (ALL OFF BY DEFAULT — INDIVIDUAL ON/OFF TOGGLES)
-        item(key = "advanced_options_section") {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .livingGlassSurface(
-                        strength = GlassMaterialStrength.Card,
-                        cornerRadius = 22.dp
-                    )
-                    .padding(18.dp)
-                    .testTag("section_advanced_options")
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Filled.Tune,
-                            contentDescription = null,
-                            tint = palette.accentSky,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
+                if (!state.apiKeysTestSummary.isNullOrBlank()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(palette.glassTintedSky)
+                            .border(1.dp, palette.accentSky.copy(alpha = 0.7f), RoundedCornerShape(12.dp))
+                            .padding(horizontal = 12.dp, vertical = 9.dp)
+                            .testTag("txt_api_keys_test_summary")
+                    ) {
                         Text(
-                            text = "Advanced Settings",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
+                            text = state.apiKeysTestSummary,
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
                             color = palette.inkPrimary
                         )
                     }
-                    Text(
-                        text = "DEFAULT OFF",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = palette.accentSky,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(999.dp))
-                            .background(palette.accentSkyContainer)
-                            .padding(horizontal = 8.dp, vertical = 3.dp)
-                    )
                 }
 
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = "Every advanced feature starts OFF by default. Turn ON only the tools you want.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = palette.inkSecondary
+                LivingSwitchRow(
+                    title = "Automatic Key Backup Rotation",
+                    subtitle = "Switches to your next saved key if one runs out of free quota.",
+                    checked = state.autoFailoverEnabled,
+                    onCheckedChange = onToggleAutoFailover,
+                    icon = Icons.Filled.AutoAwesome,
+                    testTag = "switch_auto_failover"
                 )
 
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // (1) Crop-to-Scan Region Selector (Liquid Glass Snipper)
                 LivingSwitchRow(
-                    title = "Crop-to-Scan Region Selector",
-                    subtitle = "Drag a glowing Liquid Glass box over a specific diagram, circuit, graph, or single question.",
-                    checked = state.advCropToScanEnabled,
-                    onCheckedChange = onToggleAdvCropToScan,
-                    icon = Icons.Filled.CropFree,
-                    testTag = "switch_adv_crop_scan"
+                    title = "Double-Check Answers",
+                    subtitle = "Runs a second check for tough questions.",
+                    checked = state.dualVerifyEnabled,
+                    onCheckedChange = onToggleDualVerify,
+                    icon = Icons.Filled.VerifiedUser,
+                    testTag = "switch_adv_dual_verify"
                 )
 
-                HorizontalDivider(color = dividerColor, modifier = Modifier.padding(vertical = 4.dp))
+                HorizontalDivider(color = palette.cardHairlineBorder)
 
-                // (2) Dynamic Island Swipe & Long-Press Gestures
+                // Extra Pill Shapes & Disguises
                 LivingSwitchRow(
-                    title = "Dynamic Island Swipe & Long-Press Gestures",
-                    subtitle = "Swipe left/right on the pill to browse solved history (#3: B ↔ #2: D) or long-press to switch Subject Mode & OCR.",
-                    checked = state.advIslandGesturesEnabled,
-                    onCheckedChange = onToggleAdvIslandGestures,
-                    icon = Icons.Filled.Swipe,
-                    testTag = "switch_adv_island_gestures"
-                )
-
-                HorizontalDivider(color = dividerColor, modifier = Modifier.padding(vertical = 4.dp))
-
-                // (3) Split Pill Mode (Badge • Short Answer)
-                LivingSwitchRow(
-                    title = "Split Pill Mode (B • Mitochondria)",
-                    subtitle = "Shows both the option letter and concise short answer text together on the floating pill.",
-                    checked = state.advSplitPillEnabled,
-                    onCheckedChange = onToggleAdvSplitPill,
-                    icon = Icons.Filled.HorizontalSplit,
-                    testTag = "switch_adv_split_pill"
-                )
-
-                HorizontalDivider(color = dividerColor, modifier = Modifier.padding(vertical = 4.dp))
-
-                // (4) Ultra-Thin Top Strip & Edge-Docked Mini Tab
-                LivingSwitchRow(
-                    title = "Ultra-Thin Top Strip & Edge-Docked Mini Tab",
-                    subtitle = "Switch to ultra-minimal overlay shapes with tiny screen footprint.",
+                    title = "Extra Pill Shapes (Small Strip & Edge Tab)",
+                    subtitle = "Unlock slim top strip and side tab shapes.",
                     checked = state.advMinimalShapesEnabled,
                     onCheckedChange = onToggleAdvMinimalShapes,
                     icon = Icons.Filled.SpaceDashboard,
                     testTag = "switch_adv_minimal_shapes"
                 )
                 if (state.advMinimalShapesEnabled) {
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         LivingSecondaryButton(
-                            text = "Ultra-Thin Top Strip",
+                            text = "Top Strip",
                             selected = state.hudStyle == MainActivity.HUD_STYLE_TOP_STRIP,
                             onClick = { onSelectHudStyle(MainActivity.HUD_STYLE_TOP_STRIP) },
                             testTag = "btn_shape_top_strip",
                             modifier = Modifier.weight(1f)
                         )
                         LivingSecondaryButton(
-                            text = "Edge-Docked Tab",
+                            text = "Edge Tab",
                             selected = state.hudStyle == MainActivity.HUD_STYLE_EDGE_TAB,
                             onClick = { onSelectHudStyle(MainActivity.HUD_STYLE_EDGE_TAB) },
                             testTag = "btn_shape_edge_tab",
                             modifier = Modifier.weight(1f)
                         )
                     }
-                    Spacer(modifier = Modifier.height(4.dp))
                 }
-
-                HorizontalDivider(color = dividerColor, modifier = Modifier.padding(vertical = 4.dp))
-
-                // (5) Network Speed Disguise (0.91–0.94 MB/s)
                 LivingSwitchRow(
-                    title = "Network Speed Disguise (0.91–0.94 MB/s)",
-                    subtitle = "0.91 MB/s = A • 0.92 MB/s = B • 0.93 MB/s = C • 0.94 MB/s = D (idle 0.48 MB/s).",
+                    title = "Show Answer + Key Word",
+                    subtitle = "Shows the letter alongside a short clue on the pill.",
+                    checked = state.advSplitPillEnabled,
+                    onCheckedChange = onToggleAdvSplitPill,
+                    icon = Icons.Filled.HorizontalSplit,
+                    testTag = "switch_adv_split_pill"
+                )
+                LivingSwitchRow(
+                    title = "Speed Meter Disguise (0.91–0.94 MB/s)",
+                    subtitle = "Shows answers as a tiny network speed badge.",
                     checked = state.advNetSpeedDisguiseEnabled,
                     onCheckedChange = onToggleAdvNetSpeedDisguise,
                     icon = Icons.Filled.Speed,
                     testTag = "switch_adv_net_speed"
                 )
-
-                HorizontalDivider(color = dividerColor, modifier = Modifier.padding(vertical = 4.dp))
-
-                // (6) Auto-Fade Idle Timer
                 LivingSwitchRow(
-                    title = "Auto-Fade Idle Timer",
-                    subtitle = "Automatically dims the floating overlay when idle and restores brightness on touch or new answer.",
+                    title = "Dim Pill When Idle",
+                    subtitle = "Fades the floating pill gently when not in use.",
                     checked = state.advAutoFadeIdleEnabled,
                     onCheckedChange = onToggleAdvAutoFadeIdle,
                     icon = Icons.Filled.Timer,
                     testTag = "switch_adv_auto_fade"
                 )
-            }
-        }
 
-        // 6B. Advanced Settings — Study Deck, Obsidian Theme, Layout & System Controls (All OFF by default)
-        item(key = "advanced_options_study_and_system_section") {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .livingGlassSurface(
-                        strength = GlassMaterialStrength.Card,
-                        cornerRadius = 22.dp
-                    )
-                    .padding(18.dp)
-                    .testTag("section_advanced_system_options")
-            ) {
-                Text(
-                    text = "Advanced Study, Theme & System Controls",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = palette.inkPrimary
-                )
-                Spacer(modifier = Modifier.height(10.dp))
+                HorizontalDivider(color = palette.cardHairlineBorder)
 
-                // (7) Interactive Flashcard Deck & PDF / Markdown Export
-                LivingSwitchRow(
-                    title = "Interactive Flashcard Deck & Study Export",
-                    subtitle = "Turn solved history into swipeable Liquid Glass flashcards with search, bookmarks, and 1-tap PDF/Markdown share.",
-                    checked = state.advFlashcardsExportEnabled,
-                    onCheckedChange = onToggleAdvFlashcardsExport,
-                    icon = Icons.Filled.Quiz,
-                    testTag = "switch_adv_flashcards"
-                )
-                if (state.advFlashcardsExportEnabled) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    FlashcardDeckSection(
-                        entries = state.historyEntries,
-                        searchQuery = state.flashcardSearchQuery,
-                        subjectFilter = state.flashcardSubjectFilter,
-                        bookmarkedOnly = state.flashcardBookmarkedOnly,
-                        onSearchQueryChange = onFlashcardSearchChange,
-                        onSubjectFilterChange = onFlashcardSubjectFilterChange,
-                        onToggleBookmarkedOnly = onToggleFlashcardBookmarkedOnly,
-                        onToggleBookmarkEntry = onToggleBookmarkEntry,
-                        onExportMessage = onShowBannerMessage
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
-                }
+                // Pill Chip & Gesture Controls
+                LivingSwitchRow("Two-Part Capture", "Capture top of question first, scroll, then tap Part 2.", state.dfTwoPartCaptureEnabled, onToggleDfTwoPartCapture, "switch_df_two_part", Icons.Filled.HorizontalSplit)
+                LivingSwitchRow("2-Second Scroll Timer", "Waits 2 seconds so you can scroll to choices.", state.dfScrollTimerEnabled, onToggleDfScrollTimer, "switch_df_scroll_timer", Icons.Filled.Timer)
+                LivingSwitchRow("Question Type Chip", "Switch Quick MCQ / Match / Math inside the pill.", state.dfComplexModeEnabled, onToggleDfComplexMode, "switch_df_complex_mode", Icons.Filled.Calculate)
+                LivingSwitchRow("Diagram Vision Boost", "Helps with charts, figures, and geometry images.", state.dfDiagramVisionEnabled, onToggleDfDiagramVision, "switch_df_diagram_vision", Icons.Filled.Image)
+                LivingSwitchRow("Quick Crop Box", "Draw a box around one question on screen.", state.dfQuickCropEnabled, onToggleDfQuickCrop, "switch_df_quick_crop", Icons.Filled.CropFree)
+                LivingSwitchRow("Crop-to-Scan Selector", "Manually frame any graph or formula.", state.advCropToScanEnabled, onToggleAdvCropToScan, "switch_adv_crop_scan", Icons.Filled.CropFree)
+                LivingSwitchRow("Swipe to Switch Style", "Swipe down on the pill to change solving styles.", state.dfSwipeMethodLoopEnabled, onToggleDfSwipeMethodLoop, "switch_df_swipe_method_loop", Icons.Filled.SwapVert)
+                LivingSwitchRow("Swipe Past Answers", "Swipe left or right on the pill for recent answers.", state.advIslandGesturesEnabled, onToggleAdvIslandGestures, "switch_adv_island_gestures", Icons.Filled.Swipe)
 
-                HorizontalDivider(color = dividerColor, modifier = Modifier.padding(vertical = 4.dp))
+                HorizontalDivider(color = palette.cardHairlineBorder)
 
-                // (8) Dark Obsidian Liquid Glass Theme
-                LivingSwitchRow(
-                    title = "Dark Obsidian Liquid Glass Theme",
-                    subtitle = "Switch between Daylight White Glass and deep Dark Obsidian Liquid Glass.",
-                    checked = state.advDarkObsidianEnabled,
-                    onCheckedChange = onToggleAdvDarkObsidian,
-                    icon = Icons.Filled.DarkMode,
-                    testTag = "switch_adv_dark_obsidian"
-                )
-
-                HorizontalDivider(color = dividerColor, modifier = Modifier.padding(vertical = 4.dp))
-
-                // (9) Custom Spring-Physics Sliders
-                LivingSwitchRow(
-                    title = "Custom Spring-Physics Sliders",
-                    subtitle = "Customize Liquid Glass spring bounce (damping) and snap speed (stiffness).",
-                    checked = state.advSpringPhysicsEnabled,
-                    onCheckedChange = onToggleAdvSpringPhysics,
-                    icon = Icons.Filled.Tune,
-                    testTag = "switch_adv_spring_physics"
-                )
-                if (state.advSpringPhysicsEnabled) {
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(if (palette.isDarkObsidian) Color(0xFF141D2E) else Color(0xFFF8FAFC))
-                            .padding(horizontal = 12.dp, vertical = 10.dp)
-                            .testTag("panel_spring_sliders")
-                    ) {
-                        Text(
-                            text = "Spring Damping: ${"%.2f".format(state.springDamping)}",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = palette.inkPrimary
-                        )
-                        Slider(
-                            value = state.springDamping,
-                            onValueChange = { d -> onUpdateSpringPhysics(d, state.springStiffness) },
-                            valueRange = 0.35f..1.0f,
-                            colors = SliderDefaults.colors(
-                                thumbColor = palette.accentSky,
-                                activeTrackColor = palette.accentSky
-                            ),
-                            modifier = Modifier.testTag("slider_spring_damping")
-                        )
-                        Text(
-                            text = "Spring Stiffness: ${state.springStiffness.roundToInt()}",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = palette.inkPrimary
-                        )
-                        Slider(
-                            value = state.springStiffness,
-                            onValueChange = { s -> onUpdateSpringPhysics(state.springDamping, s) },
-                            valueRange = 200f..1500f,
-                            colors = SliderDefaults.colors(
-                                thumbColor = palette.accentSky,
-                                activeTrackColor = palette.accentSky
-                            ),
-                            modifier = Modifier.testTag("slider_spring_stiffness")
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(4.dp))
-                }
-
-                HorizontalDivider(color = dividerColor, modifier = Modifier.padding(vertical = 4.dp))
-
-                // (10) Split-Screen Compact Side-Rail Layout
-                LivingSwitchRow(
-                    title = "Split-Screen Compact Side-Rail Layout",
-                    subtitle = "Replaces bottom bar with a compact side rail optimized for Android split-screen next to a PDF or browser.",
-                    checked = state.advSplitScreenRailEnabled,
-                    onCheckedChange = onToggleAdvSplitScreenRail,
-                    icon = Icons.Filled.ViewSidebar,
-                    testTag = "switch_adv_split_rail"
-                )
-
-                HorizontalDivider(color = dividerColor, modifier = Modifier.padding(vertical = 4.dp))
-
-                // (11) Android Quick Settings Tile & Notification Controls
-                LivingSwitchRow(
-                    title = "Quick Settings Tile & Notification Controls",
-                    subtitle = "Adds Solve Now, Stealth, and Stop buttons to the notification plus pull-down Quick Settings Tile support.",
-                    checked = state.advQuickTileNotifEnabled,
-                    onCheckedChange = onToggleAdvQuickTileNotif,
-                    icon = Icons.Filled.NotificationsActive,
-                    testTag = "switch_adv_quick_tile_notif"
-                )
-
-                HorizontalDivider(color = dividerColor, modifier = Modifier.padding(vertical = 4.dp))
-
-                // (12) Dual-Check Server Verification (Explicitly OFF by default so Server Sol never repeats!)
-                LivingSwitchRow(
-                    title = "Server Dual-Check Re-Verification",
-                    subtitle = "Keep OFF for instant single-pass Server Sol. Turn ON only if you want a second verification pass.",
-                    checked = state.dualVerifyEnabled,
-                    onCheckedChange = onToggleDualVerify,
-                    icon = Icons.Filled.VerifiedUser,
-                    testTag = "switch_adv_dual_verify"
-                )
-            }
-        }
-
-        // 7. AT LAST: Overlapping Google Completely
-        item(key = "overlapping_google_completely_section") {
-            val isOverlappingActive = state.solverMethod == SolverMethod.OVERLAPPING_GOOGLE
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .livingGlassSurface(
-                        strength = if (isOverlappingActive) GlassMaterialStrength.AccentSky else GlassMaterialStrength.Card,
-                        cornerRadius = 22.dp
-                    )
-                    .padding(18.dp)
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.OpenInFull,
-                        contentDescription = null,
-                        tint = palette.accentSky,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Text(
-                        text = "Full-Screen Floating Window Option",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = palette.accentSky
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
+                // Triggers, Window & Display
+                LivingSwitchRow(stringResource(R.string.instant_detect_title), stringResource(R.string.instant_detect_desc), state.instantTriggerEnabled, onToggleInstantDetect, "switch_instant_detect", Icons.Filled.AutoAwesome)
                 LivingOptionChoiceCard(
                     title = stringResource(R.string.overlapping_google_title),
                     subtitle = stringResource(R.string.overlapping_google_desc),
                     selected = isOverlappingActive,
                     icon = Icons.Filled.OpenInFull,
-                    badgeText = if (isOverlappingActive) "ACTIVE" else "FULL OVERLAP",
+                    badgeText = if (isOverlappingActive) "ACTIVE" else "WINDOW",
                     onClick = {
-                        if (isOverlappingActive) {
-                            onSelectSolverMethod(SolverMethod.BACKGROUND_GEMINI)
-                        } else {
-                            onSelectSolverMethod(SolverMethod.OVERLAPPING_GOOGLE)
-                        }
+                        onSelectSolverMethod(
+                            if (isOverlappingActive) SolverMethod.BACKGROUND_GEMINI else SolverMethod.OVERLAPPING_GOOGLE
+                        )
                     },
                     testTag = "option_method_overlapping_google"
                 )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
                 LivingSwitchRow(
-                    title = "Enable Overlapping Google Completely",
-                    subtitle = "Toggle on to keep a full floating Google / Gemini window overlapping right over your screen.",
+                    title = "Enable Floating AI Browser",
+                    subtitle = "Opens answers in a draggable floating web card.",
                     checked = isOverlappingActive,
                     onCheckedChange = { enabled ->
                         onSelectSolverMethod(
                             if (enabled) SolverMethod.OVERLAPPING_GOOGLE else SolverMethod.BACKGROUND_GEMINI
                         )
                     },
+                    icon = Icons.Filled.OpenInFull,
                     testTag = "switch_overlapping_google"
                 )
+
+                LivingSwitchRow("Deep Dark Background", "Uses pure dark surface for maximum contrast.", state.advDarkObsidianEnabled, onToggleAdvDarkObsidian, "switch_adv_dark_obsidian", Icons.Filled.DarkMode)
+                LivingSwitchRow("Tablet Side Navigation Rail", "Shows side navigation bar on wide screens.", state.advSplitScreenRailEnabled, onToggleAdvSplitScreenRail, "switch_adv_split_rail", Icons.AutoMirrored.Filled.ViewSidebar)
+                LivingSwitchRow(
+                    title = "Smooth Motion Effects",
+                    subtitle = "Turn off for simpler transitions and extra battery savings.",
+                    checked = state.fluidAnimationsEnabled,
+                    onCheckedChange = onToggleFluidAnimations,
+                    testTag = "switch_fluid_animations",
+                    icon = Icons.Filled.AutoAwesome
+                )
+                LivingSwitchRow("Custom Pill Bounce Speed", "Fine-tune how fast the pill opens and closes.", state.advSpringPhysicsEnabled, onToggleAdvSpringPhysics, "switch_adv_spring_physics", Icons.Filled.Tune)
+                if (state.advSpringPhysicsEnabled) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(palette.glassMedium)
+                            .border(1.dp, palette.cardHairlineBorder, RoundedCornerShape(14.dp))
+                            .padding(horizontal = 12.dp, vertical = 10.dp)
+                            .testTag("panel_spring_sliders")
+                    ) {
+                        Text("Bounce Smoothness: ${"%.2f".format(state.springDamping)}", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = palette.inkPrimary)
+                        Slider(
+                            value = state.springDamping,
+                            onValueChange = { d -> onUpdateSpringPhysics(d, state.springStiffness) },
+                            valueRange = 0.35f..1.0f,
+                            colors = SliderDefaults.colors(
+                                thumbColor = palette.accentSky,
+                                activeTrackColor = palette.accentSky,
+                                inactiveTrackColor = palette.cardHairlineBorder
+                            ),
+                            modifier = Modifier.testTag("slider_spring_damping")
+                        )
+                        Text("Snap Speed: ${state.springStiffness.roundToInt()}", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = palette.inkPrimary)
+                        Slider(
+                            value = state.springStiffness,
+                            onValueChange = { s -> onUpdateSpringPhysics(state.springDamping, s) },
+                            valueRange = 200f..1500f,
+                            colors = SliderDefaults.colors(
+                                thumbColor = palette.accentSky,
+                                activeTrackColor = palette.accentSky,
+                                inactiveTrackColor = palette.cardHairlineBorder
+                            ),
+                            modifier = Modifier.testTag("slider_spring_stiffness")
+                        )
+                    }
+                }
             }
+        }
+
+        // ── 6. CLEAN BUILD SPEC FOOTER ──────────────────────────────────────
+        item(key = "settings_build_footer") {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(palette.glassStrong)
+                    .border(1.dp, palette.cardHairlineBorder, RoundedCornerShape(14.dp))
+                    .padding(vertical = 10.dp, horizontal = 14.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "Prism Solver • ${themeSpec.name} • Private On-Device Reading",
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        color = palette.inkSecondary,
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 11.5.sp
+                    )
+                )
+            }
+        }
+    }
+}
+
+// ── APPEARANCE & THEME STUDIO CARD ──────────────────────────────────────────
+
+@Composable
+private fun SettingsThemeControlCard(
+    activeSpec: RemoteThemeSpec,
+    preferLocalDefault: Boolean,
+    onOpenThemeStudio: () -> Unit,
+    onSelectLocalThemePreset: (RemoteThemeSpec) -> Unit,
+    onRevertToNormalDefault: () -> Unit
+) {
+    val palette = LocalWhiteGlassPalette.current
+    val themeSpec = LocalPrismThemeSpec.current
+    val haptics = LocalHapticFeedback.current
+    val archetype = themeSpec.layoutArchetype
+    val cardCorner = when (archetype) {
+        ThemeLayoutArchetype.TELEMETRY_HUD -> 10.dp
+        ThemeLayoutArchetype.ATELIER_BENTO -> 16.dp
+        ThemeLayoutArchetype.EDITORIAL_MONOGRAPH -> 18.dp
+        ThemeLayoutArchetype.KINETIC_DECK -> 18.dp
+        ThemeLayoutArchetype.IOS_LIQUID_LIGHT -> 24.dp
+        ThemeLayoutArchetype.CLASSIC_PRISM -> themeSpec.cornerRadiusDp.coerceIn(8, 28).dp
+    }
+    val accentColor = parseHexColorOr(activeSpec.accentPrimaryHex, palette.accentSky)
+    val swatchColors = listOf(
+        parseHexColorOr(activeSpec.canvasTopHex, palette.canvasTop),
+        parseHexColorOr(activeSpec.surfacePrimaryHex, palette.glassStrong),
+        accentColor,
+        parseHexColorOr(activeSpec.inkPrimaryHex, palette.inkPrimary)
+    )
+    val quickThemes = remember {
+        listOf(NORMAL_DEFAULT_THEME, com.omnisolve.overlay.ui.theme.IOS_LIQUID_LIGHT_THEME) + SIGNATURE_ATELIER_THEMES
+    }
+    val useMono = archetype == ThemeLayoutArchetype.TELEMETRY_HUD
+    val useSerif = archetype == ThemeLayoutArchetype.EDITORIAL_MONOGRAPH
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(cardCorner))
+            .background(palette.glassStrong)
+            .border(1.dp, palette.accentSky.copy(alpha = 0.48f), RoundedCornerShape(cardCorner))
+            .padding(16.dp)
+            .testTag("card_settings_theme_control"),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(RoundedCornerShape(if (useMono) 8.dp else 12.dp))
+                        .background(palette.glassTintedSky)
+                        .border(1.dp, palette.accentSky.copy(alpha = 0.55f), RoundedCornerShape(if (useMono) 8.dp else 12.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Palette,
+                        contentDescription = null,
+                        tint = palette.accentSky,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                Spacer(Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = if (useMono) "THEMES & LAYOUTS" else "Themes & App Layout",
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontSize = 15.5.sp,
+                            fontFamily = when {
+                                useMono -> FontFamily.Monospace
+                                useSerif -> FontFamily.Serif
+                                else -> FontFamily.Default
+                            },
+                            fontWeight = FontWeight.Bold,
+                            color = palette.inkPrimary
+                        ),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = "${activeSpec.name} • ${activeSpec.layoutArchetype.shortBadge}",
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontSize = 11.5.sp,
+                            color = palette.inkSecondary
+                        ),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            Spacer(Modifier.width(8.dp))
+
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                swatchColors.forEach { swatch ->
+                    Box(
+                        modifier = Modifier
+                            .size(12.dp)
+                            .clip(CircleShape)
+                            .background(swatch)
+                            .border(1.dp, palette.cardHairlineBorder, CircleShape)
+                    )
+                }
+            }
+        }
+
+        // Active Layout Blueprint Summary Strip
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(if (useMono) 7.dp else 12.dp))
+                .background(palette.glassMedium)
+                .border(1.dp, palette.cardHairlineBorder, RoundedCornerShape(if (useMono) 7.dp else 12.dp))
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                Text(
+                    text = activeSpec.layoutArchetype.label.uppercase(),
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        color = palette.accentSky,
+                        fontFamily = if (useMono) FontFamily.Monospace else FontFamily.Default,
+                        fontWeight = FontWeight.ExtraBold,
+                        letterSpacing = 0.6.sp
+                    ),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = activeSpec.layoutArchetype.layoutTagline,
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        color = palette.inkSecondary,
+                        fontSize = 11.sp
+                    ),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Text(
+                text = if (preferLocalDefault && activeSpec.isNormalDefault) "Default" else activeSpec.layoutArchetype.shortBadge,
+                style = MaterialTheme.typography.labelSmall.copy(
+                    color = palette.inkPrimary,
+                    fontWeight = FontWeight.Bold
+                ),
+                maxLines = 1
+            )
+        }
+
+        // Instant One-Tap Theme + Full Layout Rearrangement Strip directly inside Settings
+        LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            contentPadding = PaddingValues(vertical = 2.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("settings_quick_theme_strip")
+        ) {
+            items(items = quickThemes, key = { it.themeId }) { spec ->
+                val isSelected = activeSpec.themeId == spec.themeId
+                val chipAccent = remember(spec.accentPrimaryHex) {
+                    parseHexColorOr(spec.accentPrimaryHex, palette.accentSky)
+                }
+                val chipCanvas = remember(spec.canvasTopHex) {
+                    parseHexColorOr(spec.canvasTopHex, palette.canvasTop)
+                }
+                val chipCorner = if (useMono) 8.dp else 12.dp
+                Column(
+                    modifier = Modifier
+                        .width(136.dp)
+                        .minimumInteractiveComponentSize()
+                        .clip(RoundedCornerShape(chipCorner))
+                        .background(if (isSelected) palette.glassTintedSky else palette.canvasTop)
+                        .border(
+                            width = if (isSelected) 1.5.dp else 1.dp,
+                            color = if (isSelected) chipAccent else palette.cardHairlineBorder,
+                            shape = RoundedCornerShape(chipCorner)
+                        )
+                        .clickable(role = Role.RadioButton) {
+                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            if (spec.isNormalDefault) {
+                                onRevertToNormalDefault()
+                            } else {
+                                onSelectLocalThemePreset(spec)
+                            }
+                        }
+                        .padding(horizontal = 10.dp, vertical = 9.dp)
+                        .testTag("btn_settings_quick_theme_${spec.themeId}"),
+                    verticalArrangement = Arrangement.spacedBy(5.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Box(
+                                modifier = Modifier
+                                    .size(10.dp)
+                                    .clip(CircleShape)
+                                    .background(chipCanvas)
+                                    .border(0.75.dp, Color.White.copy(alpha = 0.25f), CircleShape)
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .size(10.dp)
+                                    .clip(CircleShape)
+                                    .background(chipAccent)
+                            )
+                        }
+                        Text(
+                            text = spec.layoutArchetype.shortBadge,
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                color = if (isSelected) palette.accentSkyBright else palette.inkMuted,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 9.5.sp
+                            ),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    Text(
+                        text = spec.name,
+                        style = MaterialTheme.typography.labelMedium.copy(
+                            color = palette.inkPrimary,
+                            fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.SemiBold,
+                            fontSize = 11.5.sp
+                        ),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+        }
+
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+            if (maxWidth < 360.dp) {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    LivingPrimaryButton(
+                        text = "Open Themes",
+                        icon = Icons.Filled.Palette,
+                        onClick = onOpenThemeStudio,
+                        testTag = "btn_settings_open_theme_studio",
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    LivingSecondaryButton(
+                        text = if (activeSpec.isNormalDefault) "Default Active" else "Reset Default",
+                        icon = Icons.Filled.RestartAlt,
+                        selected = activeSpec.isNormalDefault,
+                        onClick = onRevertToNormalDefault,
+                        testTag = "btn_settings_revert_default_theme",
+                        modifier = Modifier.fillMaxWidth(),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 11.dp)
+                    )
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    LivingPrimaryButton(
+                        text = "Open Themes",
+                        icon = Icons.Filled.Palette,
+                        onClick = onOpenThemeStudio,
+                        testTag = "btn_settings_open_theme_studio",
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    LivingSecondaryButton(
+                        text = if (activeSpec.isNormalDefault) "Default Active" else "Reset Default",
+                        icon = Icons.Filled.RestartAlt,
+                        selected = activeSpec.isNormalDefault,
+                        onClick = onRevertToNormalDefault,
+                        testTag = "btn_settings_revert_default_theme",
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 11.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+// ── CLEAN COLLAPSIBLE & READINESS BUILDING BLOCKS ───────────────────────────
+
+@Composable
+private fun SystemReadinessHeroCard(
+    hasOverlayPermission: Boolean,
+    isGoogleSignedIn: Boolean,
+    activeMethod: String,
+    onFixNext: () -> Unit
+) {
+    val palette = LocalWhiteGlassPalette.current
+    val themeSpec = LocalPrismThemeSpec.current
+    val heroCorner = themeSpec.cornerRadiusDp.coerceIn(8, 28).dp
+    val readyScore = listOf(hasOverlayPermission, isGoogleSignedIn).count { it }
+    val allCoreReady = hasOverlayPermission && isGoogleSignedIn
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(heroCorner))
+            .background(
+                Brush.linearGradient(listOf(palette.glassTintedSky, palette.glassStrong))
+            )
+            .border(
+                width = 1.dp,
+                color = if (allCoreReady) palette.accentEmerald.copy(alpha = 0.45f) else palette.accentSky.copy(alpha = 0.45f),
+                shape = RoundedCornerShape(heroCorner)
+            )
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = if (allCoreReady) "Everything Ready" else "Setup Check ($readyScore/2)",
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = FontWeight.ExtraBold,
+                        color = palette.inkPrimary
+                    )
+                )
+                Text(
+                    text = "Solving Style: $activeMethod",
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        color = palette.inkSecondary,
+                        fontSize = 12.sp
+                    )
+                )
+            }
+
+            if (!hasOverlayPermission || !isGoogleSignedIn) {
+                Box(
+                    modifier = Modifier
+                        .minimumInteractiveComponentSize()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(palette.accentSky)
+                        .clickable(role = Role.Button, onClick = onFixNext)
+                        .padding(horizontal = 12.dp, vertical = 7.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = if (!hasOverlayPermission) "Allow Pill" else "Sign In",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            color = palette.onAccentInk,
+                            fontWeight = FontWeight.Bold
+                        )
+                    )
+                }
+            }
+        }
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(6.dp)
+                .clip(RoundedCornerShape(3.dp))
+                .background(palette.glassMedium)
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth((readyScore / 2f).coerceAtLeast(0.18f))
+                    .height(6.dp)
+                    .clip(RoundedCornerShape(3.dp))
+                    .background(
+                        Brush.horizontalGradient(
+                            if (allCoreReady) listOf(palette.accentEmerald, palette.accentMint)
+                            else listOf(palette.accentSky, palette.accentSkyBright)
+                        )
+                    )
+            )
+        }
+
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            ReadinessChip(
+                "Floating Pill",
+                if (hasOverlayPermission) "Allowed" else "Needed",
+                hasOverlayPermission,
+                Modifier.weight(1f)
+            )
+            ReadinessChip(
+                "Account",
+                if (isGoogleSignedIn) "Signed In" else "Free Mode",
+                isGoogleSignedIn,
+                Modifier.weight(1f)
+            )
+        }
+    }
+}
+
+@Composable
+private fun ReadinessChip(
+    label: String,
+    value: String,
+    isReady: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val palette = LocalWhiteGlassPalette.current
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(11.dp))
+            .background(palette.canvasBottom)
+            .border(
+                width = 1.dp,
+                color = if (isReady) palette.accentEmerald.copy(alpha = 0.4f) else palette.cardHairlineBorder,
+                shape = RoundedCornerShape(11.dp)
+            )
+            .padding(horizontal = 8.dp, vertical = 7.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Box(
+                modifier = Modifier
+                    .size(6.dp)
+                    .clip(CircleShape)
+                    .background(if (isReady) palette.accentEmerald else palette.accentSky)
+            )
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall.copy(color = palette.inkSecondary, fontSize = 10.sp),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        Spacer(Modifier.height(2.dp))
+        Text(
+            text = value,
+            style = MaterialTheme.typography.labelMedium.copy(
+                color = if (isReady) palette.accentEmerald else palette.inkPrimary,
+                fontWeight = FontWeight.Bold,
+                fontSize = 11.sp
+            ),
+            maxLines = 1
+        )
+    }
+}
+
+@Composable
+private fun SettingsAccordionCard(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    statusBadge: String,
+    isExpanded: Boolean,
+    onToggleExpand: () -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit
+) {
+    val palette = LocalWhiteGlassPalette.current
+    val themeSpec = LocalPrismThemeSpec.current
+    val archetype = themeSpec.layoutArchetype
+    val isEditorial = archetype == ThemeLayoutArchetype.EDITORIAL_MONOGRAPH
+    val isHud = archetype == ThemeLayoutArchetype.TELEMETRY_HUD
+    val corner = when (archetype) {
+        ThemeLayoutArchetype.TELEMETRY_HUD -> 8.dp
+        ThemeLayoutArchetype.ATELIER_BENTO -> 14.dp
+        ThemeLayoutArchetype.EDITORIAL_MONOGRAPH -> 0.dp
+        ThemeLayoutArchetype.KINETIC_DECK -> 18.dp
+        ThemeLayoutArchetype.IOS_LIQUID_LIGHT -> 22.dp
+        ThemeLayoutArchetype.CLASSIC_PRISM -> themeSpec.cornerRadiusDp.coerceIn(8, 26).dp
+    }
+    val titleFont = when (archetype) {
+        ThemeLayoutArchetype.TELEMETRY_HUD -> FontFamily.Monospace
+        ThemeLayoutArchetype.EDITORIAL_MONOGRAPH -> FontFamily.Serif
+        else -> FontFamily.Default
+    }
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .then(
+                if (isEditorial) {
+                    Modifier.background(Color.Transparent)
+                } else {
+                    Modifier
+                        .clip(RoundedCornerShape(corner))
+                        .background(palette.glassStrong)
+                        .border(
+                            width = if (isHud && isExpanded) 1.25.dp else 1.dp,
+                            color = if (isExpanded) palette.accentSky.copy(alpha = 0.45f) else palette.cardHairlineBorder,
+                            shape = RoundedCornerShape(corner)
+                        )
+                }
+            )
+    ) {
+        if (isEditorial) {
+            HorizontalDivider(color = palette.cardHairlineBorder)
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 52.dp)
+                .clickable(role = Role.Button, onClick = onToggleExpand)
+                .padding(horizontal = if (isEditorial) 4.dp else 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(if (isEditorial) 34.dp else 40.dp)
+                        .clip(RoundedCornerShape(if (isHud) 6.dp else if (isEditorial) 999.dp else 12.dp))
+                        .background(if (isEditorial) Color.Transparent else palette.glassTintedSky)
+                        .border(
+                            1.dp,
+                            palette.accentSky.copy(alpha = if (isEditorial) 0.35f else 0.55f),
+                            RoundedCornerShape(if (isHud) 6.dp else if (isEditorial) 999.dp else 12.dp)
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(icon, null, tint = palette.accentSky, modifier = Modifier.size(18.dp))
+                }
+                Spacer(Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = if (isHud) title.uppercase() else title,
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontSize = if (isHud) 14.sp else 15.5.sp,
+                            fontFamily = titleFont,
+                            fontWeight = FontWeight.Bold,
+                            color = palette.inkPrimary
+                        ),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontSize = 11.5.sp,
+                            color = palette.inkSecondary
+                        ),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            Spacer(Modifier.width(8.dp))
+
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(if (isHud) 4.dp else 7.dp))
+                        .background(palette.glassMedium)
+                        .border(1.dp, palette.cardHairlineBorder, RoundedCornerShape(if (isHud) 4.dp else 7.dp))
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        text = if (isHud) statusBadge.uppercase() else statusBadge,
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            color = palette.inkPrimary,
+                            fontFamily = if (isHud) FontFamily.Monospace else FontFamily.Default,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 10.sp
+                        )
+                    )
+                }
+                Icon(
+                    imageVector = if (isExpanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                    contentDescription = if (isExpanded) "Collapse" else "Expand",
+                    tint = palette.inkSecondary,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
+
+        AnimatedVisibility(
+            visible = isExpanded,
+            enter = expandVertically() + fadeIn(),
+            exit = shrinkVertically() + fadeOut()
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(
+                        start = if (isEditorial) 4.dp else 16.dp,
+                        end = if (isEditorial) 4.dp else 16.dp,
+                        bottom = 16.dp
+                    ),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                if (!isEditorial) {
+                    HorizontalDivider(color = palette.cardHairlineBorder)
+                }
+                content()
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsStatusActionRow(
+    title: String,
+    subtitle: String,
+    statusText: String,
+    isReady: Boolean,
+    icon: ImageVector,
+    testTag: String,
+    onClick: () -> Unit
+) {
+    val palette = LocalWhiteGlassPalette.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .minimumInteractiveComponentSize()
+            .clip(RoundedCornerShape(14.dp))
+            .background(palette.glassMedium)
+            .border(
+                width = 1.dp,
+                color = if (isReady) palette.accentEmerald.copy(alpha = 0.4f) else palette.accentSky.copy(alpha = 0.45f),
+                shape = RoundedCornerShape(14.dp)
+            )
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 12.dp)
+            .testTag(testTag),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(if (isReady) palette.accentEmeraldContainer else palette.glassTintedSky),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(icon, null, tint = if (isReady) palette.accentEmerald else palette.accentSky, modifier = Modifier.size(18.dp))
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleSmall.copy(
+                        fontSize = 13.5.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = palette.inkPrimary
+                    ),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        fontSize = 11.sp,
+                        color = palette.inkSecondary
+                    ),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+        Spacer(Modifier.width(8.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(if (isReady) palette.accentEmeraldContainer else palette.accentSky)
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+            ) {
+                Text(
+                    text = statusText,
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        color = if (isReady) palette.accentEmerald else palette.onAccentInk,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 10.5.sp
+                    )
+                )
+            }
+            Spacer(Modifier.width(4.dp))
+            Icon(Icons.Filled.ChevronRight, null, tint = palette.inkSecondary, modifier = Modifier.size(17.dp))
         }
     }
 }
@@ -1371,38 +1825,29 @@ private fun LocalApiKeyField(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = palette.inkPrimary
-            )
+            Text(label, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = palette.inkPrimary)
             Text(
                 text = badge,
                 style = MaterialTheme.typography.labelSmall,
                 fontWeight = FontWeight.Bold,
-                color = palette.accentEmerald,
+                color = palette.accentSky,
                 modifier = Modifier
                     .clip(RoundedCornerShape(6.dp))
-                    .background(palette.accentEmeraldContainer)
+                    .background(palette.glassTintedSky)
                     .padding(horizontal = 6.dp, vertical = 2.dp)
             )
         }
-        Spacer(modifier = Modifier.height(4.dp))
+        Spacer(Modifier.height(4.dp))
         OutlinedTextField(
             value = value,
             onValueChange = onValueChange,
             singleLine = true,
-            placeholder = { Text(placeholder) },
-            visualTransformation = if (showPlaintext) {
-                VisualTransformation.None
-            } else {
-                PasswordVisualTransformation()
-            },
+            placeholder = { Text(placeholder, color = palette.inkMuted) },
+            visualTransformation = if (showPlaintext) VisualTransformation.None else PasswordVisualTransformation(),
             shape = RoundedCornerShape(12.dp),
             colors = OutlinedTextFieldDefaults.colors(
-                focusedContainerColor = if (palette.isDarkObsidian) Color(0xFF141D2E) else Color.White,
-                unfocusedContainerColor = if (palette.isDarkObsidian) Color(0xFF0F172A) else Color(0xFFF8FAFC),
+                focusedContainerColor = palette.glassMedium,
+                unfocusedContainerColor = palette.canvasBottom,
                 focusedBorderColor = palette.accentSky,
                 unfocusedBorderColor = palette.cardHairlineBorder,
                 focusedTextColor = palette.inkPrimary,
@@ -1414,33 +1859,3 @@ private fun LocalApiKeyField(
         )
     }
 }
-
-@Composable
-private fun FeatureExplanationCard(
-    title: String,
-    description: String,
-    palette: com.omnisolve.overlay.ui.theme.WhiteGlassPalette
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(if (palette.isDarkObsidian) Color(0xFF0F172A) else Color(0xFFF8FAFC))
-            .border(1.dp, palette.cardHairlineBorder, RoundedCornerShape(12.dp))
-            .padding(12.dp)
-    ) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.labelMedium,
-            fontWeight = FontWeight.Bold,
-            color = palette.inkPrimary
-        )
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            text = description,
-            style = MaterialTheme.typography.bodySmall,
-            color = palette.inkSecondary
-        )
-    }
-}
-

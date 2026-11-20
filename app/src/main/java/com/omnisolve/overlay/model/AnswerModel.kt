@@ -20,7 +20,9 @@ data class AnswerModel(
     @SerializedName("translatedQuestion") val translatedQuestion: String = "",
     val subject: String = SubjectMode.GENERAL.id,
     val verified: Boolean = false,
-    val engineLabel: String = "Firebase Cloud Gemini"
+    val engineLabel: String = "Firebase Cloud Gemini",
+    val competingCandidates: List<String> = emptyList(),
+    val isCachedResult: Boolean = false
 ) {
     companion object {
         const val QUESTION_TYPE_MCQ = "MCQ"

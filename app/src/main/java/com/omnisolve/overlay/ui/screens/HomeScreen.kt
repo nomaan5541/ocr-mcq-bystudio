@@ -1,1086 +1,1865 @@
 package com.omnisolve.overlay.ui.screens
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.Cast
-import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CenterFocusStrong
 import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.Cloud
-import androidx.compose.material.icons.filled.DarkMode
-import androidx.compose.material.icons.filled.DocumentScanner
-import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.Layers
+import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Opacity
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Quiz
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.graphics.vector.PathNode
-import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
+import android.net.Uri
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.omnisolve.overlay.R
+import com.omnisolve.overlay.MainActivity
 import com.omnisolve.overlay.model.QuestionSolveMode
 import com.omnisolve.overlay.model.SolverMethod
+import com.omnisolve.overlay.model.SubjectMode
+import com.omnisolve.overlay.service.CustomPinnedNotifConfig
+import com.omnisolve.overlay.ui.HomeSubScreen
 import com.omnisolve.overlay.ui.MainUiState
+import com.omnisolve.overlay.ui.SolvedHistoryEntry
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
+import com.omnisolve.overlay.ads.AdBannerStyle
+import com.omnisolve.overlay.ads.InAppAdMobBanner
+import com.omnisolve.overlay.ui.components.LiveInteractiveDemoCard
+import com.omnisolve.overlay.ui.physics.LocalReducedMotion
+import com.omnisolve.overlay.util.AppShareHelper
+import com.omnisolve.overlay.ui.physics.ScrollRevealSection
+import com.omnisolve.overlay.ui.physics.kineticAccentRim
+import com.omnisolve.overlay.ui.physics.liquidPressScale
+import com.omnisolve.overlay.ui.physics.liquidSheenSweep
+import com.omnisolve.overlay.ui.physics.topGlassSpecularHighlight
+import com.omnisolve.overlay.ui.theme.LocalPrismThemeSpec
 import com.omnisolve.overlay.ui.theme.LocalWhiteGlassPalette
-import kotlin.math.roundToInt
+import com.omnisolve.overlay.ui.theme.PrismCurves
+import com.omnisolve.overlay.ui.theme.RemoteThemeSpec
+import com.omnisolve.overlay.ui.theme.ThemeAnimationIntensity
+import com.omnisolve.overlay.ui.theme.ThemeColorAppearance
+import com.omnisolve.overlay.ui.theme.ThemeLayoutArchetype
+import com.omnisolve.overlay.ui.theme.parseHexColorOr
+import kotlinx.coroutines.delay
 
-// 3D Isometric Cube Vector for "Select Answer Method"
-val CubeVector: ImageVector by lazy {
-    ImageVector.Builder(
-        name = "Cube3D",
-        defaultWidth = 24.dp,
-        defaultHeight = 24.dp,
-        viewportWidth = 24f,
-        viewportHeight = 24f
-    ).addPath(
-        fill = SolidColor(Color.White),
-        pathData = listOf(
-            PathNode.MoveTo(12f, 2f),
-            PathNode.LineTo(21f, 7f),
-            PathNode.LineTo(12f, 12f),
-            PathNode.LineTo(3f, 7f),
-            PathNode.Close,
-            PathNode.MoveTo(12f, 13.5f),
-            PathNode.LineTo(21f, 8.5f),
-            PathNode.LineTo(21f, 17f),
-            PathNode.LineTo(12f, 22f),
-            PathNode.Close,
-            PathNode.MoveTo(3f, 8.5f),
-            PathNode.LineTo(12f, 13.5f),
-            PathNode.LineTo(12f, 22f),
-            PathNode.LineTo(3f, 17f),
-            PathNode.Close
-        )
-    ).build()
-}
-
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun HomeScreen(
     state: MainUiState,
-    listState: LazyListState,
+    listState: LazyListState = rememberLazyListState(),
     onToggleOverlay: () -> Unit,
     onRequestOverlayPermission: () -> Unit,
     onSelectSolverMethod: (SolverMethod) -> Unit,
     onSetCustomOpacityPct: (Int) -> Unit,
     onSelectQuestionSolveMode: (QuestionSolveMode) -> Unit,
-    onToggleChargingFormat: (Boolean) -> Unit,
-    onOpenSettings: () -> Unit,
-    onSignInServer: () -> Unit,
-    onOpenGeminiLogin: () -> Unit,
+    onToggleChargingFormat: (Boolean) -> Unit = {},
+    onSelectHudStyle: (String) -> Unit = {},
+    onToggleDfTwoPartCapture: (Boolean) -> Unit = {},
+    onToggleDfScrollTimer: (Boolean) -> Unit = {},
+    onToggleDfComplexMode: (Boolean) -> Unit = {},
+    onToggleDfDiagramVision: (Boolean) -> Unit = {},
+    onToggleDfQuickCrop: (Boolean) -> Unit = {},
+    onToggleDfSwipeMethodLoop: (Boolean) -> Unit = {},
+    onToggleAdvSplitPill: (Boolean) -> Unit = {},
+    onToggleAdvIslandGestures: (Boolean) -> Unit = {},
+    onSelectIslandAccentTheme: (String) -> Unit = {},
+    onSelectIslandSizePreset: (String) -> Unit = {},
+    onSetIslandScalePct: (Int) -> Unit = {},
+    onSelectIslandAnswerScale: (String) -> Unit = {},
+    onToggleIslandEdgeSnap: (Boolean) -> Unit = {},
+    onSelectIslandIdleFadeSec: (Int) -> Unit = {},
+    onUpdateIslandSpringPhysics: (Float, Float) -> Unit = { _, _ -> },
+    onSetIslandWidthDp: (Int) -> Unit = {},
+    onSetIslandHeightDp: (Int) -> Unit = {},
+    onSetIslandCornerRadiusDp: (Int) -> Unit = {},
+    onSetIslandAnimSpeed: (Float) -> Unit = {},
+    onToggleIslandCutoutAlign: (Boolean) -> Unit = {},
+    onSetIslandCutoutOffsets: (Int, Int) -> Unit = { _, _ -> },
+    onResetIslandGeometry: () -> Unit = {},
+    onToggleFluidAnimations: (Boolean) -> Unit = {},
+    onReplayIslandDynamics: () -> Unit = {},
+    onOpenSettings: () -> Unit = {},
+    onSignInServer: () -> Unit = {},
+    onOpenGeminiLogin: () -> Unit = {},
     onToggleTheme: () -> Unit = {},
+    onOpenHomeSubScreen: (HomeSubScreen) -> Unit = {},
+    onToggleBookmarkEntry: (Long) -> Unit = {},
+    onDeleteHistoryEntry: (Long) -> Unit = {},
+    onClearOfflineRoomCache: () -> Unit = {},
+    onAddSampleExport: () -> Unit = {},
+    onClearExportHistory: () -> Unit = {},
+    onShowBannerMessage: (String) -> Unit = {},
+    onUpdateGoogleFormUrl: (String) -> Unit = {},
+    onUpdateGoogleFormPastedText: (String) -> Unit = {},
+    onSelectSubjectMode: (SubjectMode) -> Unit = {},
+    onSelectGoogleFormsModel: (String) -> Unit = {},
+    onToggleGoogleFormAppendMode: () -> Unit = {},
+    onSolveGoogleFormUrl: () -> Unit = {},
+    onSolveGoogleFormPastedText: () -> Unit = {},
+    onSolveGoogleFormImageUri: (Uri) -> Unit = {},
+    onSolveGoogleFormPdfUri: (Uri) -> Unit = {},
+    onReSolveGoogleFormQuestion: (Int) -> Unit = {},
+    onPinFormsKeyToDynamicIsland: () -> Unit = {},
+    onUnpinFormsKeyFromDynamicIsland: () -> Unit = {},
+    onClearGoogleFormResult: () -> Unit = {},
+    onRefreshGoogleFormPinStatus: () -> Unit = {},
+    onSaveGoogleFormsToExport: () -> Unit = {},
+    onCancelGoogleFormSolve: () -> Unit = {},
+    onUpdateCustomNotifConfig: ((CustomPinnedNotifConfig) -> CustomPinnedNotifConfig) -> Unit = {},
+    onApplyCustomNotifPreset: (String) -> Unit = {},
+    onImportLatestSolvedIntoNotif: () -> Unit = {},
+    onPinCustomBarNotification: () -> Boolean = { false },
+    onUnpinCustomBarNotification: () -> Unit = {},
+    onToggleAutoWeeklyEngagement: (Boolean) -> Unit = {},
+    onSendRandomTestNotification: () -> Boolean = { false },
+    onSendWelcomeNotification: () -> Boolean = { false },
+    onRefreshNotificationPermission: () -> Unit = {},
+    onSelectLocalThemePreset: (RemoteThemeSpec) -> Unit = {},
+    onRevertToNormalDefaultTheme: () -> Unit = {},
+    onSelectThemeAnimOverride: (ThemeAnimationIntensity) -> Unit = {},
+    onSelectThemeAppearanceOverride: (ThemeColorAppearance) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val palette = LocalWhiteGlassPalette.current
-    val focusManager = LocalFocusManager.current
-    var opacityTextInput by remember(state.customOpacityPct) {
-        mutableStateOf(state.customOpacityPct.toString())
-    }
+    val themeSpec = LocalPrismThemeSpec.current
+    val reducedMotion = LocalReducedMotion.current
 
-    val cardBg = if (palette.isDarkObsidian) Color(0xFF121316) else Color.White
-    val cardBorder = if (palette.isDarkObsidian) Color(0xFF23252A) else Color(0xFFE5E7EB)
-    val textPrimary = if (palette.isDarkObsidian) Color(0xFFEEEEEE) else Color(0xFF0A0A0C)
-    val textSecondary = if (palette.isDarkObsidian) Color(0xFF767676) else Color(0xFF4B5563)
-    val brandRed = Color(0xFFD71921)
+    // Route smoothly between Home Hub and dedicated studios using liquid motion
+    AnimatedContent(
+        targetState = state.homeSubScreen,
+        transitionSpec = {
+            if (reducedMotion) {
+                EnterTransition.None togetherWith ExitTransition.None
+            } else {
+                val enteringStudio = targetState != HomeSubScreen.MAIN
+                val dir = if (enteringStudio) 1 else -1
+                (slideInHorizontally(
+                    animationSpec = spring(dampingRatio = 0.84f, stiffness = 460f),
+                    initialOffsetX = { width -> dir * (width / 3) }
+                ) + fadeIn(tween(220)) + scaleIn(
+                    initialScale = 0.96f,
+                    animationSpec = tween(240, easing = FastOutSlowInEasing)
+                )) togetherWith (slideOutHorizontally(
+                    animationSpec = tween(200, easing = FastOutSlowInEasing),
+                    targetOffsetX = { width -> -dir * (width / 4) }
+                ) + fadeOut(tween(170)) + scaleOut(
+                    targetScale = 0.97f,
+                    animationSpec = tween(190)
+                ))
+            }
+        },
+        label = "home_subscreen_liquid_shift"
+    ) { activeSubScreen ->
+    when (activeSubScreen) {
+        HomeSubScreen.ANSWER_MODELS -> {
+            AnswerModelScreen(
+                state = state,
+                onBackToHome = { onOpenHomeSubScreen(HomeSubScreen.MAIN) },
+                onSelectSolverMethod = onSelectSolverMethod,
+                onOpenSettings = onOpenSettings,
+                onSignInServer = onSignInServer,
+                onOpenGeminiLogin = onOpenGeminiLogin,
+                modifier = modifier
+            )
+        }
 
+        HomeSubScreen.DYNAMIC_ISLAND_STUDIO -> {
+            DynamicIslandStudioScreen(
+                state = state,
+                onBackToHome = { onOpenHomeSubScreen(HomeSubScreen.MAIN) },
+                onSetCustomOpacityPct = onSetCustomOpacityPct,
+                onSelectQuestionSolveMode = onSelectQuestionSolveMode,
+                onSelectHudStyle = onSelectHudStyle,
+                onToggleDfTwoPartCapture = onToggleDfTwoPartCapture,
+                onToggleDfScrollTimer = onToggleDfScrollTimer,
+                onToggleDfComplexMode = onToggleDfComplexMode,
+                onToggleDfDiagramVision = onToggleDfDiagramVision,
+                onToggleDfQuickCrop = onToggleDfQuickCrop,
+                onToggleDfSwipeMethodLoop = onToggleDfSwipeMethodLoop,
+                onToggleAdvSplitPill = onToggleAdvSplitPill,
+                onToggleAdvIslandGestures = onToggleAdvIslandGestures,
+                onToggleChargingFormat = onToggleChargingFormat,
+                modifier = modifier
+            )
+        }
+
+        HomeSubScreen.GOOGLE_FORMS_SOLVE -> {
+            GoogleFormsSolveScreen(
+                state = state,
+                onBackToHome = { onOpenHomeSubScreen(HomeSubScreen.MAIN) },
+                onUpdateUrl = onUpdateGoogleFormUrl,
+                onUpdatePastedText = onUpdateGoogleFormPastedText,
+                onSelectSubjectMode = onSelectSubjectMode,
+                onSelectFormsModel = onSelectGoogleFormsModel,
+                onToggleAppendMode = onToggleGoogleFormAppendMode,
+                onSolveFromUrl = onSolveGoogleFormUrl,
+                onSolveFromPastedText = onSolveGoogleFormPastedText,
+                onSolveFromImageUri = onSolveGoogleFormImageUri,
+                onSolveFromPdfUri = onSolveGoogleFormPdfUri,
+                onReSolveQuestion = onReSolveGoogleFormQuestion,
+                onPinToDynamicIsland = onPinFormsKeyToDynamicIsland,
+                onUnpinFromDynamicIsland = onUnpinFormsKeyFromDynamicIsland,
+                onClearFormsResult = onClearGoogleFormResult,
+                onRefreshPinStatus = onRefreshGoogleFormPinStatus,
+                onSaveToExportQueue = onSaveGoogleFormsToExport,
+                onCancelSolve = onCancelGoogleFormSolve,
+                onShowBannerMessage = onShowBannerMessage,
+                onSignInGoogle = onSignInServer,
+                onOpenGeminiWebLogin = onOpenGeminiLogin,
+                modifier = modifier
+            )
+        }
+
+        HomeSubScreen.NOTIFICATION_STUDIO -> {
+            NotificationStudioScreen(
+                state = state,
+                onUpdateConfig = onUpdateCustomNotifConfig,
+                onApplyPreset = onApplyCustomNotifPreset,
+                onImportLatestSolved = onImportLatestSolvedIntoNotif,
+                onPinNotification = onPinCustomBarNotification,
+                onUnpinNotification = onUnpinCustomBarNotification,
+                onToggleWeeklyEngagement = onToggleAutoWeeklyEngagement,
+                onSendTestEngagementNotification = onSendRandomTestNotification,
+                onSendWelcomeNotification = onSendWelcomeNotification,
+                onPermissionUpdated = onRefreshNotificationPermission,
+                modifier = modifier
+            )
+        }
+
+        HomeSubScreen.EXPORT_QA -> {
+            ExportQuestionsScreen(
+                entries = state.historyEntries,
+                onBackToHome = { onOpenHomeSubScreen(HomeSubScreen.MAIN) },
+                onToggleBookmarkEntry = onToggleBookmarkEntry,
+                onAddSampleExport = onAddSampleExport,
+                onClearExportHistory = onClearExportHistory,
+                onShowBannerMessage = onShowBannerMessage,
+                offlineCacheCount = state.offlineCacheCount,
+                offlineCacheSavedCalls = state.offlineCacheSavedCalls,
+                onDeleteEntry = onDeleteHistoryEntry,
+                onClearOfflineCache = onClearOfflineRoomCache,
+                modifier = modifier
+            )
+        }
+
+        HomeSubScreen.THEME_STUDIO -> {
+            ThemeStudioScreen(
+                state = state,
+                onSelectLocalPreset = onSelectLocalThemePreset,
+                onRevertToNormalDefault = onRevertToNormalDefaultTheme,
+                onSelectAnimationOverride = onSelectThemeAnimOverride,
+                onSelectAppearanceOverride = onSelectThemeAppearanceOverride,
+                modifier = modifier
+            )
+        }
+
+        HomeSubScreen.PRIVACY_POLICY -> {
+            PrivacyPolicyScreen(
+                onBack = { onOpenHomeSubScreen(HomeSubScreen.MAIN) },
+                onClearSolvedHistory = onClearExportHistory,
+                modifier = modifier
+            )
+        }
+
+        HomeSubScreen.MAIN -> {
+            AnimatedContent(
+                targetState = themeSpec.layoutArchetype,
+                transitionSpec = {
+                    if (reducedMotion) {
+                        EnterTransition.None togetherWith ExitTransition.None
+                    } else {
+                        (fadeIn(tween(260, easing = FastOutSlowInEasing)) + scaleIn(
+                            initialScale = 0.965f,
+                            animationSpec = tween(280, easing = FastOutSlowInEasing)
+                        )) togetherWith (fadeOut(tween(180)) + scaleOut(
+                            targetScale = 0.98f,
+                            animationSpec = tween(180)
+                        ))
+                    }
+                },
+                label = "home_layout_archetype_morph"
+            ) { activeArchetype ->
+                when (activeArchetype) {
+                    ThemeLayoutArchetype.ATELIER_BENTO -> {
+                        AtelierBentoHomeLayout(
+                            state = state,
+                            listState = listState,
+                            onToggleOverlay = onToggleOverlay,
+                            onSelectSolverMethod = onSelectSolverMethod,
+                            onSignInServer = onSignInServer,
+                            onOpenHomeSubScreen = onOpenHomeSubScreen,
+                            modifier = modifier
+                        )
+                    }
+
+                    ThemeLayoutArchetype.TELEMETRY_HUD -> {
+                        TelemetryHudHomeLayout(
+                            state = state,
+                            listState = listState,
+                            onToggleOverlay = onToggleOverlay,
+                            onSignInServer = onSignInServer,
+                            onOpenHomeSubScreen = onOpenHomeSubScreen,
+                            modifier = modifier
+                        )
+                    }
+
+                    ThemeLayoutArchetype.EDITORIAL_MONOGRAPH -> {
+                        EditorialMonographHomeLayout(
+                            state = state,
+                            listState = listState,
+                            onToggleOverlay = onToggleOverlay,
+                            onSignInServer = onSignInServer,
+                            onOpenHomeSubScreen = onOpenHomeSubScreen,
+                            modifier = modifier
+                        )
+                    }
+
+                    ThemeLayoutArchetype.KINETIC_DECK -> {
+                        KineticDeckHomeLayout(
+                            state = state,
+                            listState = listState,
+                            onToggleOverlay = onToggleOverlay,
+                            onSelectSolverMethod = onSelectSolverMethod,
+                            onSignInServer = onSignInServer,
+                            onOpenHomeSubScreen = onOpenHomeSubScreen,
+                            modifier = modifier
+                        )
+                    }
+
+                    ThemeLayoutArchetype.IOS_LIQUID_LIGHT -> {
+                        IosLiquidLightHomeLayout(
+                            state = state,
+                            listState = listState,
+                            onToggleOverlay = onToggleOverlay,
+                            onRequestOverlayPermission = onRequestOverlayPermission,
+                            onOpenHomeSubScreen = onOpenHomeSubScreen,
+                            onSolvePhotoUri = onSolveGoogleFormImageUri,
+                            onShowBannerMessage = onShowBannerMessage,
+                            modifier = modifier
+                        )
+                    }
+
+                    ThemeLayoutArchetype.CLASSIC_PRISM -> {
     LazyColumn(
         state = listState,
         modifier = modifier
             .fillMaxSize()
             .testTag("home_screen_list"),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 2.dp, bottom = 150.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 118.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-
-        // ── HERO GRADIENT BANNER (OLED DARK WITH RED ACCENTS) ─────────
+        // ── 1. HERO CARD ("Solve Anything On Your Screen") ──
         item(key = "hero_banner") {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .shadow(
-                        elevation = 12.dp,
-                        shape = RoundedCornerShape(26.dp),
-                        ambientColor = Color(0x33D71921),
-                        spotColor = Color(0x40D71921)
+            ScrollRevealSection(index = 0) {
+                Box(modifier = Modifier.testTag("home_layout_CLASSIC_PRISM")) {
+                    PrismCrimsonHeroCard(
+                        isOverlayRunning = state.isOverlayRunning,
+                        activeMethod = state.solverMethod,
+                        onToggleOverlay = onToggleOverlay
                     )
-                    .clip(RoundedCornerShape(26.dp))
-                    .background(
-                        if (palette.isDarkObsidian)
-                            Brush.linearGradient(listOf(Color(0xFF18191E), Color(0xFF111215)))
-                        else
-                            Brush.linearGradient(listOf(Color(0xFF2B2D34), Color(0xFF141518)))
-                    )
-                    .border(1.dp, cardBorder, RoundedCornerShape(26.dp))
-                    .padding(start = 20.dp, top = 20.dp, bottom = 20.dp, end = 10.dp)
+                }
+            }
+        }
+
+        // ── 1B. 10-SECOND 3-STEP QUICK GUIDE & OPTIONAL 5-SEC LIVE DEMO ──
+        item(key = "home_quick_how_to_use") {
+            val ctx = LocalContext.current
+            var showInlineDemo by remember { mutableStateOf(false) }
+            ScrollRevealSection(index = 1) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    QuickThreeStepStrip()
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        HomeQuickActionPill(
+                            title = if (showInlineDemo) "Hide Live Demo" else "Try 5-Sec Demo",
+                            icon = Icons.Filled.Quiz,
+                            highlight = showInlineDemo,
+                            testTag = "btn_home_toggle_live_demo",
+                            onClick = { showInlineDemo = !showInlineDemo },
+                            modifier = Modifier.weight(1f)
+                        )
+                        HomeQuickActionPill(
+                            title = "Share with Friends",
+                            icon = Icons.Filled.Share,
+                            highlight = false,
+                            testTag = "btn_home_share_friends",
+                            onClick = { AppShareHelper.shareAppWithFriends(ctx) },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    if (showInlineDemo) {
+                        LiveInteractiveDemoCard(compact = true)
+                    }
+                }
+            }
+        }
+
+        if (state.firebaseUserId.isNullOrBlank()) {
+            item(key = "home_ocr_only_signin_card") {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(PrismCurves.cardCorner(themeSpec)))
+                        .background(palette.glassStrong)
+                        .border(1.dp, palette.accentSky.copy(alpha = 0.6f), RoundedCornerShape(PrismCurves.cardCorner(themeSpec)))
+                        .clickable(role = Role.Button, onClick = onSignInServer)
+                        .padding(horizontal = 14.dp, vertical = 12.dp)
+                        .testTag("card_home_ocr_limited_signin"),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(end = 10.dp)
+                    ) {
+                        Text(
+                            text = "100% Free • Offline Cache & Fast AI Ready",
+                            style = MaterialTheme.typography.titleSmall.copy(
+                                color = palette.inkPrimary,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.5.sp
+                            ),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = "Solves MCQs, Math (½ · Σ) & Forms free • Optional sign-in for cloud backup",
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                color = palette.inkSecondary,
+                                fontSize = 11.5.sp
+                            ),
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(palette.accentSky)
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "Sign In",
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                color = palette.onAccentInk,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 11.5.sp
+                            ),
+                            maxLines = 1
+                        )
+                    }
+                }
+            }
+        }
+
+        // ── 2. THREE MAIN EVERYDAY FEATURES ──
+        item(key = "core_workspace_options") {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Background Radial Glow Accent (Matching HTML hero-glow)
-                Canvas(modifier = Modifier.matchParentSize()) {
-                    drawCircle(
-                        color = Color(0x38D71921),
-                        radius = size.width * 0.42f,
-                        center = androidx.compose.ui.geometry.Offset(size.width * 0.85f, size.height * 0.35f)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "Main Tools",
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = palette.inkPrimary,
+                            letterSpacing = (-0.2).sp
+                        ),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(end = 8.dp)
+                    )
+                    Text(
+                        text = "Only reads when you tap",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = palette.inkSecondary
+                        ),
+                        maxLines = 1
                     )
                 }
 
+                // 1. Solve a Google Form
+                GoogleFormsSolveHubCard(
+                    state = state,
+                    onOpenGoogleFormsSolve = {
+                        onOpenHomeSubScreen(HomeSubScreen.GOOGLE_FORMS_SOLVE)
+                    }
+                )
+
+                // 2. Choose Solving Style (Fast, Best Accuracy, Diagrams)
+                SelectAnswerModelHubCard(
+                    activeMethod = state.solverMethod,
+                    onOpenAnswerModels = {
+                        onOpenHomeSubScreen(HomeSubScreen.ANSWER_MODELS)
+                    },
+                    onResetToOcrDefault = {
+                        onSelectSolverMethod(SolverMethod.BACKGROUND_GEMINI)
+                    }
+                )
+
+                // 3. Customize Floating Pill Look (Theme-Matched!)
+                DynamicIslandStudioHubCard(
+                    state = state,
+                    onOpenIslandStudio = {
+                        onOpenHomeSubScreen(HomeSubScreen.DYNAMIC_ISLAND_STUDIO)
+                    }
+                )
+
+                Spacer(Modifier.height(4.dp))
+
+                Text(
+                    text = "Quick Links",
+                    style = MaterialTheme.typography.labelLarge.copy(
+                        fontSize = 12.5.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = palette.inkSecondary
+                    )
+                )
+
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    HomeQuickActionPill(
+                        title = "Themes",
+                        icon = Icons.Filled.Palette,
+                        highlight = false,
+                        showThemeSwatches = true,
+                        testTag = "card_open_theme_studio",
+                        onClick = { onOpenHomeSubScreen(HomeSubScreen.THEME_STUDIO) }
+                    )
+                    HomeQuickActionPill(
+                        title = if (state.customPinConfig.isPinned || state.isGoogleFormPinned) "Notifications • On" else "Notifications",
+                        icon = Icons.Filled.NotificationsActive,
+                        highlight = state.customPinConfig.isPinned || state.isGoogleFormPinned,
+                        testTag = "card_open_notification_studio",
+                        onClick = { onOpenHomeSubScreen(HomeSubScreen.NOTIFICATION_STUDIO) }
+                    )
+                    HomeQuickActionPill(
+                        title = if (state.historyEntries.isNotEmpty()) "History & Cache (${state.historyEntries.size})" else "History & Cache",
+                        icon = Icons.Filled.FileDownload,
+                        highlight = false,
+                        testTag = "card_open_export_qa",
+                        onClick = { onOpenHomeSubScreen(HomeSubScreen.EXPORT_QA) }
+                    )
+                    HomeQuickActionPill(
+                        title = "Privacy",
+                        icon = Icons.Filled.VerifiedUser,
+                        highlight = false,
+                        testTag = "card_open_privacy_policy",
+                        onClick = { onOpenHomeSubScreen(HomeSubScreen.PRIVACY_POLICY) }
+                    )
+                }
+            }
+        }
+
+        // ── 4. IN-APP SPONSORED BANNER (BOTTOM OF HOME MAIN TOOLS) ──────────
+        item(key = "home_main_tools_ad_slot") {
+            InAppAdMobBanner(
+                placementTag = "home_main_tools_bottom",
+                style = AdBannerStyle.INLINE_CARD
+            )
+        }
+                    }
+                }
+            }
+        }
+    }
+    }
+    }
+}
+
+// ── 1. HERO CARD ────────────────────────────────────────────────────────────
+
+@Composable
+private fun PrismCrimsonHeroCard(
+    isOverlayRunning: Boolean,
+    activeMethod: SolverMethod,
+    onToggleOverlay: () -> Unit
+) {
+    val palette = LocalWhiteGlassPalette.current
+    val themeSpec = LocalPrismThemeSpec.current
+    val reducedMotion = LocalReducedMotion.current
+    val heroCorner = PrismCurves.heroCorner(themeSpec)
+    val stripCorner = PrismCurves.innerStripCorner(themeSpec)
+    val borderW = (themeSpec.borderWidthTenths / 10f).dp
+    val buttonCorner = PrismCurves.pillOrButtonCorner(themeSpec)
+    val ctaInteraction = remember { MutableInteractionSource() }
+    val statusDotScale = if (!reducedMotion && isOverlayRunning) {
+        val pulse = rememberInfiniteTransition(label = "hero_live_dot_pulse")
+        val s by pulse.animateFloat(
+            initialValue = 0.85f,
+            targetValue = 1.45f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(820, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "dot_scale"
+        )
+        s
+    } else 1f
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .shadow(
+                elevation = if (palette.isDarkObsidian) 10.dp else 4.dp,
+                shape = RoundedCornerShape(heroCorner),
+                ambientColor = Color.Black.copy(alpha = if (palette.isDarkObsidian) 0.85f else 0.14f),
+                spotColor = (if (isOverlayRunning) palette.accentMint else palette.accentSky).copy(alpha = 0.35f)
+            )
+            .clip(RoundedCornerShape(heroCorner))
+            .background(
+                Brush.linearGradient(
+                    colors = listOf(
+                        palette.glassTintedSky,
+                        palette.glassStrong,
+                        palette.glassStrong
+                    ),
+                    start = Offset(0f, 0f),
+                    end = Offset(900f, 600f)
+                )
+            )
+            .border(
+                width = borderW,
+                color = if (isOverlayRunning) palette.accentMint.copy(alpha = 0.58f) else palette.accentSky.copy(alpha = 0.48f),
+                shape = RoundedCornerShape(heroCorner)
+            )
+            .kineticAccentRim(
+                cornerRadius = heroCorner,
+                accentColor = if (isOverlayRunning) palette.accentMint else palette.accentSky,
+                enabled = !reducedMotion,
+                strokeWidth = 1.25.dp,
+                durationMs = if (isOverlayRunning) 3800 else 6200
+            )
+            .topGlassSpecularHighlight(heroCorner, alpha = if (palette.isDarkObsidian) 0.14f else 0.30f)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 18.dp, end = 14.dp, top = 18.dp, bottom = 14.dp)
+        ) {
+            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                val showPhoneArt = maxWidth >= 310.dp
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    // Left Text Content
-                    Column(modifier = Modifier.weight(1.22f)) {
+                    // Left Hero Copy + Action Button
+                    Column(
+                        modifier = if (showPhoneArt) Modifier.weight(1f) else Modifier.fillMaxWidth()
+                    ) {
                         Text(
-                            text = "Solve Anything\nOn Your Screen",
-                            style = MaterialTheme.typography.headlineSmall.copy(
-                                fontWeight = FontWeight.ExtraBold,
-                                fontSize = 21.sp,
-                                color = Color(0xFFEEEEEE),
+                            text = "Solve Anything",
+                            style = MaterialTheme.typography.headlineMedium.copy(
+                                fontSize = 23.sp,
+                                lineHeight = 27.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = palette.inkPrimary,
                                 letterSpacing = (-0.4).sp
-                            )
+                            ),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
-                        Spacer(modifier = Modifier.height(5.dp))
                         Text(
-                            text = "Instant Floating AI study helper that reads MCQs on screen & solves in 1s",
-                            style = MaterialTheme.typography.bodySmall.copy(
-                                color = Color(0xFF9E9E9E),
-                                fontWeight = FontWeight.Medium,
-                                fontSize = 11.5.sp,
-                                lineHeight = 16.sp,
-                                letterSpacing = 0.2.sp
-                            )
+                            text = "On Your Screen",
+                            style = MaterialTheme.typography.headlineMedium.copy(
+                                fontSize = 23.sp,
+                                lineHeight = 27.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = palette.accentSky,
+                                letterSpacing = (-0.4).sp
+                            ),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
-                        Spacer(modifier = Modifier.height(14.dp))
 
-                        // CTA Button
-                        Box(
+                        Spacer(Modifier.height(8.dp))
+
+                        Text(
+                            text = "MCQs, Math (½ · Σ), Match & Forms — tap the pill over any app",
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                fontSize = 12.8.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = palette.inkSecondary
+                            ),
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+
+                        Spacer(Modifier.height(16.dp))
+
+                        val btnBg = if (isOverlayRunning) palette.accentMint else palette.accentSky
+                        val btnFg = if (isOverlayRunning) Color.White else palette.onAccentInk
+                        // Primary Start/Stop Solving Button with liquid compression & gliding sheen sweep
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center,
                             modifier = Modifier
-                                .shadow(elevation = 6.dp, shape = RoundedCornerShape(50.dp), ambientColor = Color(0x33000000))
-                                .clip(RoundedCornerShape(50.dp))
-                                .background(Color.White)
-                                .clickable(role = Role.Button, onClick = onToggleOverlay)
-                                .padding(horizontal = 14.dp, vertical = 9.dp)
+                                .heightIn(min = 48.dp)
+                                .liquidPressScale(ctaInteraction, pressedScale = 0.945f)
+                                .shadow(
+                                    elevation = 7.dp,
+                                    shape = RoundedCornerShape(buttonCorner),
+                                    ambientColor = Color.Black.copy(alpha = 0.25f),
+                                    spotColor = btnBg.copy(alpha = 0.45f)
+                                )
+                                .clip(RoundedCornerShape(buttonCorner))
+                                .background(
+                                    Brush.horizontalGradient(
+                                        listOf(
+                                            btnBg,
+                                            if (isOverlayRunning) btnBg else palette.accentSkyBright
+                                        )
+                                    )
+                                )
+                                .liquidSheenSweep(
+                                    enabled = true,
+                                    tint = Color.White,
+                                    maxAlpha = 0.26f,
+                                    durationMs = 2400
+                                )
+                                .border(
+                                    width = 1.dp,
+                                    color = btnFg.copy(alpha = 0.22f),
+                                    shape = RoundedCornerShape(buttonCorner)
+                                )
+                                .clickable(
+                                    interactionSource = ctaInteraction,
+                                    indication = ripple(color = btnFg),
+                                    role = Role.Button,
+                                    onClick = onToggleOverlay
+                                )
+                                .padding(horizontal = 22.dp, vertical = 12.dp)
                                 .testTag("btn_toggle_overlay")
                         ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = if (state.isOverlayRunning) Icons.Filled.Stop else Icons.Filled.PlayArrow,
-                                    contentDescription = null,
-                                    tint = brandRed,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(Modifier.width(5.dp))
-                                Text(
-                                    text = if (state.isOverlayRunning)
-                                        stringResource(R.string.cta_stop_solver)
-                                    else
-                                        stringResource(R.string.cta_start_solver),
-                                    style = MaterialTheme.typography.labelLarge.copy(
-                                        color = Color(0xFF0A0A0C),
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 12.sp
-                                    ),
-                                    maxLines = 1
-                                )
-                            }
+                            Icon(
+                                imageVector = if (isOverlayRunning) Icons.Filled.Stop else Icons.Filled.PlayArrow,
+                                contentDescription = null,
+                                tint = btnFg,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = if (isOverlayRunning) "Stop Solving" else "Start Solving",
+                                style = MaterialTheme.typography.labelLarge.copy(
+                                    color = btnFg,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.5.sp
+                                ),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
                         }
                     }
 
-                    // Right 3D Visual Artwork
-                    Box(
-                        modifier = Modifier.weight(0.85f),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        HeroArtwork()
+                    if (showPhoneArt) {
+                        Spacer(Modifier.width(8.dp))
+                        // Right Smartphone Scanner Illustration
+                        TiltedPhoneScannerIllustration(isRunning = isOverlayRunning)
                     }
                 }
             }
-        }
 
-        // ── SECTION HEADER: SELECT ANSWER METHOD ─────────────────────
-        item(key = "methods_section_header") {
+            Spacer(Modifier.height(12.dp))
+
+            // Verifiable Active Engine & Pipeline Status Bar
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 2.dp, bottom = 1.dp, start = 2.dp),
+                    .clip(RoundedCornerShape(stripCorner))
+                    .background(palette.canvasTop)
+                    .border(1.dp, palette.cardHairlineBorder, RoundedCornerShape(stripCorner))
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Box(
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                     modifier = Modifier
-                        .size(28.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(brandRed),
-                    contentAlignment = Alignment.Center
+                        .weight(1f)
+                        .padding(end = 8.dp)
                 ) {
-                    Icon(
-                        imageVector = CubeVector,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(16.dp)
-                    )
-                }
-                Spacer(Modifier.width(10.dp))
-                Column {
-                    Text(
-                        text = "Select Answer Method",
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontSize = 17.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = textPrimary
-                        )
+                    Box(
+                        modifier = Modifier
+                            .size(7.dp)
+                            .scale(statusDotScale)
+                            .clip(CircleShape)
+                            .background(if (isOverlayRunning) palette.accentMint else palette.accentSky)
                     )
                     Text(
-                        text = "Choose how you want to get the answer",
-                        style = MaterialTheme.typography.bodySmall.copy(
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = textSecondary
-                        )
+                        text = "Style: ${activeMethod.shortName}",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            color = palette.inkPrimary,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 11.sp
+                        ),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
-            }
-        }
-
-        // ── METHOD 1: SERVER SOL ─────────────────────────────────────
-        item(key = "method_card_server") {
-            val isServerSignedIn = !state.firebaseUserId.isNullOrBlank()
-            MethodCard(
-                number = "1.",
-                title = "Server Sol",
-                subtitle = "Log in on server — sends the extracted screen question to server and returns the answer.",
-                icon = Icons.Filled.Cloud,
-                iconTint = if (palette.isDarkObsidian) Color(0xFFEEEEEE) else brandRed,
-                iconBg = if (palette.isDarkObsidian) Color(0xFF1E2025) else Color(0xFFFEE2E2),
-                badgeText = if (isServerSignedIn) "⚡ Logged In" else "⚡ Login Needed",
-                badgeBg = if (isServerSignedIn) Color(0xFF14291E) else Color(0xFF2A1315),
-                badgeTextColor = if (isServerSignedIn) Color(0xFF4ADE80) else brandRed,
-                isSelected = state.solverMethod == SolverMethod.FIREBASE_SERVER,
-                onClick = { onSelectSolverMethod(SolverMethod.FIREBASE_SERVER) },
-                testTag = "option_method_firebase"
-            )
-            if (state.solverMethod == SolverMethod.FIREBASE_SERVER && !isServerSignedIn) {
-                Spacer(modifier = Modifier.height(6.dp))
-                PrismActionRow(
-                    label = if (state.isSigningInGoogle) "Signing in..." else "Log in to Server with Google",
-                    icon = Icons.Filled.Cloud,
-                    onClick = onSignInServer,
-                    testTag = "btn_home_server_login"
-                )
-            }
-        }
-
-        // ── METHOD 2: OCR TEXT EXTRACTOR (RECOMMENDED) ───────────────
-        item(key = "method_card_gemini") {
-            MethodCard(
-                number = "2.",
-                title = "OCR Text Extractor",
-                subtitle = "Takes screenshot → extracts text via OCR → sends to background Gemini Flash.",
-                icon = Icons.Filled.DocumentScanner,
-                iconTint = Color.White,
-                iconBg = brandRed,
-                badgeText = if (state.isGoogleWebLoggedIn) "Gemini Ready" else "Built-in",
-                badgeBg = if (palette.isDarkObsidian) Color(0xFF1E293B) else Color(0xFFDBEAFE),
-                badgeTextColor = if (palette.isDarkObsidian) Color(0xFF60A5FA) else Color(0xFF1D4ED8),
-                isSelected = state.solverMethod == SolverMethod.BACKGROUND_GEMINI,
-                isRecommended = true,
-                onClick = { onSelectSolverMethod(SolverMethod.BACKGROUND_GEMINI) },
-                testTag = "option_method_background_gemini"
-            )
-        }
-
-        // ── METHOD 3: API KEY ────────────────────────────────────────
-        item(key = "method_card_api_key") {
-            val keyBadge = if (state.configuredKeyCount > 0) "${state.configuredKeyCount} Key(s) Ready" else "3 Key(s) Ready"
-            MethodCard(
-                number = "3.",
-                title = "API Key",
-                subtitle = "Uses locally stored keys from Settings (NVIDIA Free, OpenRouter, Gemini, OpenAI) with auto quota shift.",
-                icon = Icons.Filled.Key,
-                iconTint = Color(0xFFA855F7),
-                iconBg = if (palette.isDarkObsidian) Color(0xFF261933) else Color(0xFFF3E8FF),
-                badgeText = keyBadge,
-                badgeBg = if (palette.isDarkObsidian) Color(0xFF2E1B42) else Color(0xFFEDE9FE),
-                badgeTextColor = Color(0xFFC084FC),
-                isSelected = state.solverMethod == SolverMethod.API_KEYS,
-                onClick = { onSelectSolverMethod(SolverMethod.API_KEYS) },
-                testTag = "option_method_api_keys"
-            )
-            if (state.solverMethod == SolverMethod.API_KEYS && state.configuredKeyCount == 0) {
-                Spacer(modifier = Modifier.height(6.dp))
-                PrismActionRow(
-                    label = "Enter Local API Keys in Settings",
-                    icon = Icons.Filled.Settings,
-                    onClick = onOpenSettings,
-                    testTag = "btn_home_enter_keys"
-                )
-            }
-        }
-
-        // ── ACTION STRIP BUTTON (BACKGROUND GEMINI SESSION) ───────────
-        item(key = "action_gemini_session") {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(cardBg)
-                    .border(1.dp, cardBorder, RoundedCornerShape(16.dp))
-                    .clickable(role = Role.Button, onClick = onOpenGeminiLogin)
-                    .padding(horizontal = 16.dp, vertical = 12.dp)
-                    .testTag("btn_home_gemini_login"),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(26.dp)
-                        .clip(RoundedCornerShape(7.dp))
-                        .background(if (palette.isDarkObsidian) Color(0xFF2A1315) else Color(0xFFFEE2E2)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.Cast,
-                        contentDescription = null,
-                        tint = brandRed,
-                        modifier = Modifier.size(14.dp)
-                    )
-                }
-                Spacer(Modifier.width(10.dp))
                 Text(
-                    text = "Connect Background Gemini Session",
-                    style = MaterialTheme.typography.labelLarge.copy(
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 13.sp
+                    text = if (isOverlayRunning) "Helper Active" else "Ready to Start",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        color = if (isOverlayRunning) palette.accentMint else palette.inkSecondary,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 11.sp
                     ),
-                    color = textPrimary,
-                    modifier = Modifier.weight(1f)
-                )
-                Icon(
-                    imageVector = Icons.Filled.ChevronRight,
-                    contentDescription = null,
-                    tint = textSecondary,
-                    modifier = Modifier.size(16.dp)
+                    maxLines = 1
                 )
             }
         }
+    }
+}
 
-        // ── PERMISSION CARD ──────────────────────────────────────────
-        item(key = "perm_launch_card") {
+// ── 2A. HUB CARD: SELECT ANSWER MODEL (Opens Dedicated Screen) ──────────────
+
+@Composable
+private fun SelectAnswerModelHubCard(
+    activeMethod: SolverMethod,
+    onOpenAnswerModels: () -> Unit,
+    onResetToOcrDefault: () -> Unit
+) {
+    val palette = LocalWhiteGlassPalette.current
+    val themeSpec = LocalPrismThemeSpec.current
+    val cardCorner = PrismCurves.cardCorner(themeSpec)
+    val iconCorner = PrismCurves.iconWellCorner(themeSpec)
+    val stripCorner = PrismCurves.innerStripCorner(themeSpec)
+    val borderW = (themeSpec.borderWidthTenths / 10f).dp
+    val isTopRatedSelected = activeMethod.ratingStars >= 4
+    val interactionSource = remember { MutableInteractionSource() }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .liquidPressScale(interactionSource, pressedScale = 0.98f)
+            .clip(RoundedCornerShape(cardCorner))
+            .background(palette.glassStrong)
+            .border(borderW, palette.cardHairlineBorder, RoundedCornerShape(cardCorner))
+            .topGlassSpecularHighlight(cardCorner, alpha = if (palette.isDarkObsidian) 0.11f else 0.25f)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = ripple(color = palette.accentSky),
+                role = Role.Button,
+                onClick = onOpenAnswerModels
+            )
+            .padding(16.dp)
+            .testTag("card_open_answer_models"),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(cardBg)
-                    .border(1.dp, cardBorder, RoundedCornerShape(16.dp))
-                    .padding(horizontal = 14.dp, vertical = 13.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                modifier = Modifier.weight(1f)
             ) {
                 Box(
+                    contentAlignment = Alignment.Center,
                     modifier = Modifier
-                        .size(40.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(if (palette.isDarkObsidian) Color(0xFF2A1315) else Color(0xFFFEE2E2)),
-                    contentAlignment = Alignment.Center
+                        .size(46.dp)
+                        .clip(RoundedCornerShape(iconCorner))
+                        .background(palette.glassTintedSky)
+                        .border(1.dp, palette.accentSky.copy(alpha = 0.6f), RoundedCornerShape(iconCorner))
                 ) {
                     Icon(
-                        imageVector = Icons.Filled.Shield,
+                        imageVector = Icons.Filled.Layers,
                         contentDescription = null,
-                        tint = brandRed,
-                        modifier = Modifier.size(20.dp)
+                        tint = palette.accentSky,
+                        modifier = Modifier.size(22.dp)
                     )
                 }
 
                 Spacer(Modifier.width(12.dp))
 
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Ready to Launch",
-                        style = MaterialTheme.typography.labelLarge.copy(
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.5.sp
-                        ),
-                        color = textPrimary
-                    )
-                    Text(
-                        text = "Tap the overlay permission to allow display over other apps.",
-                        style = MaterialTheme.typography.bodySmall.copy(
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium
-                        ),
-                        color = textSecondary
-                    )
-                }
-
-                Spacer(Modifier.width(8.dp))
-
-                Box(
-                    modifier = Modifier
-                        .shadow(elevation = 4.dp, shape = RoundedCornerShape(12.dp), ambientColor = Color(0x33D71921))
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(if (state.hasOverlayPermission) Color(0xFF10B981) else brandRed)
-                        .clickable(role = Role.Button, onClick = onRequestOverlayPermission)
-                        .padding(horizontal = 14.dp, vertical = 8.dp)
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = if (state.hasOverlayPermission) Icons.Filled.Check else Icons.Filled.AutoAwesome,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(13.dp)
-                        )
-                        Spacer(Modifier.width(5.dp))
-                        Text(
-                            text = if (state.hasOverlayPermission) stringResource(R.string.btn_enabled) else stringResource(R.string.btn_grant),
-                            style = MaterialTheme.typography.labelLarge.copy(
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp
-                            )
-                        )
-                    }
-                }
-            }
-        }
-
-        // ── QUICK SETTINGS SECTION ───────────────────────────────────
-        item(key = "quick_settings_section") {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("section_home_opacity")
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 2.dp, vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.Settings,
-                        contentDescription = null,
-                        tint = textSecondary,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        text = "Quick Settings",
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontSize = 13.5.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = textPrimary
-                        )
-                    )
-                }
-
-                Spacer(Modifier.height(6.dp))
-
-                // 3 Quick Cards Grid matching HTML
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    // Card 1: Overlay Visibility
-                    QuickCard(
-                        icon = Icons.Filled.Layers,
-                        label = "Overlay Visibility",
-                        value = "${state.customOpacityPct}%",
-                        onClick = {
-                            val nextPct = when (state.customOpacityPct) {
-                                100 -> 75
-                                75 -> 50
-                                50 -> 30
-                                else -> 100
-                            }
-                            onSetCustomOpacityPct(nextPct)
-                        },
-                        modifier = Modifier.weight(1f),
-                        isDark = palette.isDarkObsidian
-                    )
-                    // Card 2: Question Mode
-                    QuickCard(
-                        icon = Icons.Filled.Quiz,
-                        label = "Question Mode",
-                        value = when (state.questionSolveMode) {
-                            QuestionSolveMode.STANDARD -> "Standard"
-                            QuestionSolveMode.MATCH_FOLLOWING -> "Match"
-                            QuestionSolveMode.COMPLEX_MATH -> "Math+"
-                        },
-                        onClick = {
-                            val nextMode = when (state.questionSolveMode) {
-                                QuestionSolveMode.STANDARD -> QuestionSolveMode.MATCH_FOLLOWING
-                                QuestionSolveMode.MATCH_FOLLOWING -> QuestionSolveMode.COMPLEX_MATH
-                                QuestionSolveMode.COMPLEX_MATH -> QuestionSolveMode.STANDARD
-                            }
-                            onSelectQuestionSolveMode(nextMode)
-                        },
-                        modifier = Modifier.weight(1f),
-                        isDark = palette.isDarkObsidian
-                    )
-                    // Card 3: Theme
-                    QuickCard(
-                        icon = Icons.Filled.DarkMode,
-                        label = "Theme",
-                        value = if (palette.isDarkObsidian) "Dark" else "Light",
-                        onClick = onToggleTheme,
-                        modifier = Modifier.weight(1f),
-                        isDark = palette.isDarkObsidian
-                    )
-                }
-
-                Spacer(Modifier.height(10.dp))
-
-                // Fine-tuning Slider & Mode Chips
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(cardBg)
-                        .border(1.dp, cardBorder, RoundedCornerShape(16.dp))
-                        .padding(14.dp)
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Filled.Opacity, null, tint = brandRed, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("Visibility / Opacity", style = MaterialTheme.typography.labelMedium, color = textSecondary, modifier = Modifier.weight(1f))
-                        OutlinedTextField(
-                            value = opacityTextInput,
-                            onValueChange = { raw ->
-                                val digits = raw.filter { it.isDigit() }.take(3)
-                                opacityTextInput = digits
-                                val parsed = digits.toIntOrNull()
-                                if (parsed != null && parsed in 20..100) onSetCustomOpacityPct(parsed)
-                            },
-                            singleLine = true,
-                            suffix = { Text("%", style = MaterialTheme.typography.labelSmall, color = textSecondary) },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
-                            keyboardActions = KeyboardActions(onDone = {
-                                val clamped = (opacityTextInput.toIntOrNull() ?: state.customOpacityPct).coerceIn(20, 100)
-                                opacityTextInput = clamped.toString()
-                                onSetCustomOpacityPct(clamped)
-                                focusManager.clearFocus()
-                            }),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = brandRed,
-                                unfocusedBorderColor = cardBorder,
-                                focusedTextColor = textPrimary,
-                                unfocusedTextColor = textPrimary
-                            ),
-                            shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier.width(76.dp).testTag("input_home_opacity_pct")
-                        )
-                    }
-                    Slider(
-                        value = state.customOpacityPct.toFloat(),
-                        onValueChange = {
-                            val rounded = it.roundToInt().coerceIn(20, 100)
-                            opacityTextInput = rounded.toString()
-                            onSetCustomOpacityPct(rounded)
-                        },
-                        valueRange = 20f..100f,
-                        colors = SliderDefaults.colors(
-                            thumbColor = brandRed,
-                            activeTrackColor = brandRed,
-                            inactiveTrackColor = if (palette.isDarkObsidian) Color(0xFF23252A) else Color(0xFFE2E8F0)
-                        ),
-                        modifier = Modifier.fillMaxWidth().testTag("slider_home_opacity_pct")
-                    )
-
-                    Spacer(Modifier.height(8.dp))
-
-                    Text("Question Solving Mode", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = textSecondary)
-                    Spacer(Modifier.height(6.dp))
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        QuestionSolveMode.entries.forEach { mode ->
-                            val isSelected = state.questionSolveMode == mode
-                            Box(
-                                contentAlignment = Alignment.Center,
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clip(RoundedCornerShape(50.dp))
-                                    .background(
-                                        if (isSelected) brandRed
-                                        else if (palette.isDarkObsidian) Color(0xFF17181C) else Color(0xFFF1F5F9)
-                                    )
-                                    .clickable(role = Role.Button) { onSelectQuestionSolveMode(mode) }
-                                    .padding(vertical = 9.dp)
-                                    .testTag("btn_home_mode_${mode.id.lowercase()}")
-                            ) {
-                                Text(
-                                    text = when (mode) {
-                                        QuestionSolveMode.STANDARD -> "Standard"
-                                        QuestionSolveMode.MATCH_FOLLOWING -> "Match"
-                                        QuestionSolveMode.COMPLEX_MATH -> "Math+"
-                                    },
-                                    style = MaterialTheme.typography.labelMedium.copy(
-                                        color = if (isSelected) Color.White else textSecondary,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-// ── METHOD CARD (STANDALONE) ─────────────────────────────────────────
-
-@Composable
-private fun MethodCard(
-    number: String,
-    title: String,
-    subtitle: String,
-    icon: ImageVector,
-    iconTint: Color,
-    iconBg: Color,
-    badgeText: String,
-    badgeBg: Color,
-    badgeTextColor: Color,
-    isSelected: Boolean,
-    isRecommended: Boolean = false,
-    onClick: () -> Unit,
-    testTag: String
-) {
-    val palette = LocalWhiteGlassPalette.current
-    val brandRed = Color(0xFFD71921)
-    val borderColor = if (isSelected) brandRed else if (palette.isDarkObsidian) Color(0xFF23252A) else Color(0xFFE5E7EB)
-    val borderWidth = if (isSelected) 2.dp else 1.dp
-    val bgColor = when {
-        isSelected && palette.isDarkObsidian -> Color(0xFF141519)
-        isSelected -> Color(0xFFFFF5F5)
-        palette.isDarkObsidian -> Color(0xFF121316)
-        else -> Color.White
-    }
-
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .wrapContentHeight()
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .wrapContentHeight()
-                .then(
-                    if (isSelected)
-                        Modifier.shadow(elevation = 6.dp, shape = RoundedCornerShape(16.dp), ambientColor = Color(0x33D71921), spotColor = Color(0x40D71921))
-                    else
-                        Modifier.shadow(elevation = 1.dp, shape = RoundedCornerShape(16.dp), ambientColor = Color(0x0A000000))
-                )
-                .clip(RoundedCornerShape(16.dp))
-                .background(bgColor)
-                .border(borderWidth, borderColor, RoundedCornerShape(16.dp))
-                .clickable(role = Role.Button, onClick = onClick)
-                .padding(horizontal = 14.dp, vertical = if (isRecommended) 13.dp else 11.dp)
-                .testTag(testTag),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Icon Circle
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .size(42.dp)
-                    .clip(CircleShape)
-                    .background(iconBg)
-            ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = iconTint,
-                    modifier = Modifier.size(22.dp)
-                )
-            }
-
-            Spacer(Modifier.width(12.dp))
-
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .wrapContentHeight()
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.wrapContentHeight()
-                ) {
-                    Text(
-                        text = "$number $title",
-                        style = MaterialTheme.typography.labelLarge.copy(fontSize = 14.sp),
-                        fontWeight = FontWeight.Bold,
-                        color = if (palette.isDarkObsidian) Color(0xFFEEEEEE) else Color(0xFF0A0A0C)
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(50.dp))
-                            .background(badgeBg)
-                            .padding(horizontal = 7.dp, vertical = 2.dp)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Text(
-                            text = badgeText,
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                color = badgeTextColor,
+                            text = "Solving Style",
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                fontSize = 16.sp,
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 9.5.sp
-                            )
+                                color = palette.inkPrimary
+                            ),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
                         )
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(palette.accentSky)
+                                .padding(horizontal = 7.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = "3 Quick Picks",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    color = palette.onAccentInk,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 9.5.sp
+                                ),
+                                maxLines = 1
+                            )
+                        }
                     }
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = "Fast Answer, Best Accuracy, or Photo & Diagrams",
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontSize = 12.sp,
+                            color = palette.inkSecondary
+                        ),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodySmall.copy(
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Medium
-                    ),
-                    color = if (palette.isDarkObsidian) Color(0xFF767676) else Color(0xFF4B5563)
-                )
             }
 
             Spacer(Modifier.width(8.dp))
 
-            // Checkmark or chevron
-            if (isSelected) {
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .size(26.dp)
-                        .clip(CircleShape)
-                        .background(brandRed)
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.Check,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(15.dp)
-                    )
-                }
-            } else {
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .size(26.dp)
-                        .clip(CircleShape)
-                        .background(if (palette.isDarkObsidian) Color(0xFF17181C) else Color(0xFFF1F5F9))
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.ChevronRight,
-                        contentDescription = null,
-                        tint = if (palette.isDarkObsidian) Color(0xFF767676) else Color(0xFF94A3B8),
-                        modifier = Modifier.size(15.dp)
-                    )
-                }
-            }
-        }
-
-        // Top Recommended Badge (pinned at top-left)
-        if (isRecommended) {
             Box(
+                contentAlignment = Alignment.Center,
                 modifier = Modifier
-                    .padding(start = 16.dp)
-                    .clip(RoundedCornerShape(50.dp))
-                    .background(
-                        Brush.horizontalGradient(
-                            listOf(Color(0xFFD71921), Color(0xFFA51017))
-                        )
-                    )
-                    .padding(horizontal = 10.dp, vertical = 2.5.dp)
+                    .size(32.dp)
+                    .clip(CircleShape)
+                    .background(palette.glassSubtle)
             ) {
-                Text(
-                    text = "★ Recommended",
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 10.sp
-                    )
+                Icon(
+                    imageVector = Icons.Filled.ChevronRight,
+                    contentDescription = "Choose Solving Style",
+                    tint = palette.inkPrimary,
+                    modifier = Modifier.size(18.dp)
                 )
             }
         }
-    }
-}
 
-// ── ACTION ROW ───────────────────────────────────────────────────────
-
-@Composable
-private fun PrismActionRow(
-    label: String,
-    icon: ImageVector,
-    onClick: () -> Unit,
-    testTag: String
-) {
-    val palette = LocalWhiteGlassPalette.current
-    val brandRed = Color(0xFFD71921)
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(if (palette.isDarkObsidian) Color(0xFF17181C) else Color(0xFFF1F5F9))
-            .border(1.dp, if (palette.isDarkObsidian) Color(0xFF23252A) else Color(0xFFE5E7EB), RoundedCornerShape(14.dp))
-            .clickable(role = Role.Button, onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 11.dp)
-            .testTag(testTag),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Icon(icon, null, tint = brandRed, modifier = Modifier.size(18.dp))
-        Spacer(Modifier.width(10.dp))
-        Text(
-            label,
-            style = MaterialTheme.typography.labelLarge,
-            color = if (palette.isDarkObsidian) Color(0xFFEEEEEE) else Color(0xFF0A0A0C),
-            modifier = Modifier.weight(1f)
-        )
-        Icon(Icons.Filled.ChevronRight, null, tint = if (palette.isDarkObsidian) Color(0xFF767676) else Color(0xFF94A3B8), modifier = Modifier.size(18.dp))
-    }
-}
-
-// ── QUICK SETTINGS CARD ──────────────────────────────────────────────
-
-@Composable
-private fun QuickCard(
-    icon: ImageVector,
-    label: String,
-    value: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    isDark: Boolean = false
-) {
-    val brandRed = Color(0xFFD71921)
-    Column(
-        modifier = modifier
-            .shadow(elevation = 2.dp, shape = RoundedCornerShape(16.dp), ambientColor = Color(0x0A000000))
-            .clip(RoundedCornerShape(16.dp))
-            .background(if (isDark) Color(0xFF121316) else Color.White)
-            .border(
-                1.dp,
-                if (isDark) Color(0xFF23252A) else Color(0xFFE5E7EB),
-                RoundedCornerShape(16.dp)
-            )
-            .clickable(role = Role.Button, onClick = onClick)
-            .padding(10.dp)
-    ) {
+        // Active Style Summary Strip
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(stripCorner))
+                .background(palette.canvasTop)
+                .border(1.dp, palette.cardHairlineBorder, RoundedCornerShape(stripCorner))
+                .padding(horizontal = 12.dp, vertical = 10.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = brandRed,
-                modifier = Modifier.size(16.dp)
-            )
-            Icon(
-                imageVector = Icons.Filled.ChevronRight,
-                contentDescription = null,
-                tint = if (isDark) Color(0xFF767676) else Color(0xFF94A3B8),
-                modifier = Modifier.size(14.dp)
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.weight(1f)
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.CenterFocusStrong,
+                    contentDescription = null,
+                    tint = if (isTopRatedSelected) palette.accentMint else palette.warningAmber,
+                    modifier = Modifier.size(16.dp)
+                )
+                Column {
+                    Text(
+                        text = "Active: ${activeMethod.shortName}",
+                        style = MaterialTheme.typography.labelMedium.copy(
+                            color = palette.inkPrimary,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp
+                        ),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = when {
+                            activeMethod == SolverMethod.BACKGROUND_GEMINI ->
+                                "Fast everyday default • Works without sign-in"
+                            activeMethod == SolverMethod.TURBO_HYBRID ->
+                                "Double-checks answers for best accuracy"
+                            activeMethod == SolverMethod.DIRECT_VISION ->
+                                "Best for charts, graphs & math equations"
+                            else ->
+                                "${activeMethod.ratingScore}★ Extra Mode • Active"
+                        },
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            color = if (isTopRatedSelected) palette.accentMint else palette.accentSky,
+                            fontSize = 11.sp
+                        ),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            if (activeMethod != SolverMethod.BACKGROUND_GEMINI) {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .minimumInteractiveComponentSize()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(palette.accentSky)
+                        .clickable(role = Role.Button, onClick = onResetToOcrDefault)
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                ) {
+                    Text(
+                        text = "Use Fast",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            color = palette.onAccentInk,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp
+                        )
+                    )
+                }
+            } else {
+                RatingScoreBadge(
+                    score = activeMethod.ratingScore,
+                    isHighRated = true
+                )
+            }
         }
-        Spacer(Modifier.height(8.dp))
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall.copy(
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Medium
-            ),
-            color = if (isDark) Color(0xFF767676) else Color(0xFF64748B)
-        )
-        Spacer(Modifier.height(2.dp))
-        Text(
-            text = value,
-            style = MaterialTheme.typography.labelLarge.copy(
-                fontSize = 12.5.sp,
-                fontWeight = FontWeight.Bold
-            ),
-            color = if (isDark) Color(0xFFEEEEEE) else Color(0xFF1E293B)
-        )
     }
 }
 
-// ── 3D HERO ARTWORK (MATCHING OLED DARK WITH RED SCANNING LASER) ─────
+// ── 2B. HUB CARD: FLOATING PILL LOOK (Theme-Matched!) ───────────────────────
 
 @Composable
-fun HeroArtwork(modifier: Modifier = Modifier) {
-    val brandRed = Color(0xFFD71921)
-    Box(
-        modifier = modifier.size(width = 120.dp, height = 135.dp),
-        contentAlignment = Alignment.Center
+private fun DynamicIslandStudioHubCard(
+    state: MainUiState,
+    onOpenIslandStudio: () -> Unit
+) {
+    val palette = LocalWhiteGlassPalette.current
+    val themeSpec = LocalPrismThemeSpec.current
+    val cardCorner = PrismCurves.cardCorner(themeSpec)
+    val iconCorner = PrismCurves.iconWellCorner(themeSpec)
+    val stripCorner = PrismCurves.innerStripCorner(themeSpec)
+    val borderW = (themeSpec.borderWidthTenths / 10f).dp
+    val interactionSource = remember { MutableInteractionSource() }
+    val pillLookLabel = when (state.hudStyle) {
+        MainActivity.HUD_STYLE_TOP_STRIP -> "Slim Strip"
+        MainActivity.HUD_STYLE_BUBBLE -> "Round Bubble"
+        MainActivity.HUD_STYLE_EDGE_TAB -> "Side Tab"
+        else -> "Floating Pill"
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .liquidPressScale(interactionSource, pressedScale = 0.98f)
+            .clip(RoundedCornerShape(cardCorner))
+            .background(palette.glassStrong)
+            .border(borderW, palette.cardHairlineBorder, RoundedCornerShape(cardCorner))
+            .topGlassSpecularHighlight(cardCorner, alpha = if (palette.isDarkObsidian) 0.11f else 0.25f)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = ripple(color = palette.accentSky),
+                role = Role.Button,
+                onClick = onOpenIslandStudio
+            )
+            .padding(16.dp)
+            .testTag("card_open_island_studio"),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // Glowing Red Orbital Rings (Matching HTML scanner-ring)
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val w = size.width
-            val h = size.height
-
-            // Ring 1 (rotate -25 deg)
-            drawContext.transform.rotate(-25f, pivot = androidx.compose.ui.geometry.Offset(w * 0.5f, h * 0.5f))
-            drawOval(
-                color = brandRed.copy(alpha = 0.25f),
-                topLeft = androidx.compose.ui.geometry.Offset(w * 0.04f, h * 0.28f),
-                size = androidx.compose.ui.geometry.Size(w * 0.92f, h * 0.44f),
-                style = Stroke(width = 8f)
-            )
-            drawOval(
-                color = brandRed.copy(alpha = 0.65f),
-                topLeft = androidx.compose.ui.geometry.Offset(w * 0.05f, h * 0.30f),
-                size = androidx.compose.ui.geometry.Size(w * 0.90f, h * 0.40f),
-                style = Stroke(width = 2.dp.toPx())
-            )
-
-            // Ring 2 (rotate 18 deg)
-            drawContext.transform.rotate(43f, pivot = androidx.compose.ui.geometry.Offset(w * 0.5f, h * 0.5f))
-            drawOval(
-                color = brandRed.copy(alpha = 0.35f),
-                topLeft = androidx.compose.ui.geometry.Offset(w * 0.02f, h * 0.26f),
-                size = androidx.compose.ui.geometry.Size(w * 0.96f, h * 0.46f),
-                style = Stroke(width = 1.2.dp.toPx())
-            )
-        }
-
-        // Stylized Floating OLED Smartphone Graphic (rotate 12 deg)
-        Column(
-            modifier = Modifier
-                .size(width = 80.dp, height = 126.dp)
-                .rotate(12f)
-                .shadow(
-                    elevation = 14.dp,
-                    shape = RoundedCornerShape(18.dp),
-                    ambientColor = Color(0x40D71921),
-                    spotColor = Color(0x60D71921)
-                )
-                .clip(RoundedCornerShape(18.dp))
-                .background(
-                    Brush.verticalGradient(
-                        listOf(Color(0xFF1D1F25), Color(0xFF0F1012))
-                    )
-                )
-                .border(2.dp, brandRed.copy(alpha = 0.75f), RoundedCornerShape(18.dp))
-                .padding(6.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            // Earpiece
-            Box(
-                modifier = Modifier
-                    .width(20.dp)
-                    .height(3.5.dp)
-                    .clip(RoundedCornerShape(50.dp))
-                    .background(Color(0xFF333640))
-            )
-            Spacer(Modifier.height(5.dp))
-
-            // Scanned Document View (Dark OLED Glass)
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(Color(0xFF0A0A0C))
-                    .padding(6.dp)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f)
             ) {
-                // Simulated MCQ quiz text lines
-                Column(
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(4.5.dp)
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .size(46.dp)
+                        .clip(RoundedCornerShape(iconCorner))
+                        .background(palette.glassTintedSky)
+                        .border(1.dp, palette.accentSky.copy(alpha = 0.6f), RoundedCornerShape(iconCorner))
                 ) {
-                    Box(modifier = Modifier.fillMaxWidth(0.85f).height(4.dp).clip(RoundedCornerShape(2.dp)).background(brandRed))
-                    Box(modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)).background(Color(0xFF23252A)))
-                    Box(modifier = Modifier.fillMaxWidth(0.75f).height(4.dp).clip(RoundedCornerShape(2.dp)).background(Color(0xFF23252A)))
-                    // Highlighted Correct Option (green check)
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(8.dp)
-                            .clip(RoundedCornerShape(2.dp))
-                            .background(Color(0xFF14291E)),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(modifier = Modifier.size(5.dp).clip(CircleShape).background(Color(0xFF4ADE80)))
-                        Spacer(Modifier.width(3.dp))
-                        Box(modifier = Modifier.fillMaxWidth(0.6f).height(3.dp).clip(RoundedCornerShape(1.dp)).background(Color(0xFF4ADE80)))
-                    }
-                    Box(modifier = Modifier.fillMaxWidth(0.65f).height(4.dp).clip(RoundedCornerShape(2.dp)).background(Color(0xFF23252A)))
+                    Icon(
+                        imageVector = Icons.Filled.Tune,
+                        contentDescription = null,
+                        tint = palette.accentSky,
+                        modifier = Modifier.size(22.dp)
+                    )
                 }
 
-                // 4 Scanner Corner Brackets & Red Laser Beam
-                Canvas(modifier = Modifier.fillMaxSize()) {
-                    val bw = size.width
-                    val bh = size.height
-                    val len = 8f
-                    val sw = 2f
+                Spacer(Modifier.width(12.dp))
 
-                    // Top-Left
-                    drawLine(brandRed, androidx.compose.ui.geometry.Offset(0f, 0f), androidx.compose.ui.geometry.Offset(len, 0f), strokeWidth = sw)
-                    drawLine(brandRed, androidx.compose.ui.geometry.Offset(0f, 0f), androidx.compose.ui.geometry.Offset(0f, len), strokeWidth = sw)
-
-                    // Top-Right
-                    drawLine(brandRed, androidx.compose.ui.geometry.Offset(bw, 0f), androidx.compose.ui.geometry.Offset(bw - len, 0f), strokeWidth = sw)
-                    drawLine(brandRed, androidx.compose.ui.geometry.Offset(bw, 0f), androidx.compose.ui.geometry.Offset(bw, len), strokeWidth = sw)
-
-                    // Bottom-Left
-                    drawLine(brandRed, androidx.compose.ui.geometry.Offset(0f, bh), androidx.compose.ui.geometry.Offset(len, bh), strokeWidth = sw)
-                    drawLine(brandRed, androidx.compose.ui.geometry.Offset(0f, bh), androidx.compose.ui.geometry.Offset(0f, bh - len), strokeWidth = sw)
-
-                    // Bottom-Right
-                    drawLine(brandRed, androidx.compose.ui.geometry.Offset(bw, bh), androidx.compose.ui.geometry.Offset(bw - len, bh), strokeWidth = sw)
-                    drawLine(brandRed, androidx.compose.ui.geometry.Offset(bw, bh), androidx.compose.ui.geometry.Offset(bw, bh - len), strokeWidth = sw)
-
-                    // Scanning Horizontal Laser Beam across center
-                    drawLine(
-                        brandRed.copy(alpha = 0.85f),
-                        androidx.compose.ui.geometry.Offset(0f, bh * 0.45f),
-                        androidx.compose.ui.geometry.Offset(bw, bh * 0.45f),
-                        strokeWidth = 2.5f
+                Column {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "Floating Pill Look",
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = palette.inkPrimary
+                            ),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(palette.accentSky)
+                                .padding(horizontal = 7.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = "Customize",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    color = palette.onAccentInk,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 9.5.sp
+                                )
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = "Pick pill size, look & transparency",
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontSize = 12.sp,
+                            color = palette.inkSecondary
+                        ),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
                     )
+                }
+            }
+
+            Spacer(Modifier.width(8.dp))
+
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(32.dp)
+                    .clip(CircleShape)
+                    .background(palette.glassSubtle)
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.ChevronRight,
+                    contentDescription = "Open Floating Pill Look",
+                    tint = palette.inkPrimary,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+        }
+
+        // Theme-Matched Preview Strip with Mini Black Capsule Pill
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(stripCorner))
+                .background(palette.canvasTop)
+                .border(1.dp, palette.cardHairlineBorder, RoundedCornerShape(stripCorner))
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier
+                    .alpha((state.customOpacityPct / 100f).coerceIn(0.35f, 1f))
+                    .clip(RoundedCornerShape(50.dp))
+                    .background(Color(0xFF0A0B0E))
+                    .border(1.dp, palette.accentSky.copy(alpha = 0.75f), RoundedCornerShape(50.dp))
+                    .padding(horizontal = 10.dp, vertical = 5.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .clip(CircleShape)
+                        .background(palette.accentSky)
+                )
+                Text(
+                    text = if (state.batteryCamouflage) "92% Charging" else "Answer: B",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 10.5.sp
+                    )
+                )
+            }
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Opacity,
+                    contentDescription = null,
+                    tint = palette.accentSky,
+                    modifier = Modifier.size(14.dp)
+                )
+                Text(
+                    text = "$pillLookLabel • ${state.customOpacityPct}%",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        color = palette.inkSecondary,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 11.sp
+                    ),
+                    maxLines = 1
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun QuickThreeStepStrip() {
+    val palette = LocalWhiteGlassPalette.current
+    val themeSpec = LocalPrismThemeSpec.current
+    val corner = PrismCurves.cardCorner(themeSpec)
+    val steps = listOf(
+        "1" to "Tap Start",
+        "2" to "Open quiz",
+        "3" to "Tap top pill"
+    )
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(corner))
+            .background(palette.glassStrong)
+            .border(1.dp, palette.cardHairlineBorder, RoundedCornerShape(corner))
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        steps.forEachIndexed { idx, (num, label) ->
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.weight(1f)
+            ) {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .size(20.dp)
+                        .clip(CircleShape)
+                        .background(palette.accentSkyContainer)
+                        .border(1.dp, palette.accentSky.copy(alpha = 0.55f), CircleShape)
+                ) {
+                    Text(
+                        text = num,
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            color = palette.accentSky,
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 10.sp
+                        )
+                    )
+                }
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelMedium.copy(
+                        color = palette.inkPrimary,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 11.5.sp
+                    ),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            if (idx < steps.lastIndex) {
+                Text(
+                    text = "→",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        color = palette.inkMuted,
+                        fontWeight = FontWeight.Bold
+                    ),
+                    modifier = Modifier.padding(end = 4.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun HomeQuickActionPill(
+    title: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    highlight: Boolean,
+    testTag: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    showThemeSwatches: Boolean = false
+) {
+    val palette = LocalWhiteGlassPalette.current
+    val themeSpec = LocalPrismThemeSpec.current
+    val pillCorner = PrismCurves.pillOrButtonCorner(themeSpec)
+    val interactionSource = remember { MutableInteractionSource() }
+    Row(
+        modifier = modifier
+            .heightIn(min = 48.dp)
+            .liquidPressScale(interactionSource, pressedScale = 0.96f)
+            .clip(RoundedCornerShape(pillCorner))
+            .background(if (highlight) palette.accentMintContainer else palette.glassStrong)
+            .border(
+                width = 1.dp,
+                color = when {
+                    highlight -> palette.accentMint.copy(alpha = 0.6f)
+                    showThemeSwatches -> palette.accentSky.copy(alpha = 0.48f)
+                    else -> palette.cardHairlineBorder
+                },
+                shape = RoundedCornerShape(pillCorner)
+            )
+            .clickable(
+                interactionSource = interactionSource,
+                indication = ripple(color = palette.accentSky),
+                role = Role.Button,
+                onClick = onClick
+            )
+            .padding(horizontal = 14.dp, vertical = 10.dp)
+            .testTag(testTag),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(7.dp)
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = if (highlight) palette.accentMint else palette.accentSky,
+            modifier = Modifier.size(16.dp)
+        )
+        Text(
+            text = title,
+            style = MaterialTheme.typography.labelLarge.copy(
+                fontSize = 12.5.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = if (highlight) palette.accentMint else palette.inkPrimary
+            ),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        if (showThemeSwatches) {
+            Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                Box(
+                    modifier = Modifier
+                        .size(7.dp)
+                        .clip(CircleShape)
+                        .background(palette.accentSky)
+                )
+                Box(
+                    modifier = Modifier
+                        .size(7.dp)
+                        .clip(CircleShape)
+                        .background(palette.accentSkyBright.copy(alpha = 0.72f))
+                )
+            }
+        }
+    }
+}
+
+// ── 2C. HUB CARD: GOOGLE FORMS SOLVE (Opens Dedicated Forms Solver Screen) ────
+
+@Composable
+private fun GoogleFormsSolveHubCard(
+    state: MainUiState,
+    onOpenGoogleFormsSolve: () -> Unit
+) {
+    val palette = LocalWhiteGlassPalette.current
+    val themeSpec = LocalPrismThemeSpec.current
+    val cardCorner = PrismCurves.cardCorner(themeSpec)
+    val iconCorner = PrismCurves.iconWellCorner(themeSpec)
+    val stripCorner = PrismCurves.innerStripCorner(themeSpec)
+    val borderW = (themeSpec.borderWidthTenths / 10f).dp
+    val interactionSource = remember { MutableInteractionSource() }
+    val solved = state.googleFormResult
+    val previewSummary = solved?.compactNotificationOutput ?: "(1-A|2-B|3-D|4-A)"
+    val statusBadgeText = when {
+        state.isGoogleFormPinned -> "Pinned"
+        solved != null -> "${solved.items.size} Solved"
+        else -> "Pin Bar"
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .liquidPressScale(interactionSource, pressedScale = 0.98f)
+            .clip(RoundedCornerShape(cardCorner))
+            .background(palette.glassStrong)
+            .border(borderW, palette.cardHairlineBorder, RoundedCornerShape(cardCorner))
+            .topGlassSpecularHighlight(cardCorner, alpha = if (palette.isDarkObsidian) 0.11f else 0.25f)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = ripple(color = palette.accentSky),
+                role = Role.Button,
+                onClick = onOpenGoogleFormsSolve
+            )
+            .padding(16.dp)
+            .testTag("card_open_google_forms_solve"),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f)
+            ) {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .size(46.dp)
+                        .clip(RoundedCornerShape(iconCorner))
+                        .background(palette.glassTintedSky)
+                        .border(1.dp, palette.accentSky.copy(alpha = 0.6f), RoundedCornerShape(iconCorner))
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Description,
+                        contentDescription = null,
+                        tint = palette.accentSky,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+
+                Spacer(Modifier.width(12.dp))
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "Solve a Google Form",
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = palette.inkPrimary
+                            ),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                        val badgeBg = if (state.isGoogleFormPinned) palette.accentMint else palette.accentSky
+                        val badgeFg = if (state.isGoogleFormPinned) Color.White else palette.onAccentInk
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(badgeBg)
+                                .padding(horizontal = 7.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = statusBadgeText,
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    color = badgeFg,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 9.5.sp
+                                ),
+                                maxLines = 1
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = "Paste one quiz link to get answers & auto-fill",
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontSize = 12.sp,
+                            color = palette.inkSecondary
+                        ),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            Spacer(Modifier.width(8.dp))
+
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(32.dp)
+                    .clip(CircleShape)
+                    .background(palette.glassSubtle)
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.ChevronRight,
+                    contentDescription = "Open Google Forms Solve",
+                    tint = palette.inkPrimary,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+        }
+
+        // Compact Notification Format Preview Strip
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(stripCorner))
+                .background(palette.canvasTop)
+                .border(1.dp, palette.cardHairlineBorder, RoundedCornerShape(stripCorner))
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(7.dp),
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(end = 8.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.PushPin,
+                    contentDescription = null,
+                    tint = if (state.isGoogleFormPinned) palette.accentMint else palette.accentSky,
+                    modifier = Modifier.size(15.dp)
+                )
+                Text(
+                    text = previewSummary,
+                    style = MaterialTheme.typography.labelMedium.copy(
+                        color = palette.inkPrimary,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp
+                    ),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            Text(
+                text = if (state.isGoogleFormPinned) "Status Bar Active" else "Notification Pin",
+                style = MaterialTheme.typography.labelSmall.copy(
+                    color = if (state.isGoogleFormPinned) palette.accentMint else palette.inkSecondary,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 11.sp
+                ),
+                maxLines = 1
+            )
+        }
+    }
+}
+
+
+// ── HERO ILLUSTRATION ───────────────────────────────────────────────────────
+
+@Composable
+private fun TiltedPhoneScannerIllustration(isRunning: Boolean) {
+    val palette = LocalWhiteGlassPalette.current
+    val reducedMotion = LocalReducedMotion.current
+    val haptics = LocalHapticFeedback.current
+    val previewInteraction = remember { MutableInteractionSource() }
+    var tapDemoTick by remember { mutableIntStateOf(0) }
+    var showVerifiedBadge by remember { mutableStateOf(false) }
+
+    LaunchedEffect(tapDemoTick) {
+        if (tapDemoTick == 0) return@LaunchedEffect
+        showVerifiedBadge = false
+        delay(if (reducedMotion) 120L else 420L)
+        showVerifiedBadge = true
+        delay(1700L)
+        showVerifiedBadge = false
+    }
+
+    val scanBeamActive = !reducedMotion && (isRunning || (tapDemoTick > 0 && !showVerifiedBadge))
+    val scanBeamFrac = if (scanBeamActive) {
+        val inf = rememberInfiniteTransition(label = "hero_scanner_beam")
+        val f by inf.animateFloat(
+            initialValue = 0.12f,
+            targetValue = 0.88f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(
+                    durationMillis = 980,
+                    easing = FastOutSlowInEasing
+                ),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "beam_y"
+        )
+        f
+    } else 0.42f
+
+    val badgeColor = if (showVerifiedBadge) palette.accentMint else palette.accentSky
+
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .size(width = 118.dp, height = 152.dp)
+            .liquidPressScale(previewInteraction, pressedScale = 0.94f)
+            .clickable(
+                interactionSource = previewInteraction,
+                indication = null,
+                role = Role.Button,
+                onClickLabel = "Preview optical scan animation"
+            ) {
+                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                tapDemoTick += 1
+            }
+            .testTag("hero_interactive_phone_preview")
+    ) {
+        // Back Card Layer
+        Box(
+            modifier = Modifier
+                .size(width = 90.dp, height = 128.dp)
+                .rotate(10f)
+                .offset(x = 5.dp, y = 5.dp)
+                .clip(RoundedCornerShape(20.dp))
+                .background(palette.glassTintedSky)
+                .border(1.dp, palette.accentSky.copy(alpha = 0.35f), RoundedCornerShape(20.dp))
+        )
+
+        // Phone Body
+        Box(
+            modifier = Modifier
+                .size(width = 90.dp, height = 134.dp)
+                .rotate(8f)
+                .shadow(6.dp, RoundedCornerShape(20.dp))
+                .clip(RoundedCornerShape(20.dp))
+                .background(palette.glassSubtle)
+                .border(2.dp, palette.cardHairlineBorder, RoundedCornerShape(20.dp))
+                .padding(5.dp)
+        ) {
+            // Inner Document Screen
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(RoundedCornerShape(15.dp))
+                    .background(Color(0xFFF3F4F6))
+                    .padding(horizontal = 7.dp, vertical = 9.dp),
+                verticalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .width(38.dp)
+                                .height(4.dp)
+                                .clip(RoundedCornerShape(2.dp))
+                                .background(Color(0xFF9CA3AF))
+                        )
+                        Box(
+                            modifier = Modifier
+                                .size(5.dp)
+                                .clip(CircleShape)
+                                .background(if (isRunning || showVerifiedBadge) palette.accentMint else palette.accentSky)
+                        )
+                    }
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(0.88f)
+                            .height(4.dp)
+                            .clip(RoundedCornerShape(2.dp))
+                            .background(Color(0xFFD1D5DB))
+                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(0.75f)
+                            .height(4.dp)
+                            .clip(RoundedCornerShape(2.dp))
+                            .background(Color(0xFFD1D5DB))
+                    )
+                }
+
+                // Scan Corner Brackets + Live Liquid Laser Scan Beam on Phone Screen
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                ) {
+                    Canvas(modifier = Modifier.fillMaxSize()) {
+                        val sw = 2.4.dp.toPx()
+                        val arm = 11.dp.toPx()
+                        val w = size.width
+                        val h = size.height
+                        val beamColor = if (isRunning || showVerifiedBadge) palette.accentMint else palette.accentSky
+                        drawLine(beamColor, Offset(0f, arm), Offset(0f, 0f), strokeWidth = sw, cap = StrokeCap.Round)
+                        drawLine(beamColor, Offset(0f, 0f), Offset(arm, 0f), strokeWidth = sw, cap = StrokeCap.Round)
+                        drawLine(beamColor, Offset(w - arm, 0f), Offset(w, 0f), strokeWidth = sw, cap = StrokeCap.Round)
+                        drawLine(beamColor, Offset(w, 0f), Offset(w, arm), strokeWidth = sw, cap = StrokeCap.Round)
+                        drawLine(beamColor, Offset(0f, h - arm), Offset(0f, h), strokeWidth = sw, cap = StrokeCap.Round)
+                        drawLine(beamColor, Offset(0f, h), Offset(arm, h), strokeWidth = sw, cap = StrokeCap.Round)
+
+                        val beamY = h * scanBeamFrac
+                        drawLine(
+                            brush = Brush.horizontalGradient(
+                                listOf(
+                                    Color.Transparent,
+                                    beamColor.copy(alpha = 0.85f),
+                                    Color.White.copy(alpha = 0.9f),
+                                    beamColor.copy(alpha = 0.85f),
+                                    Color.Transparent
+                                )
+                            ),
+                            start = Offset(2.dp.toPx(), beamY),
+                            end = Offset(w - 2.dp.toPx(), beamY),
+                            strokeWidth = 2.dp.toPx(),
+                            cap = StrokeCap.Round
+                        )
+                    }
+                }
+
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(0.82f)
+                            .height(4.dp)
+                            .clip(RoundedCornerShape(2.dp))
+                            .background(if (showVerifiedBadge) palette.accentMint.copy(alpha = 0.72f) else Color(0xFFD1D5DB))
+                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(0.6f)
+                            .height(4.dp)
+                            .clip(RoundedCornerShape(2.dp))
+                            .background(Color(0xFFD1D5DB))
+                    )
+                }
+            }
+        }
+
+        // Interactive Corner Scanner / Live Answer Reveal Badge
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .offset(x = (-4).dp, y = (-16).dp)
+                .size(34.dp)
+                .shadow(4.dp, CircleShape)
+                .clip(CircleShape)
+                .background(badgeColor)
+                .border(1.dp, palette.onAccentInk.copy(alpha = 0.25f), CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            AnimatedContent(
+                targetState = showVerifiedBadge,
+                transitionSpec = {
+                    (fadeIn(tween(160)) + scaleIn(initialScale = 0.7f)) togetherWith
+                        (fadeOut(tween(120)) + scaleOut(targetScale = 0.7f))
+                },
+                label = "hero_scanner_badge_morph"
+            ) { revealed ->
+                if (revealed) {
+                    Text(
+                        text = "B",
+                        style = MaterialTheme.typography.labelLarge.copy(
+                            color = Color.White,
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 14.sp
+                        )
+                    )
+                } else {
+                    Canvas(modifier = Modifier.size(16.dp)) {
+                        val sw = 1.8.dp.toPx()
+                        val arm = size.width * 0.28f
+                        val w = size.width
+                        val h = size.height
+                        drawLine(palette.onAccentInk, Offset(0f, arm), Offset(0f, 0f), strokeWidth = sw, cap = StrokeCap.Round)
+                        drawLine(palette.onAccentInk, Offset(0f, 0f), Offset(arm, 0f), strokeWidth = sw, cap = StrokeCap.Round)
+                        drawLine(palette.onAccentInk, Offset(w - arm, 0f), Offset(w, 0f), strokeWidth = sw, cap = StrokeCap.Round)
+                        drawLine(palette.onAccentInk, Offset(w, 0f), Offset(w, arm), strokeWidth = sw, cap = StrokeCap.Round)
+                        drawLine(palette.onAccentInk, Offset(0f, h - arm), Offset(0f, h), strokeWidth = sw, cap = StrokeCap.Round)
+                        drawLine(palette.onAccentInk, Offset(0f, h), Offset(arm, h), strokeWidth = sw, cap = StrokeCap.Round)
+                        drawLine(palette.onAccentInk, Offset(w - arm, h), Offset(w, h), strokeWidth = sw, cap = StrokeCap.Round)
+                        drawLine(palette.onAccentInk, Offset(w, h - arm), Offset(w, h), strokeWidth = sw, cap = StrokeCap.Round)
+                    }
                 }
             }
         }

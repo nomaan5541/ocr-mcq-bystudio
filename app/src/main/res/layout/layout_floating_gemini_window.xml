@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/gemini_window_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
     android:background="@drawable/bg_gemini_window"
     android:elevation="20dp"
     android:clipChildren="false"
@@ -11,175 +11,251 @@
     android:clipToOutline="true">
 
     <!-- Top Drag & Control Header with Live Synced Answer Badge -->
-    <LinearLayout
+    <androidx.constraintlayout.widget.ConstraintLayout
         android:id="@+id/header_drag_area"
-        android:layout_width="match_parent"
-        android:layout_height="46dp"
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:minHeight="48dp"
         android:background="@drawable/bg_gemini_header"
         android:paddingStart="10dp"
-        android:paddingEnd="8dp">
+        android:paddingEnd="4dp"
+        android:paddingTop="2dp"
+        android:paddingBottom="2dp"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="parent">
 
         <ImageView
+            android:id="@+id/iv_window_brand_icon"
             android:layout_width="22dp"
             android:layout_height="22dp"
             android:src="@drawable/ic_prism_orb"
-            android:layout_marginEnd="6dp"
-            android:contentDescription="@null" />
+            android:contentDescription="@null"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintBottom_toBottomOf="parent" />
 
         <TextView
+            android:id="@+id/tv_window_brand_title"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
+            android:layout_marginStart="6dp"
+            android:layout_marginEnd="6dp"
+            android:gravity="center_vertical|start"
             android:text="Prism AI"
             android:textColor="#020617"
             android:textSize="12.5sp"
             android:textStyle="bold"
             android:ellipsize="end"
-            android:singleLine="true" />
+            android:maxLines="1"
+            app:layout_constraintStart_toEndOf="@id/iv_window_brand_icon"
+            app:layout_constraintEnd_toStartOf="@id/header_actions_scroll"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintWidth_min="44dp" />
 
-        <!-- Live Synced Answer Pill inside Floating Window -->
-        <TextView
-            android:id="@+id/tv_window_answer_badge"
+        <!-- Horizontally scrollable header chips so buttons never wrap or clip on compact devices -->
+        <HorizontalScrollView
+            android:id="@+id/header_actions_scroll"
             android:layout_width="wrap_content"
-            android:minWidth="30dp"
-            android:layout_height="28dp"
-            android:background="@drawable/bg_answer_box"
-            android:gravity="center"
-            android:paddingStart="8dp"
-            android:paddingEnd="8dp"
-            android:text="?"
-            android:textColor="#047857"
-            android:textSize="13sp"
-            android:textStyle="bold"
-            android:layout_marginEnd="5dp" />
+            android:layout_height="wrap_content"
+            android:scrollbars="none"
+            android:overScrollMode="never"
+            app:layout_constrainedWidth="true"
+            app:layout_constraintEnd_toStartOf="@id/btn_window_minimize"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintBottom_toBottomOf="parent">
 
-        <!-- Solve Button -->
-        <TextView
-            android:id="@+id/btn_window_scan"
-            android:layout_width="wrap_content"
-            android:layout_height="30dp"
-            android:background="@drawable/bg_chip_action"
-            android:gravity="center"
-            android:paddingStart="8dp"
-            android:paddingEnd="8dp"
-            android:text="Solve"
-            android:textColor="#0369A1"
-            android:textSize="11sp"
-            android:textStyle="bold"
-            android:clickable="true"
-            android:focusable="true"
-            android:layout_marginEnd="4dp" />
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
 
-        <!-- Fresh Chat Button -->
-        <TextView
-            android:id="@+id/btn_window_new_chat"
-            android:layout_width="wrap_content"
-            android:layout_height="30dp"
-            android:background="@drawable/bg_chip_action"
-            android:gravity="center"
-            android:paddingStart="7dp"
-            android:paddingEnd="7dp"
-            android:text="New"
-            android:textColor="#B45309"
-            android:textSize="11sp"
-            android:textStyle="bold"
-            android:clickable="true"
-            android:focusable="true"
-            android:layout_marginEnd="4dp" />
+                <!-- Live Synced Answer Pill inside Floating Window -->
+                <TextView
+                    android:id="@+id/tv_window_answer_badge"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:minWidth="36dp"
+                    android:minHeight="36dp"
+                    android:background="@drawable/bg_answer_box"
+                    android:gravity="center"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:paddingStart="8dp"
+                    android:paddingEnd="8dp"
+                    android:paddingTop="4dp"
+                    android:paddingBottom="4dp"
+                    android:text="?"
+                    android:textColor="#047857"
+                    android:textSize="13sp"
+                    android:textStyle="bold"
+                    android:layout_marginEnd="4dp" />
 
-        <!-- Size Preset Toggle (S / M / L) -->
-        <TextView
-            android:id="@+id/btn_window_size"
-            android:layout_width="wrap_content"
-            android:layout_height="30dp"
-            android:background="@drawable/bg_chip_action"
-            android:gravity="center"
-            android:paddingStart="7dp"
-            android:paddingEnd="7dp"
-            android:text="S"
-            android:textColor="#047857"
-            android:textSize="11sp"
-            android:textStyle="bold"
-            android:clickable="true"
-            android:focusable="true"
-            android:layout_marginEnd="4dp" />
+                <!-- Solve Button -->
+                <TextView
+                    android:id="@+id/btn_window_scan"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:minWidth="48dp"
+                    android:minHeight="48dp"
+                    android:background="@drawable/bg_chip_action"
+                    android:gravity="center"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:paddingStart="9dp"
+                    android:paddingEnd="9dp"
+                    android:paddingTop="6dp"
+                    android:paddingBottom="6dp"
+                    android:text="Solve"
+                    android:textColor="#D71921"
+                    android:textSize="11sp"
+                    android:textStyle="bold"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:layout_marginEnd="4dp" />
 
-        <!-- Opacity Toggle -->
-        <TextView
-            android:id="@+id/btn_window_opacity"
-            android:layout_width="wrap_content"
-            android:layout_height="30dp"
-            android:background="@drawable/bg_chip_action"
-            android:gravity="center"
-            android:paddingStart="7dp"
-            android:paddingEnd="7dp"
-            android:text="100%"
-            android:textColor="#020617"
-            android:textSize="11sp"
-            android:textStyle="bold"
-            android:clickable="true"
-            android:focusable="true"
-            android:layout_marginEnd="4dp" />
+                <!-- Fresh Chat Button -->
+                <TextView
+                    android:id="@+id/btn_window_new_chat"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:minWidth="48dp"
+                    android:minHeight="48dp"
+                    android:background="@drawable/bg_chip_action"
+                    android:gravity="center"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:paddingStart="8dp"
+                    android:paddingEnd="8dp"
+                    android:paddingTop="6dp"
+                    android:paddingBottom="6dp"
+                    android:text="New"
+                    android:textColor="#B45309"
+                    android:textSize="11sp"
+                    android:textStyle="bold"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:layout_marginEnd="4dp" />
 
-        <!-- Minimize Button -->
+                <!-- Size Preset Toggle (S / M / L) -->
+                <TextView
+                    android:id="@+id/btn_window_size"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:minWidth="48dp"
+                    android:minHeight="48dp"
+                    android:background="@drawable/bg_chip_action"
+                    android:gravity="center"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:paddingStart="8dp"
+                    android:paddingEnd="8dp"
+                    android:paddingTop="6dp"
+                    android:paddingBottom="6dp"
+                    android:text="S"
+                    android:textColor="#047857"
+                    android:textSize="11sp"
+                    android:textStyle="bold"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:layout_marginEnd="4dp" />
+
+                <!-- Opacity Toggle -->
+                <TextView
+                    android:id="@+id/btn_window_opacity"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:minWidth="48dp"
+                    android:minHeight="48dp"
+                    android:background="@drawable/bg_chip_action"
+                    android:gravity="center"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:paddingStart="8dp"
+                    android:paddingEnd="8dp"
+                    android:paddingTop="6dp"
+                    android:paddingBottom="6dp"
+                    android:text="100%"
+                    android:textColor="#020617"
+                    android:textSize="11sp"
+                    android:textStyle="bold"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:layout_marginEnd="2dp" />
+
+            </LinearLayout>
+        </HorizontalScrollView>
+
+        <!-- Minimize Button (48dp touch target) -->
         <ImageView
             android:id="@+id/btn_window_minimize"
-            android:layout_width="28dp"
-            android:layout_height="28dp"
-            android:padding="4dp"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:padding="13dp"
             android:src="@android:drawable/ic_menu_revert"
             android:tint="#020617"
             android:clickable="true"
             android:focusable="true"
-            android:layout_marginEnd="2dp"
-            android:contentDescription="Minimize Window" />
+            android:contentDescription="Minimize Window"
+            app:layout_constraintEnd_toStartOf="@id/btn_window_close"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintBottom_toBottomOf="parent" />
 
-        <!-- Close Button -->
+        <!-- Close Button (48dp touch target) -->
         <ImageView
             android:id="@+id/btn_window_close"
-            android:layout_width="28dp"
-            android:layout_height="28dp"
-            android:padding="4dp"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:padding="13dp"
             android:src="@android:drawable/ic_menu_close_clear_cancel"
             android:tint="#BE123C"
             android:clickable="true"
             android:focusable="true"
-            android:contentDescription="Close Window" />
+            android:contentDescription="Close Window"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintBottom_toBottomOf="parent" />
 
-    </LinearLayout>
+    </androidx.constraintlayout.widget.ConstraintLayout>
 
     <!-- Page Load Progress Bar -->
     <ProgressBar
         android:id="@+id/web_progress_bar"
         style="?android:attr/progressBarStyleHorizontal"
-        android:layout_width="match_parent"
+        android:layout_width="0dp"
         android:layout_height="2dp"
         android:indeterminate="false"
         android:max="100"
         android:progressDrawable="@android:drawable/progress_horizontal"
-        android:visibility="gone" />
+        android:visibility="gone"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/header_drag_area" />
 
     <!-- Main Gemini Web Content + Corner Resize Handle -->
     <RelativeLayout
         android:id="@+id/webview_host_container"
-        android:layout_width="match_parent"
+        android:layout_width="0dp"
         android:layout_height="0dp"
-        android:layout_weight="1"
         android:clipChildren="false"
-        android:clipToPadding="false">
+        android:clipToPadding="false"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/web_progress_bar"
+        app:layout_constraintBottom_toBottomOf="parent">
 
         <WebView
             android:id="@+id/gemini_webview"
             android:layout_width="match_parent"
             android:layout_height="match_parent" />
 
-        <!-- Bottom-Right Resize Handle Grip -->
+        <!-- Bottom-Right Resize Handle Grip (48dp touch target) -->
         <FrameLayout
             android:id="@+id/btn_resize_grip"
-            android:layout_width="32dp"
-            android:layout_height="32dp"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
             android:layout_alignParentEnd="true"
             android:layout_alignParentBottom="true"
             android:background="#E6F1F5F9"
@@ -188,14 +264,14 @@
             android:contentDescription="Drag to resize window">
 
             <ImageView
-                android:layout_width="16dp"
-                android:layout_height="16dp"
+                android:layout_width="18dp"
+                android:layout_height="18dp"
                 android:layout_gravity="center"
                 android:src="@android:drawable/ic_menu_rotate"
-                android:tint="#0369A1"
+                android:tint="#D71921"
                 android:contentDescription="@null" />
         </FrameLayout>
 
     </RelativeLayout>
 
-</LinearLayout>
+</androidx.constraintlayout.widget.ConstraintLayout>

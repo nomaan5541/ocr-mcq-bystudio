@@ -1,10 +1,16 @@
 package com.omnisolve.overlay.ui.components
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -12,10 +18,13 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
@@ -33,25 +42,39 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.PathNode
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.omnisolve.overlay.R
 import com.omnisolve.overlay.ui.physics.GlassMaterialStrength
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.vector.PathNode
+import com.omnisolve.overlay.ui.physics.LocalReducedMotion
+import com.omnisolve.overlay.ui.physics.LocalSpringPhysics
+import com.omnisolve.overlay.ui.physics.MotionTokens
+import com.omnisolve.overlay.ui.physics.liquidPressScale
+import com.omnisolve.overlay.ui.physics.liquidSheenSweep
 import com.omnisolve.overlay.ui.physics.livingGlassSurface
+import com.omnisolve.overlay.ui.theme.LocalPrismThemeSpec
 import com.omnisolve.overlay.ui.theme.LocalWhiteGlassPalette
+import com.omnisolve.overlay.ui.theme.PrismCurves
+import com.omnisolve.overlay.ui.theme.ThemeLayoutArchetype
+import com.omnisolve.overlay.ui.theme.contrastOnColor
 
 val BarChartVector: ImageVector by lazy {
     ImageVector.Builder(
@@ -94,7 +117,9 @@ enum class AppTab(
 }
 
 /**
- * Modern floating pill dock with bottom-wave gradient matching the exact HTML specification.
+ * Prism Crimson Floating Navigation Pill Dock matching Screenshot 1:
+ * Dark #1A1B20 pill container, active #D71921 crimson pill with subtle bottom red glow bar,
+ * #EEEEEE text, and subtle vertical dividers between tabs.
  */
 @Composable
 fun LiquidMorphBottomDock(
@@ -103,75 +128,374 @@ fun LiquidMorphBottomDock(
     modifier: Modifier = Modifier
 ) {
     val palette = LocalWhiteGlassPalette.current
+    val themeSpec = LocalPrismThemeSpec.current
+    val reducedMotion = LocalReducedMotion.current
+    val springCfg = LocalSpringPhysics.current
+    val archetype = themeSpec.layoutArchetype
     val tabs = AppTab.entries
+    val selectedIndex = tabs.indexOf(selectedTab).coerceAtLeast(0)
+
+    val isFlushAtelier = archetype == ThemeLayoutArchetype.ATELIER_BENTO
+    val isTelemetryHud = archetype == ThemeLayoutArchetype.TELEMETRY_HUD
+    val isEditorial = archetype == ThemeLayoutArchetype.EDITORIAL_MONOGRAPH
+    val isKineticDeck = archetype == ThemeLayoutArchetype.KINETIC_DECK
+
+    val dockCorner = when (archetype) {
+        ThemeLayoutArchetype.ATELIER_BENTO -> 0.dp
+        ThemeLayoutArchetype.TELEMETRY_HUD -> 10.dp
+        ThemeLayoutArchetype.EDITORIAL_MONOGRAPH -> 999.dp
+        ThemeLayoutArchetype.KINETIC_DECK -> 18.dp
+        ThemeLayoutArchetype.IOS_LIQUID_LIGHT -> 999.dp
+        ThemeLayoutArchetype.CLASSIC_PRISM -> PrismCurves.dockCorner(themeSpec)
+    }
+    val pillCorner = when (archetype) {
+        ThemeLayoutArchetype.ATELIER_BENTO -> 10.dp
+        ThemeLayoutArchetype.TELEMETRY_HUD -> 7.dp
+        ThemeLayoutArchetype.EDITORIAL_MONOGRAPH -> 999.dp
+        ThemeLayoutArchetype.KINETIC_DECK -> 13.dp
+        ThemeLayoutArchetype.IOS_LIQUID_LIGHT -> 999.dp
+        ThemeLayoutArchetype.CLASSIC_PRISM -> PrismCurves.dockPillCorner(themeSpec)
+    }
+    val outerHorizontalPadding = when (archetype) {
+        ThemeLayoutArchetype.ATELIER_BENTO -> 0.dp
+        ThemeLayoutArchetype.EDITORIAL_MONOGRAPH -> 22.dp
+        else -> 16.dp
+    }
+    val outerVerticalPadding = if (isFlushAtelier) 0.dp else 10.dp
 
     Box(
         modifier = modifier
             .fillMaxWidth()
+            .then(
+                if (isFlushAtelier) {
+                    Modifier.background(palette.glassStrong)
+                } else {
+                    Modifier
+                }
+            )
             .navigationBarsPadding(),
         contentAlignment = Alignment.BottomCenter
     ) {
-        // Clean Floating Dock without background curly shade
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 18.dp, vertical = 12.dp),
+                .widthIn(max = if (isFlushAtelier) 900.dp else 600.dp)
+                .padding(horizontal = outerHorizontalPadding, vertical = outerVerticalPadding),
             contentAlignment = Alignment.Center
         ) {
-            Row(
+            BoxWithConstraints(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(56.dp)
-                    .clip(RoundedCornerShape(50.dp))
-                    .background(if (palette.isDarkObsidian) Color(0xFF121316).copy(alpha = 0.96f) else Color.White.copy(alpha = 0.94f))
-                    .border(
-                        width = 1.dp,
-                        color = if (palette.isDarkObsidian) Color(0xFF23252A) else Color(0x99CBD5E1),
-                        shape = RoundedCornerShape(50.dp)
+                    .heightIn(min = 60.dp)
+                    .then(
+                        if (isFlushAtelier) {
+                            Modifier
+                                .background(palette.glassStrong)
+                                .border(
+                                    width = 1.dp,
+                                    color = palette.cardHairlineBorder,
+                                    shape = RoundedCornerShape(0.dp)
+                                )
+                        } else {
+                            Modifier
+                                .shadow(
+                                    elevation = if (palette.isDarkObsidian) 10.dp else 5.dp,
+                                    shape = RoundedCornerShape(dockCorner),
+                                    ambientColor = Color.Black.copy(alpha = if (palette.isDarkObsidian) 0.9f else 0.16f),
+                                    spotColor = palette.accentSky.copy(alpha = if (palette.isDarkObsidian) 0.28f else 0.14f)
+                                )
+                                .clip(RoundedCornerShape(dockCorner))
+                                .background(if (isEditorial) palette.glassStrong.copy(alpha = 0.95f) else palette.glassStrong)
+                                .border(
+                                    width = if (isTelemetryHud) 1.2.dp else (themeSpec.borderWidthTenths / 10f).dp,
+                                    color = if (isTelemetryHud) palette.accentSky.copy(alpha = 0.45f) else palette.cardHairlineBorder,
+                                    shape = RoundedCornerShape(dockCorner)
+                                )
+                        }
                     )
-                    .padding(horizontal = 6.dp, vertical = 5.dp)
-                    .testTag("bottom_navigation_dock"),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                    .padding(horizontal = if (isFlushAtelier) 10.dp else 6.dp, vertical = 6.dp)
+                    .testTag("bottom_navigation_dock")
             ) {
-                tabs.forEach { tab ->
-                    val isSelected = tab == selectedTab
-                    val pillShape = RoundedCornerShape(50.dp)
-                    val selectedBg = Color(0xFFD71921)
-                    val selectedText = Color.White
-                    val unselectedText = if (palette.isDarkObsidian) Color(0xFF767676) else Color(0xFF64748B)
+                val tabWidth = maxWidth / tabs.size
+                val isCompactTab = tabWidth < 104.dp || isEditorial || isFlushAtelier
+                val indicatorOffset by animateDpAsState(
+                    targetValue = tabWidth * selectedIndex,
+                    animationSpec = MotionTokens.liquidMorph(reducedMotion, springCfg),
+                    label = "dock_liquid_pill_offset"
+                )
+                val pillShape = RoundedCornerShape(pillCorner)
+
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    // Architectural sliding active indicator matched to ThemeLayoutArchetype
+                    Box(modifier = Modifier.matchParentSize()) {
+                        when (archetype) {
+                            ThemeLayoutArchetype.ATELIER_BENTO -> {
+                                // Razor-thin sliding architectural top accent rail
+                                Box(
+                                    modifier = Modifier
+                                        .offset(x = indicatorOffset)
+                                        .width(tabWidth)
+                                        .fillMaxHeight()
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .align(Alignment.TopCenter)
+                                            .width((tabWidth * 0.48f).coerceIn(24.dp, 68.dp))
+                                            .height(2.5.dp)
+                                            .clip(CircleShape)
+                                            .background(palette.accentSky)
+                                    )
+                                }
+                            }
+
+                            ThemeLayoutArchetype.TELEMETRY_HUD -> {
+                                // Beveled HUD highlight block with top avionics notch
+                                Box(
+                                    modifier = Modifier
+                                        .offset(x = indicatorOffset)
+                                        .width(tabWidth)
+                                        .fillMaxHeight()
+                                        .padding(horizontal = 2.dp)
+                                        .clip(pillShape)
+                                        .background(palette.glassTintedSky)
+                                        .border(1.dp, palette.accentSky, pillShape)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .align(Alignment.TopCenter)
+                                            .padding(top = 3.dp)
+                                            .width(18.dp)
+                                            .height(2.dp)
+                                            .background(palette.accentSkyBright)
+                                    )
+                                }
+                            }
+
+                            ThemeLayoutArchetype.EDITORIAL_MONOGRAPH -> {
+                                // Whisper-quiet editorial bottom dot indicator
+                                Box(
+                                    modifier = Modifier
+                                        .offset(x = indicatorOffset)
+                                        .width(tabWidth)
+                                        .fillMaxHeight()
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .align(Alignment.BottomCenter)
+                                            .padding(bottom = 2.dp)
+                                            .size(5.dp)
+                                            .clip(CircleShape)
+                                            .background(palette.accentSky)
+                                    )
+                                }
+                            }
+
+                            ThemeLayoutArchetype.KINETIC_DECK -> {
+                                // Elevated recessed titanium hardware keycap indicator
+                                Box(
+                                    modifier = Modifier
+                                        .offset(x = indicatorOffset)
+                                        .width(tabWidth)
+                                        .fillMaxHeight()
+                                        .padding(horizontal = 2.dp)
+                                        .clip(pillShape)
+                                        .background(palette.canvasTop)
+                                        .border(1.3.dp, palette.accentSky, pillShape)
+                                )
+                            }
+
+                            ThemeLayoutArchetype.IOS_LIQUID_LIGHT -> {
+                                // Apple iOS 26 Liquid Glass frosted sliding capsule indicator
+                                Box(
+                                    modifier = Modifier
+                                        .offset(x = indicatorOffset)
+                                        .width(tabWidth)
+                                        .fillMaxHeight()
+                                        .padding(horizontal = 3.dp, vertical = 2.dp)
+                                        .clip(CircleShape)
+                                        .background(
+                                            Brush.verticalGradient(
+                                                listOf(
+                                                    palette.accentSky.copy(alpha = 0.16f),
+                                                    palette.accentSky.copy(alpha = 0.09f)
+                                                )
+                                            )
+                                        )
+                                        .border(
+                                            width = 0.9.dp,
+                                            color = palette.accentSky.copy(alpha = 0.32f),
+                                            shape = CircleShape
+                                        )
+                                        .liquidSheenSweep(
+                                            enabled = true,
+                                            tint = Color.White,
+                                            maxAlpha = 0.35f,
+                                            durationMs = 2600
+                                        )
+                                )
+                            }
+
+                            ThemeLayoutArchetype.CLASSIC_PRISM -> {
+                                // Original Gliding Crimson Liquid Glass Pill
+                                Box(
+                                    modifier = Modifier
+                                        .offset(x = indicatorOffset)
+                                        .width(tabWidth)
+                                        .fillMaxHeight()
+                                        .padding(horizontal = 2.dp)
+                                        .clip(pillShape)
+                                        .background(
+                                            Brush.verticalGradient(
+                                                listOf(
+                                                    palette.accentSkyBright,
+                                                    palette.accentSky
+                                                )
+                                            )
+                                        )
+                                        .liquidSheenSweep(
+                                            enabled = true,
+                                            tint = Color.White,
+                                            maxAlpha = 0.20f,
+                                            durationMs = 2800
+                                        )
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .align(Alignment.BottomCenter)
+                                            .padding(bottom = 4.dp)
+                                            .width(24.dp)
+                                            .height(2.5.dp)
+                                            .clip(CircleShape)
+                                            .background(palette.onAccentInk.copy(alpha = 0.65f))
+                                    )
+                                }
+                            }
+                        }
+                    }
 
                     Row(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxHeight()
-                            .clip(pillShape)
-                            .background(if (isSelected) selectedBg else Color.Transparent)
-                            .selectable(
-                                selected = isSelected,
-                                onClick = { onSelectTab(tab) },
-                                role = Role.Tab
-                            )
-                            .testTag(tab.testTag),
+                        modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Icon(
-                            imageVector = if (isSelected) tab.selectedIcon else tab.unselectedIcon,
-                            contentDescription = stringResource(tab.labelRes),
-                            tint = if (isSelected) selectedText else unselectedText,
-                            modifier = Modifier.size(17.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = stringResource(tab.labelRes),
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 12.sp,
-                            color = if (isSelected) selectedText else unselectedText,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
+                        tabs.forEachIndexed { index, tab ->
+                            val isSelected = tab == selectedTab
+                            val interactionSource = remember(tab) { MutableInteractionSource() }
+                            val selectedFgColor = when (archetype) {
+                                ThemeLayoutArchetype.CLASSIC_PRISM -> palette.onAccentInk
+                                ThemeLayoutArchetype.IOS_LIQUID_LIGHT -> palette.accentSky
+                                ThemeLayoutArchetype.ATELIER_BENTO,
+                                ThemeLayoutArchetype.EDITORIAL_MONOGRAPH,
+                                ThemeLayoutArchetype.TELEMETRY_HUD,
+                                ThemeLayoutArchetype.KINETIC_DECK -> palette.accentSkyBright
+                            }
+                            val tabTextColor by animateColorAsState(
+                                targetValue = if (isSelected) selectedFgColor else palette.inkSecondary,
+                                animationSpec = spring(stiffness = 600f),
+                                label = "navText_${tab.name}"
+                            )
+                            val iconScale by animateFloatAsState(
+                                targetValue = if (isSelected && !reducedMotion) 1.12f else 1.0f,
+                                animationSpec = MotionTokens.tactilePress(reducedMotion, springCfg),
+                                label = "navIconScale_${tab.name}"
+                            )
+                            val rawLabel = stringResource(tab.labelRes)
+                            val displayLabel = if (isTelemetryHud) rawLabel.uppercase() else rawLabel
+                            val labelFont = when (archetype) {
+                                ThemeLayoutArchetype.TELEMETRY_HUD -> FontFamily.Monospace
+                                ThemeLayoutArchetype.EDITORIAL_MONOGRAPH -> FontFamily.Serif
+                                else -> FontFamily.Default
+                            }
+
+                            if (isCompactTab) {
+                                Column(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .heightIn(min = 48.dp)
+                                        .minimumInteractiveComponentSize()
+                                        .liquidPressScale(interactionSource, pressedScale = 0.94f)
+                                        .clip(pillShape)
+                                        .selectable(
+                                            selected = isSelected,
+                                            interactionSource = interactionSource,
+                                            indication = ripple(color = palette.accentSky),
+                                            onClick = { onSelectTab(tab) },
+                                            role = Role.Tab
+                                        )
+                                        .padding(vertical = 6.dp, horizontal = 4.dp)
+                                        .testTag(tab.testTag),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center
+                                ) {
+                                    Icon(
+                                        imageVector = if (isSelected) tab.selectedIcon else tab.unselectedIcon,
+                                        contentDescription = rawLabel,
+                                        tint = tabTextColor,
+                                        modifier = Modifier
+                                            .size(18.dp)
+                                            .scale(iconScale)
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = displayLabel,
+                                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = labelFont),
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                        fontSize = if (isTelemetryHud) 10.sp else 11.sp,
+                                        color = tabTextColor,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            } else {
+                                Row(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .heightIn(min = 48.dp)
+                                        .minimumInteractiveComponentSize()
+                                        .liquidPressScale(interactionSource, pressedScale = 0.94f)
+                                        .clip(pillShape)
+                                        .selectable(
+                                            selected = isSelected,
+                                            interactionSource = interactionSource,
+                                            indication = ripple(color = palette.accentSky),
+                                            onClick = { onSelectTab(tab) },
+                                            role = Role.Tab
+                                        )
+                                        .padding(horizontal = 6.dp, vertical = 10.dp)
+                                        .testTag(tab.testTag),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center
+                                ) {
+                                    Icon(
+                                        imageVector = if (isSelected) tab.selectedIcon else tab.unselectedIcon,
+                                        contentDescription = rawLabel,
+                                        tint = tabTextColor,
+                                        modifier = Modifier
+                                            .size(19.dp)
+                                            .scale(iconScale)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = displayLabel,
+                                        style = MaterialTheme.typography.labelLarge.copy(fontFamily = labelFont),
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                        fontSize = if (isTelemetryHud) 12.sp else 13.5.sp,
+                                        color = tabTextColor,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+
+                            if (index < tabs.lastIndex && !isSelected && index + 1 != selectedIndex && !isEditorial) {
+                                Box(
+                                    modifier = Modifier
+                                        .width(1.dp)
+                                        .height(18.dp)
+                                        .background(palette.cardHairlineBorder.copy(alpha = 0.65f))
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -180,8 +504,7 @@ fun LiquidMorphBottomDock(
 }
 
 /**
- * Compact Side-Rail navigation optimized for Android Split-Screen / Tablet multi-window mode
- * alongside a PDF reader or browser.
+ * Compact Side-Rail navigation optimized for Android Split-Screen / Tablet multi-window mode.
  */
 @Composable
 fun CompactSplitScreenSideRail(
@@ -208,18 +531,14 @@ fun CompactSplitScreenSideRail(
     ) {
         tabs.forEach { tab ->
             val isSelected = tab == selectedTab
-            val selectedBg = if (palette.isDarkObsidian) Color(0xFF0C2D48) else Color(0xFFE0F2FE)
+            val selectedBg = palette.accentSky
+            val selectedFg = palette.onAccentInk
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .minimumInteractiveComponentSize()
                     .clip(RoundedCornerShape(16.dp))
                     .background(if (isSelected) selectedBg else Color.Transparent)
-                    .border(
-                        width = if (isSelected) 1.2.dp else 0.dp,
-                        color = if (isSelected) palette.accentSky else Color.Transparent,
-                        shape = RoundedCornerShape(16.dp)
-                    )
                     .selectable(
                         selected = isSelected,
                         onClick = { onSelectTab(tab) },
@@ -232,7 +551,7 @@ fun CompactSplitScreenSideRail(
                 Icon(
                     imageVector = if (isSelected) tab.selectedIcon else tab.unselectedIcon,
                     contentDescription = stringResource(tab.labelRes),
-                    tint = if (isSelected) palette.accentSky else palette.inkSecondary,
+                    tint = if (isSelected) selectedFg else palette.inkMuted,
                     modifier = Modifier.size(22.dp)
                 )
                 Spacer(modifier = Modifier.height(4.dp))
@@ -240,7 +559,7 @@ fun CompactSplitScreenSideRail(
                     text = stringResource(tab.labelRes),
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.Bold,
-                    color = if (isSelected) palette.accentSky else palette.inkPrimary,
+                    color = if (isSelected) selectedFg else palette.inkPrimary,
                     maxLines = 1
                 )
             }
@@ -257,24 +576,40 @@ fun LivingPrimaryButton(
     testTag: String,
     modifier: Modifier = Modifier
 ) {
-    val gradientColors = if (isActiveState) {
-        listOf(Color(0xFFE11D48), Color(0xFFBE123C))
-    } else {
-        listOf(Color(0xFF0284C7), Color(0xFF1D4ED8))
-    }
+    val palette = LocalWhiteGlassPalette.current
+    val themeSpec = LocalPrismThemeSpec.current
+    val bgColor = if (isActiveState) palette.accentSkyBright else palette.accentSky
+    val fgColor = contrastOnColor(bgColor)
+    val btnRadius = PrismCurves.pillOrButtonCorner(themeSpec)
+    val interactionSource = remember { MutableInteractionSource() }
 
     Box(
         modifier = modifier
             .minimumInteractiveComponentSize()
-            .clip(RoundedCornerShape(16.dp))
-            .background(Brush.horizontalGradient(gradientColors))
+            .liquidPressScale(interactionSource, pressedScale = 0.955f)
+            .shadow(
+                elevation = 5.dp,
+                shape = RoundedCornerShape(btnRadius),
+                ambientColor = Color.Black.copy(alpha = 0.22f),
+                spotColor = bgColor.copy(alpha = 0.35f)
+            )
+            .clip(RoundedCornerShape(btnRadius))
+            .background(
+                Brush.horizontalGradient(
+                    listOf(
+                        bgColor,
+                        palette.accentSkyBright.copy(alpha = 0.94f)
+                    )
+                )
+            )
+            .liquidSheenSweep(enabled = true, tint = fgColor, maxAlpha = 0.22f, durationMs = 2600)
             .clickable(
-                indication = ripple(color = Color.White),
-                interactionSource = null,
+                indication = ripple(color = fgColor),
+                interactionSource = interactionSource,
                 role = Role.Button,
                 onClick = onClick
             )
-            .padding(horizontal = 20.dp, vertical = 14.dp)
+            .padding(horizontal = 18.dp, vertical = 12.dp)
             .testTag(testTag),
         contentAlignment = Alignment.Center
     ) {
@@ -286,16 +621,16 @@ fun LivingPrimaryButton(
                 Icon(
                     imageVector = icon,
                     contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(20.dp)
+                    tint = fgColor,
+                    modifier = Modifier.size(18.dp)
                 )
-                Spacer(modifier = Modifier.width(10.dp))
+                Spacer(modifier = Modifier.width(8.dp))
             }
             Text(
                 text = text,
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.Bold,
-                color = Color.White
+                color = fgColor
             )
         }
     }
@@ -312,32 +647,24 @@ fun LivingSecondaryButton(
     contentPadding: PaddingValues = PaddingValues(horizontal = 14.dp, vertical = 11.dp)
 ) {
     val palette = LocalWhiteGlassPalette.current
-    val bgColor = when {
-        selected && palette.isDarkObsidian -> Color(0xFF0C2D48)
-        selected -> Color(0xFFE0F2FE)
-        palette.isDarkObsidian -> Color(0xFF151F32)
-        else -> Color(0xFFF8FAFC)
-    }
-    val borderColor = when {
-        selected -> palette.accentSky
-        palette.isDarkObsidian -> Color(0xFF334155)
-        else -> Color(0xFFCBD5E1)
-    }
-    val textColor = when {
-        selected && palette.isDarkObsidian -> Color(0xFFE0F2FE)
-        selected -> Color(0xFF0C4A6E)
-        else -> palette.inkPrimary
-    }
+    val themeSpec = LocalPrismThemeSpec.current
+    val bgColor = if (selected) palette.glassTintedSky else palette.glassMedium
+    val borderColor = if (selected) palette.accentSky else palette.cardHairlineBorder
+    val textColor = palette.inkPrimary
+    val btnRadius = PrismCurves.rowCorner(themeSpec)
+    val borderW = (themeSpec.borderWidthTenths / 10f).dp
+    val interactionSource = remember { MutableInteractionSource() }
 
     Box(
         modifier = modifier
             .minimumInteractiveComponentSize()
-            .clip(RoundedCornerShape(14.dp))
+            .liquidPressScale(interactionSource, pressedScale = 0.96f)
+            .clip(RoundedCornerShape(btnRadius))
             .background(bgColor)
-            .border(1.2.dp, borderColor, RoundedCornerShape(14.dp))
+            .border(borderW, borderColor, RoundedCornerShape(btnRadius))
             .clickable(
                 indication = ripple(color = palette.accentSky),
-                interactionSource = null,
+                interactionSource = interactionSource,
                 role = Role.Button,
                 onClick = onClick
             )
@@ -353,7 +680,7 @@ fun LivingSecondaryButton(
                 Icon(
                     imageVector = icon,
                     contentDescription = null,
-                    tint = textColor,
+                    tint = if (selected) palette.accentSky else textColor,
                     modifier = Modifier.size(17.dp)
                 )
                 Spacer(modifier = Modifier.width(6.dp))
@@ -361,7 +688,7 @@ fun LivingSecondaryButton(
             Text(
                 text = text,
                 style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Bold,
+                fontWeight = FontWeight.SemiBold,
                 color = textColor,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
@@ -370,6 +697,9 @@ fun LivingSecondaryButton(
     }
 }
 
+/**
+ * Clean unslop settings switch row powered by active [LocalWhiteGlassPalette].
+ */
 @Composable
 fun LivingSwitchRow(
     title: String,
@@ -381,19 +711,32 @@ fun LivingSwitchRow(
     modifier: Modifier = Modifier
 ) {
     val palette = LocalWhiteGlassPalette.current
-    val idleCircleBg = if (palette.isDarkObsidian) Color(0xFF1E293B) else Color(0xFFE2E8F0)
+    val themeSpec = LocalPrismThemeSpec.current
+    val rowRadius = PrismCurves.rowCorner(themeSpec)
+    val iconRadius = PrismCurves.iconWellCorner(themeSpec)
+    val borderW = (themeSpec.borderWidthTenths / 10f).dp
+    val interactionSource = remember { MutableInteractionSource() }
 
     Row(
         modifier = modifier
             .fillMaxWidth()
             .minimumInteractiveComponentSize()
-            .clip(RoundedCornerShape(14.dp))
+            .liquidPressScale(interactionSource, pressedScale = 0.985f)
+            .clip(RoundedCornerShape(rowRadius))
+            .background(palette.glassStrong)
+            .border(
+                width = borderW,
+                color = if (checked) palette.accentSky.copy(alpha = 0.45f) else palette.cardHairlineBorder,
+                shape = RoundedCornerShape(rowRadius)
+            )
             .toggleable(
                 value = checked,
+                interactionSource = interactionSource,
+                indication = ripple(color = palette.accentSky),
                 role = Role.Switch,
                 onValueChange = onCheckedChange
             )
-            .padding(vertical = 8.dp, horizontal = 4.dp)
+            .padding(vertical = 12.dp, horizontal = 14.dp)
             .testTag(testTag),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -401,15 +744,20 @@ fun LivingSwitchRow(
             Box(
                 modifier = Modifier
                     .size(38.dp)
-                    .clip(CircleShape)
-                    .background(if (checked) palette.accentSkyContainer else idleCircleBg),
+                    .clip(RoundedCornerShape(iconRadius))
+                    .background(if (checked) palette.glassTintedSky else palette.glassMedium)
+                    .border(
+                        width = 1.dp,
+                        color = if (checked) palette.accentSky.copy(alpha = 0.5f) else palette.cardHairlineBorder,
+                        shape = RoundedCornerShape(iconRadius)
+                    ),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = icon,
                     contentDescription = null,
-                    tint = if (checked) palette.accentSky else palette.inkPrimary,
-                    modifier = Modifier.size(20.dp)
+                    tint = if (checked) palette.accentSky else palette.inkSecondary,
+                    modifier = Modifier.size(19.dp)
                 )
             }
             Spacer(modifier = Modifier.width(12.dp))
@@ -433,10 +781,10 @@ fun LivingSwitchRow(
             checked = checked,
             onCheckedChange = null,
             colors = SwitchDefaults.colors(
-                checkedThumbColor = Color.White,
+                checkedThumbColor = palette.onAccentInk,
                 checkedTrackColor = palette.accentSky,
-                uncheckedThumbColor = Color.White,
-                uncheckedTrackColor = if (palette.isDarkObsidian) Color(0xFF475569) else Color(0xFF94A3B8),
+                uncheckedThumbColor = palette.inkSecondary,
+                uncheckedTrackColor = palette.glassSubtle,
                 uncheckedBorderColor = Color.Transparent
             )
         )
@@ -455,28 +803,29 @@ fun LivingOptionChoiceCard(
     modifier: Modifier = Modifier
 ) {
     val palette = LocalWhiteGlassPalette.current
-    val borderColor = when {
-        selected -> palette.accentSky
-        palette.isDarkObsidian -> Color(0xFF334155)
-        else -> Color(0xFFCBD5E1)
-    }
-    val bgColor = when {
-        selected && palette.isDarkObsidian -> Color(0xFF0E2A47)
-        selected -> Color(0xFFEFF6FF)
-        palette.isDarkObsidian -> Color(0xFF141D2E)
-        else -> Color(0xFFF8FAFC)
-    }
-    val iconIdleBg = if (palette.isDarkObsidian) Color(0xFF1E293B) else Color(0xFFE2E8F0)
+    val themeSpec = LocalPrismThemeSpec.current
+    val cardRadius = PrismCurves.rowCorner(themeSpec)
+    val iconRadius = PrismCurves.iconWellCorner(themeSpec)
+    val borderColor = if (selected) palette.accentSky else palette.cardHairlineBorder
+    val bgColor = if (selected) palette.glassTintedSky else palette.glassStrong
+    val interactionSource = remember { MutableInteractionSource() }
 
     Row(
         modifier = modifier
             .fillMaxWidth()
             .minimumInteractiveComponentSize()
-            .clip(RoundedCornerShape(16.dp))
+            .liquidPressScale(interactionSource, pressedScale = 0.98f)
+            .clip(RoundedCornerShape(cardRadius))
             .background(bgColor)
-            .border(width = if (selected) 1.8.dp else 1.dp, color = borderColor, shape = RoundedCornerShape(16.dp))
+            .border(
+                width = if (selected) 1.5.dp else (themeSpec.borderWidthTenths / 10f).dp,
+                color = borderColor,
+                shape = RoundedCornerShape(cardRadius)
+            )
             .selectable(
                 selected = selected,
+                interactionSource = interactionSource,
+                indication = ripple(color = palette.accentSky),
                 onClick = onClick,
                 role = Role.RadioButton
             )
@@ -487,14 +836,19 @@ fun LivingOptionChoiceCard(
         Box(
             modifier = Modifier
                 .size(40.dp)
-                .clip(CircleShape)
-                .background(if (selected) palette.accentSky else iconIdleBg),
+                .clip(RoundedCornerShape(iconRadius))
+                .background(if (selected) palette.glassTintedSky else palette.glassMedium)
+                .border(
+                    1.dp,
+                    if (selected) palette.accentSky.copy(alpha = 0.55f) else palette.cardHairlineBorder,
+                    RoundedCornerShape(iconRadius)
+                ),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                tint = if (selected) Color.White else palette.inkPrimary,
+                tint = if (selected) palette.accentSky else palette.inkPrimary,
                 modifier = Modifier.size(20.dp)
             )
         }
@@ -508,30 +862,25 @@ fun LivingOptionChoiceCard(
                     text = title,
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
-                    color = palette.inkPrimary
+                    color = palette.inkPrimary,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
                 )
                 if (!badgeText.isNullOrBlank()) {
-                    val badgeBg = when {
-                        selected && palette.isDarkObsidian -> Color(0xFF0369A1)
-                        selected -> Color(0xFFBAE6FD)
-                        palette.isDarkObsidian -> Color(0xFF1E293B)
-                        else -> Color(0xFFE2E8F0)
-                    }
-                    val badgeFg = when {
-                        selected && palette.isDarkObsidian -> Color(0xFFE0F2FE)
-                        selected -> Color(0xFF0369A1)
-                        palette.isDarkObsidian -> Color(0xFF94A3B8)
-                        else -> Color(0xFF475569)
-                    }
+                    val badgeBg = if (selected) palette.accentSky else palette.glassSubtle
+                    val badgeFg = if (selected) palette.onAccentInk else palette.inkSecondary
                     Text(
                         text = badgeText,
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,
                         color = badgeFg,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                         modifier = Modifier
                             .clip(RoundedCornerShape(6.dp))
                             .background(badgeBg)
-                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                            .padding(horizontal = 7.dp, vertical = 2.dp)
                     )
                 }
             }
@@ -548,8 +897,8 @@ fun LivingOptionChoiceCard(
                 .size(20.dp)
                 .clip(CircleShape)
                 .border(
-                    width = if (selected) 6.dp else 2.dp,
-                    color = if (selected) palette.accentSky else Color(0xFF64748B),
+                    width = if (selected) 6.dp else 1.8.dp,
+                    color = if (selected) palette.accentSky else palette.inkMuted,
                     shape = CircleShape
                 )
         )

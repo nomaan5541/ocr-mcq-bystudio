@@ -1,6 +1,6 @@
 {
-  "name": "prism-ocr-solver",
-  "description": "prism-ocr-solver — On-device floating study assistant with Dynamic Island HUD, ML Kit OCR, and multi-model AI question analysis.",
+  "name": "Prism Solver",
+  "description": "Prism Solver — Floating study & Google Forms assistant that reads questions on your screen and shows instant answers.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

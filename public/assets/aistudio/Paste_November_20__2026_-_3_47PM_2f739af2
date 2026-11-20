@@ -1,0 +1,1036 @@
+Worked for 53s
+
+Now I understand what you actually want. I misunderstood your architecture in the previous master prompt. Please do not use that previous prompt.
+
+You do not want to eliminate Firebase, Cloudflare, DuckDuckGo, OCR, HTML search, or the other solving methods.
+
+You want to eliminate the fragmented architecture and combine all those methods into one intelligent F1 Racing Engine.
+
+I checked your uploaded source code again. Your project already contains much of this technology:
+
+* `PrismAiSolverEngine.kt` — Firebase Gemini and Cloudflare Workers AI.
+
+* `OnlineConsensusRaceEngine.kt` — parallel provider racing and answer consensus.
+
+* `CircleToSearchEngine.kt` — DuckDuckGo HTML, DuckDuckGo Instant Answer API, Wikipedia and AI-assisted answer matching.
+
+* `DirectVisionSolverEngine.kt` — image-based solving with Firebase and Cloudflare.
+
+* `GhostDomSolverEngine.kt` — direct app-text extraction.
+
+* `MultiProviderApiSolver.kt` — personal API provider failover.
+
+* `OcrEngine.kt` — ML Kit OCR.
+
+* `SmartFreeModelRouter.kt` — model selection.
+
+* `GoogleAuthManager.kt` — Google sign-in through Firebase Authentication.
+
+So the correct solution is not to delete these capabilities. It is to reorganize them into one coordinated system.
+
+### The architecture you are asking for
+
+Google Account Authentication
+
+Firebase Authentication · Google sign-in required
+
+F1 MASTER SOLVING ENGINE
+
+One unified orchestrator
+
+OCR · routing · provider racing · validation · failover
+
+Parallel and staggered provider competition
+
+Firebase Gemini
+
+Primary AI provider
+
+Cloudflare Workers
+
+Fast edge backup
+
+Online AI
+
+Zero-auth provider
+
+DuckDuckGo HTML
+
+Web facts and evidence
+
+Wikipedia / Instant API
+
+Search evidence
+
+Vision / Gemini Web
+
+Specialized fallback
+
+F1 Winner Selection
+
+Fastest valid answer · quality validation · optional consensus
+
+Prism Floating Pill
+
+Answer · explanation · actual response time
+
+One important technical distinction: OCR is the input-reading system, not an independent reasoning server. It should extract the question first. If every cloud provider fails, the system can escalate to image-based local processing or a website-assisted fallback, but OCR alone cannot guarantee a correct answer.
+
+Also, the F1 engine should distinguish between the fastest response and the first valid response. A server returning an empty or malformed answer must never win just because it replied first.
+
+### Corrected complete master prompt — Prism F1 Engine
+
+This is the prompt you should use instead of the previous reset prompt.
+
+# PRISM OCR SOLVER — F1 INTELLIGENT MULTI-PROVIDER RACING ENGINE
+## COMPLETE MASTER RE-ARCHITECTURE, PROVIDER COMPETITION, AUTOMATIC FAILOVER, GOOGLE ACCOUNT ACCESS AND PERFORMANCE OPTIMIZATION
+
+You are a principal Android architect, Kotlin engineer, distributed AI systems engineer, backend engineer, OCR specialist, networking specialist and performance optimization engineer.
+
+I am providing you with the complete existing source code of my application:
+
+PROJECT: PRISM OCR SOLVER
+
+I want you to completely redesign the internal solving architecture into ONE unified intelligent solving system called:
+
+# PRISM F1 MASTER ENGINE
+
+IMPORTANT: I do NOT want you to delete Firebase, Cloudflare, DuckDuckGo, OCR, HTML search, vision solving, Gemini integration, or other useful solving providers.
+
+I want all useful existing methods to become coordinated sub-engines inside one F1 Master Engine.
+
+The current application has too many fragmented solving paths, duplicated orchestrators, different retry mechanisms, overlapping fallbacks and inconsistent timeout behavior.
+
+I want one central engine that manages all available providers, lets healthy providers compete, measures their performance, selects the fastest valid result and automatically handles failures.
+
+The original application achieved approximately 3-second answers using its fast solving method. Restore that performance while preserving the existing capabilities.
+
+==================================================
+PART 1 — PRESERVE THE EXISTING APPLICATION
+==================================================
+
+Preserve:
+
+- Existing application package and identity.
+- MainActivity.
+- Main UI and all improved UI designs.
+- Floating Pill interface.
+- OverlayService.
+- ScreenCaptureManager.
+- Google ML Kit OCR.
+- OcrQualityValidator.
+- Google authentication.
+- LoginActivity.
+- Google Forms solver.
+- Gemini website login.
+- Local database and history.
+- Cloud history.
+- Cache systems.
+- Settings and DataStore.
+- Themes and customization.
+- Notifications.
+- App permissions.
+- Onboarding.
+- Existing navigation.
+- Existing user preferences.
+
+Do not rebuild the application from scratch.
+
+Rebuild the internal MCQ-solving orchestration and provider coordination.
+
+==================================================
+PART 2 — CREATE ONE F1 MASTER ENGINE
+==================================================
+
+Create one authoritative orchestrator:
+
+F1MasterEngine.kt
+
+This must become the only entry point for ordinary MCQ solving.
+
+The user must not need to choose between Firebase, Cloudflare, DuckDuckGo, OCR, or other individual technical providers.
+
+All providers must be coordinated internally.
+
+The F1 engine must handle:
+
+1. Question acquisition.
+2. OCR extraction.
+3. Question classification.
+4. Cache lookup.
+5. Provider selection.
+6. Parallel provider execution.
+7. Provider racing.
+8. Failure detection.
+9. Automatic fallback.
+10. Answer validation.
+11. Winner selection.
+12. Performance measurement.
+13. Result delivery.
+14. History persistence.
+
+Every ordinary MCQ-solving request must pass through F1MasterEngine.
+
+Do not allow OverlayService, MainViewModel or other components to independently start competing MCQ engines.
+
+==================================================
+PART 3 — PROVIDERS TO RETAIN AND INTEGRATE
+==================================================
+
+Inspect the existing project and integrate the following capabilities.
+
+A. FIREBASE GEMINI PROVIDER
+
+Existing file:
+PrismAiSolverEngine.kt
+
+Responsibilities:
+- Gemini Flash solving.
+- Flash-Lite solving where supported.
+- Structured MCQ responses.
+- Multimodal vision.
+- Firebase AI Logic integration.
+- Firebase App Check compatibility.
+- Model availability checks.
+- Quota and error detection.
+
+B. CLOUDFLARE WORKERS AI PROVIDER
+
+Existing file:
+PrismAiSolverEngine.kt
+
+Retain the existing Cloudflare worker integration.
+
+Inspect the existing worker endpoint and model configuration.
+
+Responsibilities:
+- Fast edge inference.
+- Independent fallback when Firebase fails.
+- Model selection based on actual availability.
+- HTTP error handling.
+- Cooldown management.
+- Latency measurement.
+
+Do not invent new Cloudflare endpoints or model names.
+
+C. ZERO-AUTH ONLINE AI PROVIDER
+
+Existing implementation:
+OnlineConsensusRaceEngine.kt
+
+Retain the existing supported online AI integration.
+
+Responsibilities:
+- Provide an alternative solving provider.
+- Participate in F1 provider competition when eligible.
+- Report latency and failure information.
+- Respect its actual availability and limitations.
+
+D. DUCKDUCKGO HTML SEARCH PROVIDER
+
+Existing file:
+CircleToSearchEngine.kt
+
+Preserve and integrate:
+
+- DuckDuckGo HTML search.
+- DuckDuckGo Instant Answer API.
+- Wikipedia Search API.
+- Search snippet extraction.
+- HTML parsing.
+- Question-to-evidence matching.
+
+Do not remove HTML search functionality.
+
+Use web search when the question requires external factual verification.
+
+Do not blindly treat a search snippet as a confirmed answer.
+
+E. DIRECT VISION PROVIDER
+
+Existing file:
+DirectVisionSolverEngine.kt
+
+Preserve:
+- Image-based question extraction.
+- Screenshot crop.
+- Diagram interpretation.
+- Mathematical question handling.
+- Firebase multimodal integration.
+- Cloudflare fallback where supported.
+
+F. OCR PROVIDER
+
+Existing files:
+OcrEngine.kt
+OcrQualityValidator.kt
+
+Preserve Google ML Kit.
+
+OCR is the primary input extraction mechanism, not a reasoning server.
+
+Responsibilities:
+- Extract question text.
+- Extract answer choices.
+- Preserve mathematical notation.
+- Preserve spatial relationships.
+- Detect poor extraction.
+- Supply structured text to the providers.
+
+When all cloud reasoning providers fail, escalate to image-based vision or a supported Gemini website fallback.
+
+Never claim that OCR alone can generate an intelligent answer without a reasoning engine.
+
+G. GHOST DOM PROVIDER
+
+Existing file:
+GhostDomSolverEngine.kt
+
+Retain supported direct-text extraction for compatible applications.
+
+Use OCR as a fallback if direct text extraction is unavailable.
+
+Respect Android permission boundaries and application restrictions.
+
+H. PERSONAL API PROVIDERS
+
+Existing file:
+MultiProviderApiSolver.kt
+
+Preserve supported personal API key integrations.
+
+Allow these providers to participate when the user has configured valid credentials and enabled them.
+
+Do not require personal API keys for the normal default experience.
+
+I. GEMINI WEBSITE PROVIDER
+
+Preserve the existing Gemini WebView integration.
+
+Also support the external browser method.
+
+WebView and external browser must be independent fallback adapters.
+
+Respect website authentication, security controls and supported automation capabilities.
+
+If automated answer retrieval is unavailable, offer user-assisted submission and answer copying.
+
+==================================================
+PART 4 — F1 PROVIDER RACING SYSTEM
+==================================================
+
+This is the core feature.
+
+I want the F1 engine to operate like a competition between available solving providers.
+
+For each MCQ, eligible providers compete to return a valid answer.
+
+The engine must measure which providers are currently fastest and most reliable.
+
+Use an adaptive racing strategy.
+
+FAST MODE:
+
+- Start the healthiest and fastest eligible providers together.
+- Use staggered hedging where appropriate.
+- Do not wait for one slow provider before starting a backup if historical performance or current errors justify launching it.
+- Accept the first properly validated answer.
+- Cancel unnecessary outstanding work after a winner is selected, where cancellation is safe.
+
+IMPORTANT:
+Do not blindly launch every possible provider on every question.
+
+Choose providers according to:
+- Recent latency.
+- Success rate.
+- Error rate.
+- Rate limits.
+- Cooldown status.
+- Question type.
+- Model capability.
+- Current network conditions.
+- User configuration.
+
+Use a short adaptive launch delay for backup providers.
+
+Example:
+
+T = 0 ms:
+Start the fastest healthy primary provider.
+
+T = 500–900 ms:
+If no useful response is available, start the next eligible provider.
+
+Additional providers:
+Launch when necessary according to the request deadline and health data.
+
+If the primary provider fails immediately, launch the next provider immediately.
+
+Do not let one failing provider block the others.
+
+==================================================
+PART 5 — F1 WINNER SELECTION
+==================================================
+
+The winner must be the first VALID answer, not simply the first HTTP response.
+
+Create a common AnswerCandidate model:
+
+- requestId
+- providerName
+- modelName
+- selectedOption
+- optionText
+- explanation
+- confidence
+- latencyMs
+- responseStatus
+- validationStatus
+
+Validate each candidate against the original question and options.
+
+Reject:
+- Empty answers.
+- Invalid option letters.
+- Malformed responses.
+- Responses that do not match available options.
+- Stale request results.
+- Unparseable outputs.
+
+FAST MODE:
+
+The first valid candidate wins.
+
+Cancel unnecessary outstanding provider jobs.
+
+Do not wait for every provider to finish.
+
+ACCURACY MODE:
+
+Allow multiple independent answers to be compared.
+
+Use consensus when the additional verification is justified.
+
+Do not delay every ordinary MCQ for consensus.
+
+If two reliable providers disagree, optionally trigger one bounded verification request.
+
+Do not silently present an uncertain answer as guaranteed correct.
+
+==================================================
+PART 6 — FAILURE AND AUTOMATIC FALLBACK
+==================================================
+
+Implement intelligent failover.
+
+Scenario A:
+Firebase responds successfully.
+
+Action:
+Validate the answer and return it.
+
+Scenario B:
+Firebase fails.
+
+Action:
+Cloudflare and other healthy providers continue or start immediately.
+
+Scenario C:
+Firebase and Cloudflare both fail.
+
+Action:
+Activate the next eligible online AI provider.
+
+Scenario D:
+AI providers return unusable answers.
+
+Action:
+Use DuckDuckGo HTML/Instant API and Wikipedia evidence when appropriate, then use an available reasoning provider to evaluate that evidence.
+
+Scenario E:
+Text-based reasoning providers fail.
+
+Action:
+Escalate to Direct Vision using the original screenshot or cropped image.
+
+Scenario F:
+OCR extraction is poor.
+
+Action:
+Use the visual question extraction path and recover the question from the image.
+
+Scenario G:
+All server and supported online providers fail.
+
+Action:
+Use Gemini WebView as the website fallback where available.
+
+If WebView cannot provide an automated result, allow manual interaction.
+
+The external browser must also be available as a user-selected alternative.
+
+Do not start endless retry loops.
+
+Do not repeat the same failed provider indefinitely.
+
+Do not report an answer when no valid answer exists.
+
+==================================================
+PART 7 — ADAPTIVE PROVIDER INTELLIGENCE
+==================================================
+
+Create:
+
+F1ProviderHealthManager.kt
+
+Track the performance of every provider.
+
+Maintain:
+
+- Average latency.
+- Recent latency.
+- Success percentage.
+- Failure count.
+- Timeout count.
+- Quota failures.
+- Last successful request.
+- Cooldown expiration.
+- Current availability.
+
+Use a rolling history rather than a single measurement.
+
+A provider that repeatedly returns errors must temporarily lose priority.
+
+A recovered provider should become eligible again after its cooldown.
+
+Use separate cooldowns for:
+- Authentication errors.
+- Quota errors.
+- Transient network errors.
+- Server errors.
+- Model availability errors.
+
+Never permanently disable a provider because of one failure.
+
+Persist appropriate performance statistics locally.
+
+Do not upload unnecessary personal data.
+
+==================================================
+PART 8 — QUESTION-AWARE ROUTING
+==================================================
+
+Create intelligent question classification.
+
+Categories:
+
+1. Simple factual MCQ.
+2. General knowledge.
+3. Science.
+4. Mathematics.
+5. Complex reasoning.
+6. Match-the-following.
+7. Diagram-based question.
+8. Image-based question.
+9. Long question.
+10. True/False.
+11. Multiple-select question.
+
+Routing examples:
+
+Simple MCQ:
+Prefer historically fast text providers.
+
+Mathematical MCQ:
+Prefer vision-capable providers if OCR confidence is low or symbols are ambiguous.
+
+Diagram-based MCQ:
+Prefer Direct Vision and multimodal providers.
+
+Current factual question:
+Use DuckDuckGo and other appropriate evidence sources.
+
+Match-the-following:
+Preserve spatial structure and validate the complete mapping.
+
+The classification step must remain lightweight.
+
+Do not add a separate AI classification request for every question.
+
+==================================================
+PART 9 — OCR AND VISION RECOVERY
+==================================================
+
+Keep ML Kit OCR as the default.
+
+Implement a shared question extraction pipeline:
+
+Screen Capture
+→ Accessibility Text if supported
+→ ML Kit OCR
+→ OCR Quality Validation
+→ Structured Question
+→ Cache Lookup
+→ F1 Provider Racing
+
+When OCR quality is poor:
+
+- Use existing question-region detection.
+- Crop the relevant screen region.
+- Preserve the original screenshot.
+- Use supported multimodal vision.
+- Compare extracted question text with the original image.
+
+Do not perform unnecessary repeated OCR.
+
+Do not send full screenshots when extracted text is sufficient.
+
+==================================================
+PART 10 — DUCKDUCKGO AND HTML SEARCH
+==================================================
+
+Preserve CircleToSearchEngine functionality.
+
+Create a unified search provider interface.
+
+Support:
+- DuckDuckGo HTML.
+- DuckDuckGo Instant Answer API.
+- Wikipedia Search API.
+
+Requirements:
+- Reuse HTTP clients.
+- Parse HTML safely.
+- Handle HTML entity decoding.
+- Handle missing snippets.
+- Handle rate limits.
+- Handle unavailable search services.
+- Deduplicate results.
+- Apply short timeouts.
+- Do not let search delay a simple MCQ unnecessarily.
+
+Search is an evidence provider, not an answer oracle.
+
+When factual evidence is useful, pass the relevant evidence to a reasoning provider.
+
+==================================================
+PART 11 — GOOGLE ACCOUNT ACCESS CONTROL
+==================================================
+
+IMPORTANT PRODUCT REQUIREMENT:
+
+The F1 Master Engine should only be accessible to authenticated Google sign-in customers.
+
+Existing file:
+GoogleAuthManager.kt
+
+Existing Firebase Authentication integration must be preserved.
+
+Implement an authentication gate:
+
+1. User opens Prism.
+2. App checks Firebase Authentication state.
+3. If no authenticated Google account exists, show Google sign-in.
+4. After successful Google sign-in, verify the Firebase authenticated user.
+5. Initialize F1 Master Engine.
+6. Allow solving operations.
+7. If the user signs out, stop new solving requests and protect account-specific data.
+
+Do not rely only on hiding buttons in the UI.
+
+The backend must verify Firebase ID tokens for protected server operations.
+
+Use Firebase App Check where configured.
+
+Do not trust a user ID supplied by the client without authentication.
+
+Keep user-specific cache and history separated by account.
+
+Do not store Google passwords.
+
+Do not expose API secrets inside the APK.
+
+Do not break existing account login or session persistence.
+
+==================================================
+PART 12 — GEMINI WEBVIEW AND EXTERNAL BROWSER
+==================================================
+
+Retain both methods as website fallbacks.
+
+WEBVIEW:
+- Reuse the existing supported login flow.
+- Preserve session where supported.
+- Open the Gemini website.
+- Prepare the extracted question.
+- Support manual submission.
+- Retrieve answers only through a supported integration.
+- Add a clear return-to-Prism action.
+
+EXTERNAL BROWSER:
+- Use Android Custom Tabs or ACTION_VIEW.
+- Support Chrome and default browser.
+- Prepare clipboard-ready MCQ text.
+- Open Gemini.
+- Allow the user to submit the question.
+- Allow answer copying and returning to Prism.
+
+Do not extract browser cookies or passwords.
+
+Do not bypass authentication or anti-automation controls.
+
+Do not promise automatic website answer retrieval if the website does not support it.
+
+==================================================
+PART 13 — F1 TIMEOUT MANAGEMENT
+==================================================
+
+Create one global request deadline.
+
+Recommended starting configuration:
+
+- OCR: measured separately.
+- API fast target: approximately 3 seconds.
+- Primary API request deadline: approximately 5 seconds.
+- Complete online race deadline: approximately 8 seconds.
+- Vision escalation: bounded by the remaining deadline.
+- Website automated fallback: maximum 15 seconds.
+
+These values must be configurable and tested.
+
+Do not add individual timeouts together without respecting the overall deadline.
+
+When a valid answer arrives:
+- Mark the winner.
+- Cancel unnecessary jobs.
+- Record the provider result.
+- Deliver the answer.
+
+When the deadline expires:
+- Return a clear failure state.
+- Offer the next supported recovery method.
+- Never leave the floating overlay processing indefinitely.
+
+==================================================
+PART 14 — GOOGLE FORMS
+==================================================
+
+Preserve GoogleFormsSolverEngine.kt and GeminiWebBatchBridge.kt.
+
+Do not force batch Google Forms solving to behave exactly like single MCQ solving.
+
+Create an appropriate batch adapter that can reuse:
+
+- F1 provider health data.
+- Firebase provider.
+- Cloudflare provider.
+- Search providers where useful.
+- Answer parsing.
+- Validation.
+- Authentication.
+- Performance tracking.
+
+Preserve:
+- Question numbering.
+- Batch processing.
+- Duplicate question handling.
+- Existing form interaction.
+- Answer mapping.
+- Submission workflow where permitted.
+
+Do not break existing Google Forms functionality.
+
+==================================================
+PART 15 — PERFORMANCE AND DIAGNOSTICS
+==================================================
+
+Create:
+
+F1PerformanceMonitor.kt
+
+Record the actual timings of:
+
+- Screen capture.
+- OCR.
+- Cache lookup.
+- Question classification.
+- Provider launch.
+- Firebase latency.
+- Cloudflare latency.
+- Online AI latency.
+- Search latency.
+- Vision latency.
+- Answer validation.
+- Total response time.
+
+Provide an internal F1 diagnostics screen.
+
+Example:
+
+F1 RACE RESULTS
+
+Firebase Gemini: 2,840 ms — SUCCESS
+Cloudflare: 1,920 ms — SUCCESS
+Online AI: 4,200 ms — SUCCESS
+DuckDuckGo: 1,100 ms — EVIDENCE
+OCR: 180 ms — SUCCESS
+
+WINNER: Cloudflare
+TOTAL TIME: 1,920 ms
+
+These are illustrative values only. Always display actual measurements.
+
+Do not display fake speed claims.
+
+==================================================
+PART 16 — CACHE INTELLIGENCE
+==================================================
+
+Preserve:
+- SolveResultCache.kt
+- PersistentQuizCacheManager.kt
+- Room cache.
+
+Implement a unified cache lookup before provider racing.
+
+Cache keys should use normalized question text and option content.
+
+For image-heavy questions, use an appropriate visual fingerprint where supported.
+
+Do not return a cached answer when:
+- Options have changed.
+- The question has materially changed.
+- The cache entry is invalid.
+- The question requires current factual information and the cache is stale.
+
+Record cache hits separately from network provider wins.
+
+==================================================
+PART 17 — IMPLEMENTATION AND CODE CLEANUP
+==================================================
+
+The following existing files must be audited and migrated:
+
+- PrismAiSolverEngine.kt
+- OnlineConsensusRaceEngine.kt
+- CircleToSearchEngine.kt
+- DirectVisionSolverEngine.kt
+- GhostDomSolverEngine.kt
+- MultiProviderApiSolver.kt
+- SmartFreeModelRouter.kt
+- OverlaySolveOrchestrator.kt
+- OverlayService.kt
+- GeminiVisionClient.kt
+- OcrEngine.kt
+- OcrQualityValidator.kt
+- GoogleAuthManager.kt
+- GoogleFormsSolverEngine.kt
+- GeminiWebBatchBridge.kt
+
+You may consolidate duplicated code and remove obsolete orchestration logic.
+
+However, preserve the actual provider implementations and useful capabilities.
+
+Do not delete Firebase or Cloudflare just because they are separate files.
+
+Do not delete DuckDuckGo HTML search.
+
+Do not delete OCR.
+
+Do not delete vision.
+
+Do not delete personal API providers.
+
+Do not delete Google Forms functionality.
+
+The goal is to remove fragmented control logic, not the solving capabilities.
+
+All ordinary MCQ solving must route through F1MasterEngine.
+
+==================================================
+PART 18 — TESTING
+==================================================
+
+Test the following scenarios:
+
+1. Firebase wins the race.
+2. Cloudflare wins the race.
+3. Online AI wins the race.
+4. Firebase fails and Cloudflare succeeds.
+5. Cloudflare fails and Firebase succeeds.
+6. Firebase and Cloudflare both fail.
+7. DuckDuckGo returns useful evidence.
+8. DuckDuckGo returns no useful results.
+9. All text AI providers fail.
+10. Direct Vision succeeds.
+11. OCR confidence is low.
+12. Repeated question hits cache.
+13. Google account is signed out.
+14. Google account is authenticated.
+15. Firebase authentication token expires.
+16. Website fallback opens.
+17. WebView session expires.
+18. External browser is unavailable.
+19. User starts a second question while the first is running.
+20. Network disconnects during the race.
+21. Two providers return different answers.
+22. Malformed provider response.
+23. Google Forms batch solving.
+24. Overlay lifecycle interruption.
+
+Verify that:
+- Only one result is committed per request.
+- The fastest valid result wins in Fast mode.
+- Consensus mode can compare results.
+- Failed providers do not block healthy providers.
+- No stale answers appear.
+- All requests are bounded by deadlines.
+
+==================================================
+PART 19 — REQUIRED DEVELOPMENT PROCESS
+==================================================
+
+STAGE 1:
+Audit every existing provider and identify its real responsibilities.
+
+STAGE 2:
+Create a complete dependency graph.
+
+STAGE 3:
+Identify duplicated orchestration, retries and timeout logic.
+
+STAGE 4:
+Design F1MasterEngine and shared provider interfaces.
+
+STAGE 5:
+Migrate Firebase, Cloudflare, search, vision and OCR into the unified engine.
+
+STAGE 6:
+Implement adaptive provider racing.
+
+STAGE 7:
+Implement winner validation and automatic cancellation.
+
+STAGE 8:
+Implement Google account access control.
+
+STAGE 9:
+Integrate website fallbacks.
+
+STAGE 10:
+Preserve Google Forms and all unrelated application features.
+
+STAGE 11:
+Run tests and build the application.
+
+Do not perform destructive changes before completing the dependency audit.
+
+==================================================
+PART 20 — FINAL DELIVERABLES
+==================================================
+
+Provide:
+
+1. Complete F1 Master Engine source code.
+2. Provider interface and implementations.
+3. Provider racing algorithm.
+4. Adaptive health manager.
+5. Winner validation logic.
+6. Google authentication gate.
+7. OCR and vision integration.
+8. DuckDuckGo HTML and API integration.
+9. WebView and external browser fallback.
+10. Google Forms compatibility.
+11. Modified file list.
+12. Removed obsolete orchestration file list.
+13. Dependency migration report.
+14. Performance benchmark results.
+15. Unit and integration test results.
+16. APK build result.
+17. Remaining limitations.
+
+Never claim that a test passed unless it was actually executed.
+
+Never claim 3-second performance without real benchmark evidence.
+
+FINAL PRODUCT VISION:
+
+PRISM F1 MASTER ENGINE
+
+One intelligent engine.
+Multiple AI providers.
+Real-time performance competition.
+Adaptive provider selection.
+Automatic failure recovery.
+OCR and vision escalation.
+HTML search evidence.
+Google account authentication.
+One validated winning answer.
+
+The customer should experience ONE solving engine, while F1 internally coordinates all the available solving technologies.
+
+Do not destroy existing capabilities.
+
+Unify them, optimize them, and make them work together.
+
+BEGIN WITH THE COMPLETE SOURCE CODE AUDIT.
+
+### Three critical design decisions
+
+I want AI Studio to follow these three rules particularly carefully:
+
+1\. First valid answer wins in Fast mode.
+
+Firebase, Cloudflare and other suitable providers compete. If Cloudflare returns a valid answer in 2 seconds while Firebase takes 6 seconds, Cloudflare wins. You don't wait for Firebase.
+
+2\. OCR is not deleted or treated as a server.
+
+OCR reads the question. Vision handles difficult images. AI providers reason about the question. Search engines provide supporting evidence. F1 coordinates all of them.
+
+3\. Google sign-in is the access gate.
+
+Only authenticated Google-account customers can access F1 solving. This must be enforced through Firebase Authentication and appropriate backend verification, not merely by hiding the solving button.
+
+### What the final customer sees
+
+The customer doesn't need to know about all the internal providers.
+
+### PRISM F1
+
+Smart Auto
+
+Unified intelligent solving engine
+
+Question processing
+
+Complete
+
+OCR extracted · Question validated
+
+F1 provider competition
+
+Providers selected automatically based on health and question type.
+
+Firebase
+
+Competing
+
+Cloudflare
+
+Competing
+
+Online search
+
+As needed
+
+Example result
+
+Answer: B
+
+### 2.1 sec
+
+Example only — actual winning provider and latency will be measured.
+
+One final recommendation: Keep the provider race adaptive. Don't send every question to every provider simultaneously. That can exhaust quotas, increase costs, and make the system slower under load. F1 should learn which providers are healthy and launch only the appropriate competitors.
+
+That is the architecture I would build for Prism: not one AI model, but one intelligent engine coordinating all your existing AI, OCR and search capabilities.

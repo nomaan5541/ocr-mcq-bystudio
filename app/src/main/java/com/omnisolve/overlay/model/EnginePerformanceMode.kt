@@ -21,28 +21,28 @@ enum class EnginePerformanceMode(
 ) {
     EASY_RAM(
         id = "EASY_RAM",
-        title = "Easy Mode (Low RAM)",
-        subtitle = "Lightweight fast capture & single-pass OCR. Uses minimal memory (~35MB RAM). Recommended for low-spec devices.",
+        title = "Battery & Memory Saver",
+        subtitle = "Lighter screen reading for older phones. Uses minimal memory (~35MB RAM).",
         ramBadge = "Low RAM (~35MB)",
-        accuracyBadge = "Fast (94%)",
+        accuracyBadge = "Fast",
         captureScale = 0.65f,
         dualVerify = false
     ),
     NORMAL(
         id = "NORMAL",
-        title = "Normal Engine",
-        subtitle = "Standard balanced processing with optimized OCR and smart caching. Ideal for everyday study.",
+        title = "Balanced (Recommended)",
+        subtitle = "Best mix of speed and accuracy for everyday quizzes and study.",
         ramBadge = "Balanced (~65MB)",
-        accuracyBadge = "Standard (98%)",
+        accuracyBadge = "Standard",
         captureScale = 1.0f,
         dualVerify = false
     ),
     HIGH_ACCURACY(
         id = "HIGH_ACCURACY",
-        title = "High Accuracy (Turbo)",
-        subtitle = "Full native resolution + contrast filter + multi-pass AI verification for complex questions & diagrams.",
+        title = "Extra Accuracy",
+        subtitle = "Sharper image reading and double-checked answers for tricky math and diagrams.",
         ramBadge = "High RAM (~110MB)",
-        accuracyBadge = "Turbo (99.8%)",
+        accuracyBadge = "Best Accuracy",
         captureScale = 1.0f,
         dualVerify = true
     );

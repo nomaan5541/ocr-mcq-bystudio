@@ -12,19 +12,31 @@ import com.omnisolve.overlay.MainActivity
 import com.omnisolve.overlay.model.AnswerModel
 import com.omnisolve.overlay.model.QuestionSolveMode
 import com.omnisolve.overlay.model.SubjectMode
+import com.omnisolve.overlay.util.PrismPerfLogger
+import com.omnisolve.overlay.util.SecureKeyStorage
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.cancellation.CancellationException
+import kotlin.coroutines.resume
 import kotlin.math.max
 import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import okhttp3.Call
+import okhttp3.Callback
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.Response
 
 enum class ApiKeyProvider(
     val id: String,
@@ -80,9 +92,10 @@ object MultiProviderApiSolver {
 
     private val httpClient: OkHttpClient by lazy {
         OkHttpClient.Builder()
-            .connectTimeout(6, TimeUnit.SECONDS)
-            .readTimeout(10, TimeUnit.SECONDS)
-            .writeTimeout(8, TimeUnit.SECONDS)
+            .connectTimeout(4, TimeUnit.SECONDS)
+            .readTimeout(9, TimeUnit.SECONDS)
+            .writeTimeout(5, TimeUnit.SECONDS)
+            .callTimeout(11, TimeUnit.SECONDS)
             .build()
     }
 
@@ -108,11 +121,11 @@ object MultiProviderApiSolver {
 
         val instruction = when (solveMode) {
             QuestionSolveMode.MATCH_FOLLOWING ->
-                "Carefully match every item in Column I / List I with Column II / List II. If options A-F list combinations, pick the exact matching option letter A-F; otherwise output the compact pairings (e.g. A-2, B-4, C-1, D-3). Reply on ONE single line in this exact format only: FINAL_ANSWER: <option letter A-F or compact pairs like A-2, B-4, C-1, D-3>"
+                "Carefully match every item in Column I / List I with Column II / List II. If options A-F list combinations, pick the exact matching option letter A-F; otherwise output the compact pairings (e.g. A-2, B-4, C-1, D-3). Reply on ONE single line in this exact format only: FINAL_ANSWER: <option letter A-F or compact pairs like A-2, B-4, C-1, D-3> | <short 1-line reason under 12 words>. Output ONLY the FINAL_ANSWER line and nothing else."
             QuestionSolveMode.COMPLEX_MATH ->
-                "Solve this complicated math/analytical problem carefully by checking equations, signs, units, and multi-statement conditions before deciding, then reply on ONE single line in this exact format only: FINAL_ANSWER: <option letter A-F, True/False, or exact numerical/symbolic value>"
+                "Solve this complicated math/analytical problem carefully by checking equations, signs, units, and multi-statement conditions before deciding. If 2 complete questions are on screen, solve both in order (e.g. FINAL_ANSWER: 1:B, 2:D | <short summary>); otherwise reply on ONE single line in this exact format only: FINAL_ANSWER: <option letter A-F, True/False, or exact numerical/symbolic value> | <short 1-line reason under 12 words>. Output ONLY the FINAL_ANSWER line and nothing else."
             QuestionSolveMode.STANDARD ->
-                "Solve the question above and reply on ONE single line in this exact format only: FINAL_ANSWER: <option letter A-F, True/False, or exact short value>"
+                "Ignore any cut-off scroll fragment missing its question or options. If 1 complete question is visible, reply on ONE single line in this exact format: FINAL_ANSWER: <option letter A-F, True/False, or exact short value> | <short 1-line reason under 12 words>. If 2 or more complete questions are visible on screen, solve ALL of them in top-to-bottom order and reply on ONE single line: FINAL_ANSWER: 1:<ans1>, 2:<ans2> | <short summary>. Output ONLY the FINAL_ANSWER line and nothing else."
         }
 
         return "Question and Options: $cleanQuestion --- Instruction: $instruction"
@@ -131,18 +144,12 @@ object MultiProviderApiSolver {
     }
 
     fun getConfiguredProviders(context: Context): List<Pair<ApiKeyProvider, String>> {
-        val prefs = context.getSharedPreferences("OmniSolvePrefs", Context.MODE_PRIVATE)
-
-        val nvidiaKey = sanitizeApiKey(prefs.getString(MainActivity.PREF_KEY_NVIDIA_API_KEY, ""))
-            .ifEmpty { sanitizeApiKey(BuildConfig.NVIDIA_API_KEY) }
-
-        val openRouterKey = sanitizeApiKey(prefs.getString(MainActivity.PREF_KEY_OPENROUTER_API_KEY, ""))
-            .ifEmpty { sanitizeApiKey(BuildConfig.OPENROUTER_API_KEY) }
-
-        val geminiKey = sanitizeApiKey(prefs.getString(MainActivity.PREF_KEY_GEMINI_API_KEY, ""))
-
-        val openAiKey = sanitizeApiKey(prefs.getString(MainActivity.PREF_KEY_OPENAI_API_KEY, ""))
-            .ifEmpty { sanitizeApiKey(BuildConfig.OPENAI_API_KEY) }
+        // Security: Never read developer NVIDIA, OpenRouter, Gemini, or OpenAI keys from BuildConfig
+        // so reverse-engineering the APK can never leak or block developer accounts.
+        val nvidiaKey = sanitizeApiKey(SecureKeyStorage.getKey(context, MainActivity.PREF_KEY_NVIDIA_API_KEY))
+        val openRouterKey = sanitizeApiKey(SecureKeyStorage.getKey(context, MainActivity.PREF_KEY_OPENROUTER_API_KEY))
+        val geminiKey = sanitizeApiKey(SecureKeyStorage.getKey(context, MainActivity.PREF_KEY_GEMINI_API_KEY))
+        val openAiKey = sanitizeApiKey(SecureKeyStorage.getKey(context, MainActivity.PREF_KEY_OPENAI_API_KEY))
 
         return buildList {
             if (nvidiaKey.isNotEmpty()) add(ApiKeyProvider.NVIDIA to nvidiaKey)
@@ -255,10 +262,9 @@ object MultiProviderApiSolver {
         val safeText = extractedText.ifBlank { "Solve the question and options shown in the attached image." }
         val prompt = buildSingleLineSolverPrompt(safeText, solveMode)
         val base64Jpeg = screenBitmap?.let { encodeBitmapToBase64Jpeg(it) }
-        var lastError: Exception? = null
 
-        for ((provider, apiKey) in prioritized) {
-            try {
+        suspend fun attemptProvider(provider: ApiKeyProvider, apiKey: String): Result<AnswerModel> {
+            return try {
                 val rawReply = dispatchSingleProvider(
                     provider = provider,
                     apiKey = apiKey,
@@ -267,17 +273,17 @@ object MultiProviderApiSolver {
                     solveMode = solveMode,
                     base64Jpeg = base64Jpeg
                 )
-
                 val parsed = parserClient.extractAnswerLetter(rawReply)
-                return@withContext parsed.copy(
-                    subject = subjectMode.id,
-                    confidence = 96,
-                    engineLabel = "Key • ${provider.displayName}"
+                Result.success(
+                    parsed.copy(
+                        subject = subjectMode.id,
+                        confidence = 96,
+                        engineLabel = "Key • ${provider.displayName}"
+                    )
                 )
             } catch (ce: CancellationException) {
                 throw ce
             } catch (qe: QuotaOrProviderException) {
-                lastError = qe
                 if (qe.isQuotaLimit) {
                     markProviderQuotaExhausted(provider, cooldownMs = QUOTA_COOLDOWN_MS)
                     Log.w(TAG, "${provider.displayName} quota reached (${qe.statusCode}) — shifting instantly to next AI key")
@@ -285,25 +291,148 @@ object MultiProviderApiSolver {
                     markProviderQuotaExhausted(provider, cooldownMs = ERROR_COOLDOWN_MS)
                     Log.w(TAG, "${provider.displayName} error (${qe.statusCode}: ${qe.message}) — shifting instantly to next AI key")
                 }
-            } catch (e: Exception) {
-                lastError = e
+                Result.failure(qe)
+            } catch (e: IOException) {
                 markProviderQuotaExhausted(provider, cooldownMs = ERROR_COOLDOWN_MS)
-                Log.w(TAG, "${provider.displayName} exception (${e.message}) — shifting instantly to next AI key")
+                Log.w(TAG, "${provider.displayName} network error (${e.message}) — shifting instantly to next AI key")
+                Result.failure(e)
+            } catch (e: Exception) {
+                Log.w(TAG, "${provider.displayName} parse/format mismatch (${e.message}) — trying next AI key")
+                Result.failure(e)
             }
         }
 
+        if (prioritized.size == 1) {
+            val (provider, apiKey) = prioritized.first()
+            return@withContext attemptProvider(provider, apiKey).getOrThrow()
+        }
+
+        // Multiple keys configured: run primary immediately and stagger remaining backups by 2.2s each
+        var lastError: Throwable? = null
+        val winner: AnswerModel? = coroutineScope {
+            val ch = Channel<Result<AnswerModel>>(Channel.UNLIMITED)
+            val jobs = prioritized.mapIndexed { idx, (provider, apiKey) ->
+                launch(Dispatchers.IO) {
+                    if (idx > 0) delay(idx * 2_200L)
+                    ch.trySend(attemptProvider(provider, apiKey))
+                }
+            }
+            var resolved: AnswerModel? = null
+            repeat(prioritized.size) {
+                val res = ch.receive()
+                res.onSuccess { ans ->
+                    resolved = ans
+                }.onFailure { err ->
+                    lastError = err
+                }
+                if (resolved != null) {
+                    jobs.forEach { it.cancel() }
+                    ch.close()
+                    return@coroutineScope resolved
+                }
+            }
+            jobs.forEach { it.cancel() }
+            ch.close()
+            resolved
+        }
+        if (winner != null) return@withContext winner
+
+        throw ((lastError as? Exception) ?: IllegalStateException("ALL_API_KEYS_FAILED"))
+    }
+
+    /**
+     * Solves a multi-question batch prompt (e.g., Google Forms batch extraction) across configured
+     * API providers without truncating to single-badge formatting, returning `(rawReply, providerLabel)`.
+     */
+    suspend fun solveBatchPromptWithFailover(
+        context: Context,
+        batchPrompt: String,
+        subjectMode: SubjectMode = SubjectMode.GENERAL,
+        maxTokens: Int = 960
+    ): Pair<String, String> = withContext(Dispatchers.IO) {
+        val configured = getConfiguredProviders(context)
+        if (configured.isEmpty()) {
+            throw IllegalStateException("NO_API_KEYS_CONFIGURED")
+        }
+        val ordered = orderProvidersWithCooldown(configured)
+        val batchSystemRule =
+            "You are Prism AI (${subjectMode.label} specialist). Solve EVERY numbered quiz question in the batch accurately. Output the compact answer line FIRST as ANSWERS: (1-A|2-B|...) matching exact [Q#] numbers."
+        var lastError: Exception? = null
+
+        for ((provider, apiKey) in ordered) {
+            try {
+                val rawReply = dispatchSingleProvider(
+                    provider = provider,
+                    apiKey = apiKey,
+                    prompt = batchPrompt,
+                    subjectMode = subjectMode,
+                    solveMode = QuestionSolveMode.STANDARD,
+                    base64Jpeg = null,
+                    customSystemRule = batchSystemRule,
+                    overrideMaxTokens = maxTokens
+                )
+                if (rawReply.isNotBlank()) {
+                    return@withContext rawReply to "Key • ${provider.displayName}"
+                }
+            } catch (ce: CancellationException) {
+                throw ce
+            } catch (qe: QuotaOrProviderException) {
+                lastError = qe
+                markProviderQuotaExhausted(
+                    provider,
+                    cooldownMs = if (qe.isQuotaLimit) QUOTA_COOLDOWN_MS else ERROR_COOLDOWN_MS
+                )
+            } catch (e: IOException) {
+                lastError = e
+                markProviderQuotaExhausted(provider, cooldownMs = ERROR_COOLDOWN_MS)
+            } catch (e: Exception) {
+                lastError = e
+            }
+        }
         throw (lastError ?: IllegalStateException("ALL_API_KEYS_FAILED"))
     }
 
-    private fun dispatchSingleProvider(
+    private suspend fun awaitCancellableCall(request: Request): Response {
+        val call = httpClient.newCall(request)
+        return suspendCancellableCoroutine { cont ->
+            cont.invokeOnCancellation {
+                try {
+                    call.cancel()
+                } catch (_: Exception) {
+                }
+            }
+            call.enqueue(object : Callback {
+                override fun onFailure(call: Call, e: IOException) {
+                    if (cont.isActive) {
+                        cont.resumeWith(Result.failure(e))
+                    }
+                }
+
+                override fun onResponse(call: Call, response: Response) {
+                    if (cont.isActive) {
+                        cont.resume(response)
+                    } else {
+                        try {
+                            response.close()
+                        } catch (_: Exception) {
+                        }
+                    }
+                }
+            })
+        }
+    }
+
+    private suspend fun dispatchSingleProvider(
         provider: ApiKeyProvider,
         apiKey: String,
         prompt: String,
         subjectMode: SubjectMode,
         solveMode: QuestionSolveMode,
-        base64Jpeg: String?
+        base64Jpeg: String?,
+        customSystemRule: String? = null,
+        overrideMaxTokens: Int? = null
     ): String {
-        val tokenBudget = when (solveMode) {
+        val tokenBudget = overrideMaxTokens ?: when (solveMode) {
             QuestionSolveMode.COMPLEX_MATH -> 480
             QuestionSolveMode.MATCH_FOLLOWING -> 360
             QuestionSolveMode.STANDARD -> 280
@@ -313,22 +442,46 @@ object MultiProviderApiSolver {
                 provider = provider,
                 url = "https://integrate.api.nvidia.com/v1/chat/completions",
                 apiKey = apiKey,
-                models = listOf("meta/llama-3.3-70b-instruct", "meta/llama-3.1-8b-instruct"),
+                models = if (base64Jpeg != null) {
+                    listOf(
+                        "meta/llama-3.2-90b-vision-instruct",
+                        "meta/llama-3.2-11b-vision-instruct",
+                        "meta/llama-3.3-70b-instruct",
+                        "meta/llama-3.1-8b-instruct"
+                    )
+                } else {
+                    listOf(
+                        "meta/llama-3.3-70b-instruct",
+                        "meta/llama-3.1-70b-instruct",
+                        "meta/llama-3.1-8b-instruct"
+                    )
+                },
                 prompt = prompt,
                 subject = subjectMode,
                 solveMode = solveMode,
                 maxTokens = tokenBudget,
-                base64Jpeg = null
+                base64Jpeg = base64Jpeg,
+                customSystemRule = customSystemRule
             )
             ApiKeyProvider.OPENROUTER -> callOpenAiCompatible(
                 provider = provider,
                 url = "https://openrouter.ai/api/v1/chat/completions",
                 apiKey = apiKey,
-                models = listOf(
-                    "meta-llama/llama-3.3-70b-instruct:free",
-                    "google/gemma-3-27b-it:free",
-                    "openrouter/free"
-                ),
+                models = if (base64Jpeg != null) {
+                    listOf(
+                        "google/gemma-3-27b-it:free",
+                        "meta-llama/llama-3.2-11b-vision-instruct:free",
+                        "meta-llama/llama-3.3-70b-instruct:free",
+                        "openrouter/free"
+                    )
+                } else {
+                    listOf(
+                        "meta-llama/llama-3.3-70b-instruct:free",
+                        "google/gemma-3-27b-it:free",
+                        "deepseek/deepseek-chat-v3-0324:free",
+                        "openrouter/free"
+                    )
+                },
                 prompt = prompt,
                 subject = subjectMode,
                 solveMode = solveMode,
@@ -337,30 +490,33 @@ object MultiProviderApiSolver {
                 extraHeaders = mapOf(
                     "HTTP-Referer" to "https://aistudio.google.com",
                     "X-Title" to "Prism AI"
-                )
+                ),
+                customSystemRule = customSystemRule
             )
             ApiKeyProvider.GEMINI -> callGeminiRestApi(
                 apiKey = apiKey,
                 prompt = prompt,
                 subject = subjectMode,
                 solveMode = solveMode,
-                base64Jpeg = base64Jpeg
+                base64Jpeg = base64Jpeg,
+                overrideMaxTokens = overrideMaxTokens
             )
             ApiKeyProvider.OPENAI -> callOpenAiCompatible(
                 provider = provider,
                 url = "https://api.openai.com/v1/chat/completions",
                 apiKey = apiKey,
-                models = listOf("gpt-4o-mini"),
+                models = listOf("gpt-4o-mini", "gpt-4o"),
                 prompt = prompt,
                 subject = subjectMode,
                 solveMode = solveMode,
                 maxTokens = tokenBudget,
-                base64Jpeg = base64Jpeg
+                base64Jpeg = base64Jpeg,
+                customSystemRule = customSystemRule
             )
         }
     }
 
-    private fun callOpenAiCompatible(
+    private suspend fun callOpenAiCompatible(
         provider: ApiKeyProvider,
         url: String,
         apiKey: String,
@@ -370,10 +526,11 @@ object MultiProviderApiSolver {
         solveMode: QuestionSolveMode,
         maxTokens: Int,
         base64Jpeg: String?,
-        extraHeaders: Map<String, String> = emptyMap()
+        extraHeaders: Map<String, String> = emptyMap(),
+        customSystemRule: String? = null
     ): String {
         var lastEx: Exception? = null
-        val systemRule = when (solveMode) {
+        val systemRule = customSystemRule ?: when (solveMode) {
             QuestionSolveMode.MATCH_FOLLOWING ->
                 "You are Prism AI (${subject.label} specialist). Solve Match-the-Following questions accurately. Reply with FINAL_ANSWER: <matching option letter A-F, or compact pairs like A-2, B-4, C-1, D-3> on the final line."
             QuestionSolveMode.COMPLEX_MATH ->
@@ -428,7 +585,7 @@ object MultiProviderApiSolver {
                         .post(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
                         .build()
 
-                    httpClient.newCall(request).execute().use { response ->
+                    awaitCancellableCall(request).use { response ->
                         val bodyStr = response.body?.string().orEmpty()
                         if (!response.isSuccessful) {
                             val quota = isQuotaStatusCode(response.code, bodyStr)
@@ -447,7 +604,19 @@ object MultiProviderApiSolver {
                         val msgObj = root.getAsJsonArray("choices")
                             ?.firstOrNull()?.asJsonObject
                             ?.getAsJsonObject("message")
-                        val content = msgObj?.get("content")?.takeIf { !it.isJsonNull }?.asString?.trim().orEmpty()
+                        val contentEl = msgObj?.get("content")
+                        val rawContent = when {
+                            contentEl == null || contentEl.isJsonNull -> ""
+                            contentEl.isJsonPrimitive -> contentEl.asString.trim()
+                            contentEl.isJsonArray -> contentEl.asJsonArray.mapNotNull { part ->
+                                if (part.isJsonObject) {
+                                    part.asJsonObject.get("text")?.takeIf { !it.isJsonNull }?.asString
+                                } else null
+                            }.joinToString("\n").trim()
+                            else -> ""
+                        }
+                        val reasoningContent = msgObj?.get("reasoning_content")?.takeIf { !it.isJsonNull }?.asString?.trim().orEmpty()
+                        val content = rawContent.ifBlank { reasoningContent }
                         if (content.isNotBlank()) return content
                     }
                 } catch (qe: QuotaOrProviderException) {
@@ -456,6 +625,8 @@ object MultiProviderApiSolver {
                         throw qe
                     }
                     break
+                } catch (ce: CancellationException) {
+                    throw ce
                 } catch (e: Exception) {
                     lastEx = e
                     break
@@ -465,15 +636,30 @@ object MultiProviderApiSolver {
         throw (lastEx ?: IOException("${provider.displayName} returned empty reply"))
     }
 
-    private fun callGeminiRestApi(
+    private suspend fun callGeminiRestApi(
         apiKey: String,
         prompt: String,
         subject: SubjectMode,
         solveMode: QuestionSolveMode,
-        base64Jpeg: String?
+        base64Jpeg: String?,
+        overrideMaxTokens: Int? = null
     ): String {
-        val candidateModels = listOf("gemini-3-flash-preview", "gemini-flash-latest")
-        val maxOut = if (solveMode == QuestionSolveMode.COMPLEX_MATH) 1024 else 512
+        val candidateModels = if (overrideMaxTokens != null) {
+            listOf(
+                "gemini-2.5-pro",
+                "gemini-2.5-flash",
+                "gemini-3-flash-preview",
+                "gemini-2.5-flash-lite"
+            )
+        } else {
+            listOf(
+                "gemini-2.5-flash",
+                "gemini-2.5-flash-lite",
+                "gemini-3-flash-preview",
+                "gemini-flash-latest"
+            )
+        }
+        val maxOut = overrideMaxTokens ?: if (solveMode == QuestionSolveMode.COMPLEX_MATH) 1024 else 512
         var lastEx: Exception? = null
 
         for (modelName in candidateModels) {
@@ -500,6 +686,12 @@ object MultiProviderApiSolver {
                     add("generationConfig", JsonObject().apply {
                         addProperty("temperature", 0.0)
                         addProperty("maxOutputTokens", maxOut)
+                        if (modelName.contains("2.5")) {
+                            val budget = if (overrideMaxTokens == null && solveMode != QuestionSolveMode.COMPLEX_MATH) 0 else 256
+                            add("thinkingConfig", JsonObject().apply {
+                                addProperty("thinkingBudget", budget)
+                            })
+                        }
                     })
                 }
 
@@ -510,7 +702,7 @@ object MultiProviderApiSolver {
                     .post(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
                     .build()
 
-                httpClient.newCall(request).execute().use { response ->
+                awaitCancellableCall(request).use { response ->
                     val bodyStr = response.body?.string().orEmpty()
                     if (!response.isSuccessful) {
                         val ex = QuotaOrProviderException(
@@ -544,6 +736,8 @@ object MultiProviderApiSolver {
                     if (nonThoughtText.isNotBlank()) return nonThoughtText
                     lastEx = IOException("Empty Gemini API response on $modelName")
                 }
+            } catch (ce: CancellationException) {
+                throw ce
             } catch (qe: QuotaOrProviderException) {
                 throw qe
             } catch (e: Exception) {

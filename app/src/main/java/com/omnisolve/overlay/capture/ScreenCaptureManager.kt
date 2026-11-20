@@ -15,7 +15,10 @@ import android.os.HandlerThread
 import android.os.Looper
 import android.util.DisplayMetrics
 import android.util.Log
+import android.view.Surface
 import android.view.WindowManager
+import androidx.annotation.VisibleForTesting
+import com.omnisolve.overlay.util.PrismPerfLogger
 import kotlin.math.max
 import kotlin.math.roundToInt
 
@@ -35,6 +38,10 @@ class ScreenCaptureManager(private val context: Context) {
     private var screenWidth = 720
     private var screenHeight = 1280
     private var screenDensity = 320
+    private var rawScreenWidth = 1080
+    private var rawScreenHeight = 2400
+    private var cachedRotation = -1
+    private var dimensionsDetected = false
 
     @Volatile
     private var isReady = false
@@ -48,11 +55,34 @@ class ScreenCaptureManager(private val context: Context) {
     @Volatile
     private var lastFrameTimestampMs: Long = 0L
 
+    @Volatile
+    var onProjectionStoppedListener: (() -> Unit)? = null
+
     init {
-        detectScreenDimensions()
+        detectScreenDimensionsIfNeeded(force = true)
     }
 
-    private fun detectScreenDimensions() {
+    private fun currentDisplayRotation(): Int {
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                context.display?.rotation ?: Surface.ROTATION_0
+            } else {
+                val wm = context.getSystemService(Context.WINDOW_SERVICE) as? WindowManager
+                @Suppress("DEPRECATION")
+                wm?.defaultDisplay?.rotation ?: Surface.ROTATION_0
+            }
+        } catch (_: Exception) {
+            Surface.ROTATION_0
+        }
+    }
+
+    private fun detectScreenDimensionsIfNeeded(force: Boolean = false): Boolean {
+        val rot = currentDisplayRotation()
+        if (!force && dimensionsDetected && rot == cachedRotation) {
+            return false
+        }
+        val prevW = screenWidth
+        val prevH = screenHeight
         var rawW = 1080
         var rawH = 2400
         var rawDensity = 320
@@ -79,8 +109,11 @@ class ScreenCaptureManager(private val context: Context) {
         if (rawH <= 0) rawH = 2400
         if (rawDensity <= 0) rawDensity = 320
 
-        // Cap capture resolution to 1280px max side (even-aligned) to minimize gralloc/rendernode
-        // buffer pressure on cloud emulators while keeping text crisp for ML Kit OCR.
+        rawScreenWidth = rawW
+        rawScreenHeight = rawH
+        cachedRotation = rot
+        dimensionsDetected = true
+
         val longest = max(rawW, rawH)
         val scale = if (longest > MAX_CAPTURE_DIMENSION) {
             MAX_CAPTURE_DIMENSION.toFloat() / longest.toFloat()
@@ -92,7 +125,12 @@ class ScreenCaptureManager(private val context: Context) {
         screenHeight = ((rawH * scale).roundToInt() and 1.inv()).coerceAtLeast(360)
         screenDensity = (rawDensity * scale).roundToInt().coerceAtLeast(160)
 
-        Log.d(TAG, "Capture target: ${screenWidth}x${screenHeight} @${screenDensity}dpi")
+        Log.d(TAG, "Capture target: ${screenWidth}x${screenHeight} (display ${rawScreenWidth}x${rawScreenHeight}) @${screenDensity}dpi")
+        return (prevW != screenWidth || prevH != screenHeight)
+    }
+
+    fun getRealScreenDimensions(): Pair<Int, Int> {
+        return Pair(rawScreenWidth.coerceAtLeast(screenWidth), rawScreenHeight.coerceAtLeast(screenHeight))
     }
 
     private fun ensureCaptureThread(): Handler {
@@ -134,40 +172,17 @@ class ScreenCaptureManager(private val context: Context) {
                     override fun onStop() {
                         Log.d(TAG, "MediaProjection stopped externally")
                         isReady = false
+                        clearFrameCache()
+                        try {
+                            onProjectionStoppedListener?.invoke()
+                        } catch (_: Exception) {}
                     }
                 }, Handler(Looper.getMainLooper()))
                 callbackRegistered = true
             }
 
             val bgHandler = ensureCaptureThread()
-            val reader = ImageReader.newInstance(
-                screenWidth,
-                screenHeight,
-                PixelFormat.RGBA_8888,
-                2
-            )
-
-            // Continuously drain and cache the latest VirtualDisplay frame so static emulator screens
-            // always have an up-to-date frame ready immediately without stalling ImageReader buffers.
-            reader.setOnImageAvailableListener({ r ->
-                val img = safeAcquireImage(r) ?: return@setOnImageAvailableListener
-                val bmp = try {
-                    imageToBitmap(img)
-                } finally {
-                    safeClose(img)
-                }
-                if (bmp != null) {
-                    synchronized(frameLock) {
-                        val old = lastValidFrame
-                        lastValidFrame = bmp
-                        lastFrameTimestampMs = System.currentTimeMillis()
-                        if (old != null && old !== bmp && !old.isRecycled) {
-                            try { old.recycle() } catch (_: Exception) {}
-                        }
-                    }
-                }
-            }, bgHandler)
-
+            val reader = createAndAttachImageReader(bgHandler)
             imageReader = reader
             virtualDisplay = proj.createVirtualDisplay(
                 "OmniSolveCapture",
@@ -188,71 +203,238 @@ class ScreenCaptureManager(private val context: Context) {
         }
     }
 
-    /**
-     * Returns a clean copy of the latest screen frame.
-     * Waits briefly for any post-overlay-hide dirty frame, then immediately returns the live cached frame.
-     */
-    fun captureCurrentFrame(): Bitmap? {
-        val prevW = screenWidth
-        val prevH = screenHeight
-        detectScreenDimensions()
-        val dimensionsChanged = (prevW != screenWidth || prevH != screenHeight)
-
-        if (!isReady || imageReader == null || dimensionsChanged) {
-            if (mediaProjection == null) return null
-            if (dimensionsChanged) {
+    @SuppressLint("WrongConstant")
+    private fun createAndAttachImageReader(bgHandler: Handler): ImageReader {
+        val reader = ImageReader.newInstance(
+            screenWidth,
+            screenHeight,
+            PixelFormat.RGBA_8888,
+            3
+        )
+        reader.setOnImageAvailableListener({ r ->
+            val img = safeAcquireImage(r) ?: return@setOnImageAvailableListener
+            val bmp = try {
+                imageToBitmap(img)
+            } finally {
+                safeClose(img)
+            }
+            if (bmp != null) {
                 synchronized(frameLock) {
-                    try { lastValidFrame?.recycle() } catch (_: Exception) {}
-                    lastValidFrame = null
+                    val old = lastValidFrame
+                    lastValidFrame = bmp
+                    lastFrameTimestampMs = System.currentTimeMillis()
+                    if (old != null && old !== bmp && !old.isRecycled) {
+                        try { old.recycle() } catch (_: Exception) {}
+                    }
                 }
             }
+        }, bgHandler)
+        return reader
+    }
+
+    @Synchronized
+    private fun refreshVirtualDisplaySurface() {
+        val vd = virtualDisplay
+        if (vd == null || !isReady) {
+            initVirtualDisplay()
+            return
+        }
+        try {
+            val bgHandler = ensureCaptureThread()
+            val oldReader = imageReader
+            val newReader = createAndAttachImageReader(bgHandler)
+            imageReader = newReader
+            vd.surface = newReader.surface
+            if (oldReader != null) {
+                bgHandler.postDelayed({
+                    try { oldReader.setOnImageAvailableListener(null, null) } catch (_: Exception) {}
+                    try { oldReader.close() } catch (_: Exception) {}
+                }, 120L)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Surface refresh fallback to initVirtualDisplay: ${e.message}")
             initVirtualDisplay()
         }
+    }
+
+    fun isCaptureReady(): Boolean = isReady && imageReader != null && virtualDisplay != null && mediaProjection != null
+
+    /**
+     * Clears any cached screen frame and resets its timestamp so subsequent OCR passes
+     * cannot accidentally solve a stale previous-screen screenshot.
+     */
+    fun clearFrameCache() {
+        synchronized(frameLock) {
+            val old = lastValidFrame
+            lastValidFrame = null
+            lastFrameTimestampMs = 0L
+            if (old != null && !old.isRecycled) {
+                try {
+                    old.recycle()
+                } catch (_: Exception) {
+                }
+            }
+        }
+    }
+
+    @VisibleForTesting
+    internal fun injectTestFrameForTesting(bitmap: Bitmap, timestampMs: Long) {
+        synchronized(frameLock) {
+            val old = lastValidFrame
+            lastValidFrame = bitmap
+            lastFrameTimestampMs = timestampMs
+            if (old != null && old !== bitmap && !old.isRecycled) {
+                try {
+                    old.recycle()
+                } catch (_: Exception) {
+                }
+            }
+        }
+    }
+
+    @VisibleForTesting
+    internal fun simulateProjectionStopForTesting() {
+        isReady = false
+        clearFrameCache()
+    }
+
+    @VisibleForTesting
+    internal fun hasCachedFrameForTesting(): Boolean = synchronized(frameLock) {
+        lastValidFrame != null && !lastValidFrame!!.isRecycled
+    }
+
+    @VisibleForTesting
+    internal fun getLastFrameTimestampMsForTesting(): Long = synchronized(frameLock) {
+        lastFrameTimestampMs
+    }
+
+    /**
+     * Captures a guaranteed fresh frame of the CURRENT screen quickly without redundant
+     * WindowManager queries or disruptive ImageReader swaps mid-capture.
+     */
+    fun captureGuaranteedFreshFrame(minTimestampMs: Long = 0L, sessionId: Long = 0L): Bitmap? {
+        val capStart = PrismPerfLogger.nowMs()
+        if (!isReady || imageReader == null || virtualDisplay == null) {
+            if (mediaProjection == null) {
+                PrismPerfLogger.logStage(sessionId, "SCREEN_CAPTURE", 0L, status = "NO_PROJECTION")
+                return null
+            }
+            initVirtualDisplay()
+        } else if (detectScreenDimensionsIfNeeded(force = false)) {
+            try {
+                virtualDisplay?.resize(screenWidth, screenHeight, screenDensity)
+            } catch (_: Exception) {}
+        }
+
+        drainPendingImageFromReader()
+
+        if (minTimestampMs > 0L) {
+            var refreshedSurface = false
+            for (attempt in 1..10) {
+                val freshArrived = synchronized(frameLock) {
+                    lastValidFrame != null &&
+                        !lastValidFrame!!.isRecycled &&
+                        lastFrameTimestampMs >= minTimestampMs
+                }
+                if (freshArrived) break
+                // On static quiz screens (PDF, Chrome, Google Forms), SurfaceFlinger may not push a new
+                // frame after hiding the Dynamic Island unless we nudge the VirtualDisplay surface once.
+                if (attempt == 4 && !refreshedSurface) {
+                    refreshedSurface = true
+                    refreshVirtualDisplaySurface()
+                }
+                try { Thread.sleep(15) } catch (_: InterruptedException) { break }
+                drainPendingImageFromReader()
+            }
+        }
+
+        val cachedBmp = synchronized(frameLock) {
+            val cached = lastValidFrame
+            // Always prefer a frame newer than minTimestampMs, but if the screen is 100% static
+            // and MediaProjection is still active, return the latest valid frame instead of null
+            // so OCR + AI never fail with RETRY on static quiz pages.
+            if (cached != null && !cached.isRecycled && isReady) {
+                try {
+                    cached.copy(Bitmap.Config.ARGB_8888, false)
+                } catch (_: Exception) {
+                    null
+                }
+            } else {
+                null
+            }
+        }
+
+        val result = cachedBmp ?: captureCurrentFrame(requireFresh = false)
+        val elapsed = PrismPerfLogger.nowMs() - capStart
+        PrismPerfLogger.logStage(
+            sessionId,
+            "SCREEN_CAPTURE",
+            elapsed,
+            status = if (result != null) "OK" else "EMPTY",
+            detail = if (result != null) "${result.width}x${result.height}" else "stale_or_null_frame"
+        )
+        return result
+    }
+
+    private fun drainPendingImageFromReader() {
+        val reader = imageReader ?: return
+        try {
+            val pendingImg = safeAcquireImage(reader) ?: return
+            val bmp = try {
+                imageToBitmap(pendingImg)
+            } finally {
+                safeClose(pendingImg)
+            }
+            if (bmp != null) {
+                synchronized(frameLock) {
+                    val old = lastValidFrame
+                    lastValidFrame = bmp
+                    lastFrameTimestampMs = System.currentTimeMillis()
+                    if (old != null && old !== bmp && !old.isRecycled) {
+                        try { old.recycle() } catch (_: Exception) {}
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+    }
+
+    fun captureCurrentFrame(requireFresh: Boolean = true): Bitmap? {
+        if (!isReady || imageReader == null || virtualDisplay == null) {
+            if (mediaProjection == null) return null
+            initVirtualDisplay()
+        } else if (detectScreenDimensionsIfNeeded(force = false)) {
+            try {
+                virtualDisplay?.resize(screenWidth, screenHeight, screenDensity)
+            } catch (_: Exception) {}
+        }
+
+        drainPendingImageFromReader()
 
         val callStartMs = System.currentTimeMillis()
-        val hasCachedInitially = synchronized(frameLock) {
-            lastValidFrame != null && !lastValidFrame!!.isRecycled
-        }
-        val maxWaitLoops = if (hasCachedInitially) 5 else 20
-
-        for (i in 1..maxWaitLoops) {
+        for (i in 1..4) {
             val freshArrived = synchronized(frameLock) {
-                lastFrameTimestampMs >= callStartMs && lastValidFrame != null && !lastValidFrame!!.isRecycled
+                lastValidFrame != null &&
+                    !lastValidFrame!!.isRecycled &&
+                    (!requireFresh || lastFrameTimestampMs >= callStartMs - 60L)
             }
             if (freshArrived) break
-            Thread.sleep(25)
+            try { Thread.sleep(12) } catch (_: InterruptedException) { break }
         }
 
         synchronized(frameLock) {
             val cached = lastValidFrame
-            if (cached != null && !cached.isRecycled) {
+            val isFresh = !requireFresh || lastFrameTimestampMs >= callStartMs - 60L
+            if (cached != null && !cached.isRecycled && isFresh) {
                 return try {
                     cached.copy(Bitmap.Config.ARGB_8888, false)
                 } catch (e: Exception) {
-                    Log.e(TAG, "Failed to copy cached frame", e)
+                    Log.e(TAG, "Failed to copy captured frame", e)
                     null
                 }
             }
         }
 
-        // Direct fallback pull if listener hasn't fired yet
-        val reader = imageReader ?: return null
-        val directImg = safeAcquireImage(reader) ?: return null
-        val directBmp = try {
-            imageToBitmap(directImg)
-        } finally {
-            safeClose(directImg)
-        } ?: return null
-
-        synchronized(frameLock) {
-            val old = lastValidFrame
-            lastValidFrame = directBmp.copy(Bitmap.Config.ARGB_8888, false)
-            lastFrameTimestampMs = System.currentTimeMillis()
-            if (old != null && !old.isRecycled) {
-                try { old.recycle() } catch (_: Exception) {}
-            }
-        }
-        return directBmp
+        return null
     }
 
     private fun safeAcquireImage(reader: ImageReader): Image? {
@@ -312,10 +494,7 @@ class ScreenCaptureManager(private val context: Context) {
         try { imageReader?.close() } catch (_: Exception) {}
         try { mediaProjection?.stop() } catch (_: Exception) {}
         try { captureThread?.quitSafely() } catch (_: Exception) {}
-        synchronized(frameLock) {
-            try { lastValidFrame?.recycle() } catch (_: Exception) {}
-            lastValidFrame = null
-        }
+        clearFrameCache()
         captureHandler = null
         captureThread = null
         virtualDisplay = null

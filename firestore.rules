@@ -27,6 +27,295 @@ service cloud.firestore {
              id.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
+    // ── User Activity Profile (/users/{userId}) ─────────────────────────────
+    function isValidUserActivityProfile(data) {
+      return data.userId is string &&
+             data.userId.size() >= 1 &&
+             data.userId.size() <= 128 &&
+             data.userId == request.auth.uid &&
+             data.displayName is string &&
+             data.displayName.size() <= 120 &&
+             data.email is string &&
+             data.email.size() <= 254 &&
+             data.appVersion is string &&
+             data.appVersion.size() >= 1 &&
+             data.appVersion.size() <= 32 &&
+             data.totalRequests is int &&
+             data.totalRequests >= 0 &&
+             data.totalRequests <= 10000000 &&
+             data.firebaseRequests is int &&
+             data.firebaseRequests >= 0 &&
+             data.firebaseRequests <= 10000000 &&
+             data.cloudflareRequests is int &&
+             data.cloudflareRequests >= 0 &&
+             data.cloudflareRequests <= 10000000 &&
+             data.cacheHits is int &&
+             data.cacheHits >= 0 &&
+             data.cacheHits <= 10000000 &&
+             data.failedRequests is int &&
+             data.failedRequests >= 0 &&
+             data.failedRequests <= 10000000 &&
+             data.totalLatencyMs is int &&
+             data.totalLatencyMs >= 0 &&
+             data.avgLatencyMs is int &&
+             data.avgLatencyMs >= 0 &&
+             data.avgLatencyMs <= 120000 &&
+             data.totalActiveSeconds is int &&
+             data.totalActiveSeconds >= 0 &&
+             data.totalActiveSeconds <= 1000000000 &&
+             data.activeSessionsCount is int &&
+             data.activeSessionsCount >= 0 &&
+             data.activeSessionsCount <= 10000000 &&
+             data.lastFeatureUsed is string &&
+             data.lastFeatureUsed in ['DYNAMIC_ISLAND', 'GOOGLE_FORMS', 'PHOTO_SOLVER', 'PDF_SOLVER', 'PRACTICE', 'APP_OPEN'] &&
+             data.lastBackendUsed is string &&
+             data.lastBackendUsed in ['FIREBASE_AI', 'CLOUDFLARE_EDGE', 'SHARED_CACHE', 'LOCAL_CACHE', 'FAILED', 'NONE'] &&
+             data.lastActiveAt is timestamp &&
+             data.lastActiveAt <= request.time &&
+             data.createdAt is timestamp &&
+             data.createdAt <= request.time &&
+             data.updatedAt is timestamp &&
+             data.updatedAt <= request.time;
+    }
+
+    match /users/{userId} {
+      allow get: if isSignedIn() &&
+                    request.auth.uid == userId &&
+                    isValidId(userId);
+
+      allow list: if false;
+
+      allow create: if isSignedIn() &&
+                       request.auth.uid == userId &&
+                       isValidId(userId) &&
+                       incoming().keys().hasAll([
+                         'userId',
+                         'displayName',
+                         'email',
+                         'appVersion',
+                         'totalRequests',
+                         'firebaseRequests',
+                         'cloudflareRequests',
+                         'cacheHits',
+                         'failedRequests',
+                         'totalLatencyMs',
+                         'avgLatencyMs',
+                         'totalActiveSeconds',
+                         'activeSessionsCount',
+                         'lastFeatureUsed',
+                         'lastBackendUsed',
+                         'lastActiveAt',
+                         'createdAt',
+                         'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'userId',
+                         'displayName',
+                         'email',
+                         'appVersion',
+                         'totalRequests',
+                         'firebaseRequests',
+                         'cloudflareRequests',
+                         'cacheHits',
+                         'failedRequests',
+                         'totalLatencyMs',
+                         'avgLatencyMs',
+                         'totalActiveSeconds',
+                         'activeSessionsCount',
+                         'lastFeatureUsed',
+                         'lastBackendUsed',
+                         'lastActiveAt',
+                         'createdAt',
+                         'updatedAt'
+                       ]) &&
+                       isValidUserActivityProfile(incoming());
+
+      allow update: if isSignedIn() &&
+                       resource != null &&
+                       request.auth.uid == userId &&
+                       isValidId(userId) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'displayName',
+                         'email',
+                         'appVersion',
+                         'totalRequests',
+                         'firebaseRequests',
+                         'cloudflareRequests',
+                         'cacheHits',
+                         'failedRequests',
+                         'totalLatencyMs',
+                         'avgLatencyMs',
+                         'totalActiveSeconds',
+                         'activeSessionsCount',
+                         'lastFeatureUsed',
+                         'lastBackendUsed',
+                         'lastActiveAt',
+                         'updatedAt'
+                       ]) &&
+                       isValidUserActivityProfile(incoming());
+
+      allow delete: if isSignedIn() &&
+                       resource != null &&
+                       request.auth.uid == userId &&
+                       isValidId(userId) &&
+                       existing().userId == request.auth.uid;
+    }
+
+    // ── User Request Logs (/users/{userId}/requestLogs/{requestId}) ─────────
+    function isValidUserRequestLog(data) {
+      return data.userId is string &&
+             data.userId.size() >= 1 &&
+             data.userId.size() <= 128 &&
+             data.userId == request.auth.uid &&
+             data.userEmail is string &&
+             data.userEmail.size() <= 254 &&
+             data.feature is string &&
+             data.feature in ['DYNAMIC_ISLAND', 'GOOGLE_FORMS', 'PHOTO_SOLVER', 'PDF_SOLVER', 'PRACTICE'] &&
+             data.backend is string &&
+             data.backend in ['FIREBASE_AI', 'CLOUDFLARE_EDGE', 'SHARED_CACHE', 'LOCAL_CACHE', 'FAILED'] &&
+             data.modelUsed is string &&
+             data.modelUsed.size() <= 120 &&
+             data.latencyMs is int &&
+             data.latencyMs >= 0 &&
+             data.latencyMs <= 120000 &&
+             data.status is string &&
+             data.status in ['SUCCESS', 'FAILED', 'CACHE_HIT'] &&
+             data.questionPreview is string &&
+             data.questionPreview.size() <= 240 &&
+             data.answerBadge is string &&
+             data.answerBadge.size() <= 48 &&
+             data.createdAt is timestamp &&
+             data.createdAt <= request.time;
+    }
+
+    match /users/{userId}/requestLogs/{requestId} {
+      allow get: if isSignedIn() &&
+                    resource != null &&
+                    request.auth.uid == userId &&
+                    isValidId(userId) &&
+                    isValidId(requestId) &&
+                    existing().userId == request.auth.uid;
+
+      allow list: if isSignedIn() &&
+                     request.auth.uid == userId &&
+                     isValidId(userId);
+
+      allow create: if isSignedIn() &&
+                       request.auth.uid == userId &&
+                       isValidId(userId) &&
+                       isValidId(requestId) &&
+                       incoming().keys().hasAll([
+                         'userId',
+                         'userEmail',
+                         'feature',
+                         'backend',
+                         'modelUsed',
+                         'latencyMs',
+                         'status',
+                         'questionPreview',
+                         'answerBadge',
+                         'createdAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'userId',
+                         'userEmail',
+                         'feature',
+                         'backend',
+                         'modelUsed',
+                         'latencyMs',
+                         'status',
+                         'questionPreview',
+                         'answerBadge',
+                         'createdAt'
+                       ]) &&
+                       isValidUserRequestLog(incoming());
+
+      allow update: if false;
+
+      allow delete: if isSignedIn() &&
+                       resource != null &&
+                       request.auth.uid == userId &&
+                       isValidId(userId) &&
+                       isValidId(requestId) &&
+                       existing().userId == request.auth.uid;
+    }
+
+    // ── User Active Sessions (/users/{userId}/activeSessions/{sessionId}) ───
+    function isValidUserActiveSession(data) {
+      return data.userId is string &&
+             data.userId.size() >= 1 &&
+             data.userId.size() <= 128 &&
+             data.userId == request.auth.uid &&
+             data.userEmail is string &&
+             data.userEmail.size() <= 254 &&
+             data.source is string &&
+             data.source in ['APP_FOREGROUND', 'DYNAMIC_ISLAND'] &&
+             data.durationSeconds is int &&
+             data.durationSeconds >= 1 &&
+             data.durationSeconds <= 86400 &&
+             data.requestsCount is int &&
+             data.requestsCount >= 0 &&
+             data.requestsCount <= 100000 &&
+             data.deviceModel is string &&
+             data.deviceModel.size() <= 100 &&
+             data.appVersion is string &&
+             data.appVersion.size() >= 1 &&
+             data.appVersion.size() <= 32 &&
+             data.endedAt is timestamp &&
+             data.endedAt <= request.time;
+    }
+
+    match /users/{userId}/activeSessions/{sessionId} {
+      allow get: if isSignedIn() &&
+                    resource != null &&
+                    request.auth.uid == userId &&
+                    isValidId(userId) &&
+                    isValidId(sessionId) &&
+                    existing().userId == request.auth.uid;
+
+      allow list: if isSignedIn() &&
+                     request.auth.uid == userId &&
+                     isValidId(userId);
+
+      allow create: if isSignedIn() &&
+                       request.auth.uid == userId &&
+                       isValidId(userId) &&
+                       isValidId(sessionId) &&
+                       incoming().keys().hasAll([
+                         'userId',
+                         'userEmail',
+                         'source',
+                         'durationSeconds',
+                         'requestsCount',
+                         'deviceModel',
+                         'appVersion',
+                         'endedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'userId',
+                         'userEmail',
+                         'source',
+                         'durationSeconds',
+                         'requestsCount',
+                         'deviceModel',
+                         'appVersion',
+                         'endedAt'
+                       ]) &&
+                       isValidUserActiveSession(incoming());
+
+      allow update: if false;
+
+      allow delete: if isSignedIn() &&
+                       resource != null &&
+                       request.auth.uid == userId &&
+                       isValidId(userId) &&
+                       isValidId(sessionId) &&
+                       existing().userId == request.auth.uid;
+    }
+
+    // ── Solved Questions (/users/{userId}/solvedQuestions/{questionId}) ─────
     function isValidSolvedQuestion(data) {
       return data.userId is string &&
              data.userId.size() >= 1 &&
@@ -73,7 +362,7 @@ service cloud.firestore {
 
       allow list: if isSignedIn() &&
                      request.auth.uid == userId &&
-                     existing().userId == request.auth.uid;
+                     isValidId(userId);
 
       allow create: if isSignedIn() &&
                        request.auth.uid == userId &&
@@ -147,6 +436,65 @@ service cloud.firestore {
                        isValidId(userId) &&
                        isValidId(questionId) &&
                        existing().userId == request.auth.uid;
+    }
+
+    // ── Shared Quiz Cache (/sharedQuizCache/{questionHash}) ─────────────────
+    function isValidQuestionHash(hash) {
+      return hash is string &&
+             hash.size() == 64 &&
+             hash.matches('^[a-f0-9]{64}$');
+    }
+
+    function isValidSharedQuizCache(data, hashParam) {
+      return data.questionHash is string &&
+             data.questionHash == hashParam &&
+             isValidQuestionHash(data.questionHash) &&
+             data.createdByUid is string &&
+             data.createdByUid == request.auth.uid &&
+             isValidId(data.createdByUid) &&
+             data.answerBadge is string &&
+             data.answerBadge.size() >= 1 &&
+             data.answerBadge.size() <= 40 &&
+             data.shortAnswer is string &&
+             data.shortAnswer.size() <= 300 &&
+             data.explanation is string &&
+             data.explanation.size() <= 500 &&
+             data.subject is string &&
+             data.subject in ['GENERAL', 'MATH', 'SCIENCE', 'CODING', 'MEDICAL', 'LAW'] &&
+             data.confidence is int &&
+             data.confidence >= 70 &&
+             data.confidence <= 100 &&
+             data.createdAt is timestamp &&
+             data.createdAt <= request.time;
+    }
+
+    match /sharedQuizCache/{questionHash} {
+      allow get: if isSignedIn() && isValidQuestionHash(questionHash);
+      allow list: if false;
+      allow create: if isSignedIn() &&
+                       isValidQuestionHash(questionHash) &&
+                       incoming().keys().hasAll([
+                         'questionHash',
+                         'createdByUid',
+                         'answerBadge',
+                         'shortAnswer',
+                         'explanation',
+                         'subject',
+                         'confidence',
+                         'createdAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'questionHash',
+                         'createdByUid',
+                         'answerBadge',
+                         'shortAnswer',
+                         'explanation',
+                         'subject',
+                         'confidence',
+                         'createdAt'
+                       ]) &&
+                       isValidSharedQuizCache(incoming(), questionHash);
+      allow update, delete: if false;
     }
   }
 }

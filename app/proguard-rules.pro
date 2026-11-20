@@ -16,11 +16,28 @@
 -keep class com.google.android.gms.ads.** { *; }
 -dontwarn com.google.android.gms.ads.**
 
-# Firebase & Google Services
+# WebView JS Bridges (CRITICAL for AndroidBridge on release builds)
+-keepattributes JavascriptInterface,RuntimeVisibleAnnotations,InnerClasses,EnclosingMethod
+-keepclassmembers class * {
+    @android.webkit.JavascriptInterface <methods>;
+}
+
+# Firebase AI Logic, App Check, & Kotlinx Serialization
 -keep class com.google.firebase.** { *; }
 -dontwarn com.google.firebase.**
+-keep class com.google.firebase.ai.** { *; }
+-dontwarn com.google.firebase.ai.**
 -keep class com.google.android.gms.** { *; }
 -dontwarn com.google.android.gms.**
+-keepattributes *Annotation*, InnerClasses
+-dontnote kotlinx.serialization.SerializationKt
+-keep,includedescriptorclasses class com.google.firebase.ai.**$$serializer { *; }
+-keepclassmembers class * {
+    *** Companion;
+}
+-keepclasseswithmembers class * {
+    kotlinx.serialization.KSerializer serializer(...);
+}
 
 # OkHttp
 -dontwarn okhttp3.**
@@ -33,6 +50,9 @@
 -keep class * implements com.google.gson.TypeAdapterFactory
 -keep class * implements com.google.gson.JsonSerializer
 -keep class * implements com.google.gson.JsonDeserializer
+-keepclassmembers class * {
+    @com.google.gson.annotations.SerializedName <fields>;
+}
 -keepattributes Signature
 -keepattributes *Annotation*
 -dontwarn sun.misc.**
@@ -57,7 +77,7 @@
 -dontwarn android.**
 -keepattributes SourceFile,LineNumberTable
 
-# Strip unused debug logs & assert statements in production for size and speed
+# Strip verbose logs only; retain PRISM_PERF info logs for real-device diagnostics
 -assumenosideeffects class android.util.Log {
     public static boolean isLoggable(java.lang.String, int);
     public static int v(...);

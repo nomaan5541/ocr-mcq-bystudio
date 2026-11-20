@@ -117,7 +117,7 @@ fun FlashcardDeckSection(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "Liquid Glass Flashcard Deck",
+                    text = "Study Flashcards",
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
                     color = palette.inkPrimary
@@ -152,8 +152,8 @@ fun FlashcardDeckSection(
             placeholder = { Text("Search questions or answers...") },
             shape = RoundedCornerShape(12.dp),
             colors = OutlinedTextFieldDefaults.colors(
-                focusedContainerColor = if (palette.isDarkObsidian) Color(0xFF141D2E) else Color.White,
-                unfocusedContainerColor = if (palette.isDarkObsidian) Color(0xFF0F172A) else Color(0xFFF8FAFC),
+                focusedContainerColor = palette.glassMedium,
+                unfocusedContainerColor = palette.canvasBottom,
                 focusedBorderColor = palette.accentSky,
                 unfocusedBorderColor = palette.cardHairlineBorder,
                 focusedTextColor = palette.inkPrimary,
@@ -174,7 +174,7 @@ fun FlashcardDeckSection(
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             LivingSecondaryButton(
-                text = if (bookmarkedOnly) "Saved ★" else "Saved",
+                text = if (bookmarkedOnly) "Saved (On)" else "Saved",
                 icon = if (bookmarkedOnly) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
                 selected = bookmarkedOnly,
                 onClick = { onToggleBookmarkedOnly(!bookmarkedOnly) },
@@ -201,9 +201,8 @@ fun FlashcardDeckSection(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(16.dp))
-                    .background(
-                        if (palette.isDarkObsidian) Color(0xFF111827) else Color(0xFFF1F5F9)
-                    )
+                    .background(palette.glassMedium)
+                    .border(1.dp, palette.cardHairlineBorder, RoundedCornerShape(16.dp))
                     .padding(18.dp),
                 contentAlignment = Alignment.Center
             ) {
@@ -220,11 +219,9 @@ fun FlashcardDeckSection(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(18.dp))
-                    .background(
-                        if (palette.isDarkObsidian) Color(0xFF141E30) else Color(0xFFF0F9FF)
-                    )
+                    .background(palette.glassMedium)
                     .border(
-                        width = 1.4.dp,
+                        width = 1.2.dp,
                         color = palette.accentSky,
                         shape = RoundedCornerShape(18.dp)
                     )

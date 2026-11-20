@@ -9,6 +9,7 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
@@ -21,7 +22,7 @@
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@style/Theme.OmniSolveOverlay"
-        android:usesCleartextTraffic="true"
+        android:usesCleartextTraffic="false"
         android:networkSecurityConfig="@xml/network_security_config"
         android:hardwareAccelerated="true"
         android:largeHeap="true"
@@ -60,15 +61,19 @@
             android:exported="false"
             android:theme="@style/Theme.OmniSolveOverlay" />
 
+        <!-- Interactive Google Forms WebView Browser (Sign-In, Multi-Page & Auto-Fill) -->
+        <activity
+            android:name=".GoogleFormsWebActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|density"
+            android:theme="@style/Theme.OmniSolveOverlay" />
+
         <!-- Foreground Service for Overlay WindowManager & Screen Capture -->
         <service
             android:name=".service.OverlayService"
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="mediaProjection" />
-
-
-
         <!-- Android Pull-Down Quick Settings Tile Service -->
         <service
             android:name=".service.PrismQuickSettingsTileService"
@@ -92,6 +97,22 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths" />
         </provider>
+
+        <!-- Receiver for Copy & Unpin actions on Pinned Google Forms Answer Notification -->
+        <receiver
+            android:name=".service.FormsNotificationActionReceiver"
+            android:enabled="true"
+            android:exported="false" />
+
+        <!-- Receiver for Scheduled Engagement Nudges, Reboot Reschedule, and Custom Pin Bar Actions -->
+        <receiver
+            android:name=".service.PrismEngagementAlarmReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
 
     </application>
 

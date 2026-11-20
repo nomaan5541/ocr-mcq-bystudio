@@ -1,5 +1,223 @@
 {
   "entities": {
+    "UserActivityProfile": {
+      "title": "UserActivityProfile",
+      "description": "Per-user activity dashboard document showing which user is active, total requests raised, Firebase vs Cloudflare breakdown, average solve latency, and cumulative active time in seconds. Clients must submit FieldValue.serverTimestamp() for createdAt, updatedAt, and lastActiveAt.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Authenticated Firebase UID of the user."
+        },
+        "displayName": {
+          "type": "string",
+          "description": "User display name from Google Sign-In (0..120 characters)."
+        },
+        "email": {
+          "type": "string",
+          "description": "User email address from Google Sign-In (0..254 characters)."
+        },
+        "appVersion": {
+          "type": "string",
+          "description": "App version string such as '3.5.2' (1..32 characters)."
+        },
+        "totalRequests": {
+          "type": "integer",
+          "description": "Total solve requests raised by this user."
+        },
+        "firebaseRequests": {
+          "type": "integer",
+          "description": "Requests answered via Firebase AI Logic."
+        },
+        "cloudflareRequests": {
+          "type": "integer",
+          "description": "Requests answered via Cloudflare Workers AI."
+        },
+        "cacheHits": {
+          "type": "integer",
+          "description": "Requests served instantly from local or shared cache."
+        },
+        "failedRequests": {
+          "type": "integer",
+          "description": "Requests that ended in an error or timeout."
+        },
+        "totalLatencyMs": {
+          "type": "integer",
+          "description": "Cumulative solve latency in milliseconds across completed requests."
+        },
+        "avgLatencyMs": {
+          "type": "integer",
+          "description": "Running average solve latency in milliseconds."
+        },
+        "totalActiveSeconds": {
+          "type": "integer",
+          "description": "Cumulative active app + Dynamic Island overlay time in seconds."
+        },
+        "activeSessionsCount": {
+          "type": "integer",
+          "description": "Total recorded active sessions."
+        },
+        "lastFeatureUsed": {
+          "type": "string",
+          "enum": ["DYNAMIC_ISLAND", "GOOGLE_FORMS", "PHOTO_SOLVER", "PDF_SOLVER", "PRACTICE", "APP_OPEN"],
+          "description": "Most recent feature used by the user."
+        },
+        "lastBackendUsed": {
+          "type": "string",
+          "enum": ["FIREBASE_AI", "CLOUDFLARE_EDGE", "SHARED_CACHE", "LOCAL_CACHE", "FAILED", "NONE"],
+          "description": "Most recent backend that handled a request."
+        },
+        "lastActiveAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Most recent activity timestamp set via FieldValue.serverTimestamp()."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Immutable account telemetry creation timestamp set via FieldValue.serverTimestamp()."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last modification timestamp set via FieldValue.serverTimestamp()."
+        }
+      },
+      "required": [
+        "userId",
+        "displayName",
+        "email",
+        "appVersion",
+        "totalRequests",
+        "firebaseRequests",
+        "cloudflareRequests",
+        "cacheHits",
+        "failedRequests",
+        "totalLatencyMs",
+        "avgLatencyMs",
+        "totalActiveSeconds",
+        "activeSessionsCount",
+        "lastFeatureUsed",
+        "lastBackendUsed",
+        "lastActiveAt",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "UserRequestLog": {
+      "title": "UserRequestLog",
+      "description": "Immutable per-request audit entry showing which user raised a solve request, which feature and backend handled it, model name, latency, and result badge. Clients must submit FieldValue.serverTimestamp() for createdAt.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Authenticated Firebase UID of the requesting user."
+        },
+        "userEmail": {
+          "type": "string",
+          "description": "Email of the requesting user for Firebase Console visibility (0..254 characters)."
+        },
+        "feature": {
+          "type": "string",
+          "enum": ["DYNAMIC_ISLAND", "GOOGLE_FORMS", "PHOTO_SOLVER", "PDF_SOLVER", "PRACTICE"],
+          "description": "App feature that initiated the solve request."
+        },
+        "backend": {
+          "type": "string",
+          "enum": ["FIREBASE_AI", "CLOUDFLARE_EDGE", "SHARED_CACHE", "LOCAL_CACHE", "FAILED"],
+          "description": "Backend engine that fulfilled or failed the request."
+        },
+        "modelUsed": {
+          "type": "string",
+          "description": "Model identifier or provider label (0..120 characters)."
+        },
+        "latencyMs": {
+          "type": "integer",
+          "description": "End-to-end solve latency in milliseconds (0..120000)."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["SUCCESS", "FAILED", "CACHE_HIT"],
+          "description": "Outcome of the request."
+        },
+        "questionPreview": {
+          "type": "string",
+          "description": "Truncated preview of the question or form title (0..240 characters)."
+        },
+        "answerBadge": {
+          "type": "string",
+          "description": "Short answer badge returned to the user (0..48 characters)."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Immutable server timestamp when the request completed."
+        }
+      },
+      "required": [
+        "userId",
+        "userEmail",
+        "feature",
+        "backend",
+        "modelUsed",
+        "latencyMs",
+        "status",
+        "questionPreview",
+        "answerBadge",
+        "createdAt"
+      ]
+    },
+    "UserActiveSession": {
+      "title": "UserActiveSession",
+      "description": "Recorded foreground app or Dynamic Island active duration session for a user. Clients must submit FieldValue.serverTimestamp() for endedAt.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Authenticated Firebase UID of the user."
+        },
+        "userEmail": {
+          "type": "string",
+          "description": "User email for Console visibility (0..254 characters)."
+        },
+        "source": {
+          "type": "string",
+          "enum": ["APP_FOREGROUND", "DYNAMIC_ISLAND"],
+          "description": "Whether the active time was spent in the main app or floating Dynamic Island."
+        },
+        "durationSeconds": {
+          "type": "integer",
+          "description": "Active duration in seconds (1..86400)."
+        },
+        "requestsCount": {
+          "type": "integer",
+          "description": "Number of requests raised during this active session."
+        },
+        "deviceModel": {
+          "type": "string",
+          "description": "Sanitized Android device model label (0..100 characters)."
+        },
+        "appVersion": {
+          "type": "string",
+          "description": "App version string (1..32 characters)."
+        },
+        "endedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Immutable server timestamp when the session slice was flushed."
+        }
+      },
+      "required": [
+        "userId",
+        "userEmail",
+        "source",
+        "durationSeconds",
+        "requestsCount",
+        "deviceModel",
+        "appVersion",
+        "endedAt"
+      ]
+    },
     "SolvedQuestion": {
       "title": "SolvedQuestion",
       "description": "A solved quiz or study question with structured AI answer badge, concise explanation, subject tag, confidence score, and flashcard bookmark state. Clients must submit FieldValue.serverTimestamp() for createdAt and updatedAt.",
@@ -81,12 +299,79 @@
         "createdAt",
         "updatedAt"
       ]
+    },
+    "SharedQuizCache": {
+      "title": "SharedQuizCache",
+      "description": "Immutable verified answer cache entry keyed by canonical 64-char SHA-256 hash of question + options. Clients must submit FieldValue.serverTimestamp() for createdAt.",
+      "type": "object",
+      "properties": {
+        "questionHash": {
+          "type": "string",
+          "description": "64-character lowercase hex SHA-256 signature of canonical normalized question text + options."
+        },
+        "createdByUid": {
+          "type": "string",
+          "description": "Authenticated Firebase UID of the contributor who first verified this answer."
+        },
+        "answerBadge": {
+          "type": "string",
+          "description": "Concise winning option badge (e.g. 'B', 'A, C', 'True', or short numeric answer)."
+        },
+        "shortAnswer": {
+          "type": "string",
+          "description": "Exact wording of winning option or short value (0..300 characters)."
+        },
+        "explanation": {
+          "type": "string",
+          "description": "Concise 1-sentence reason why the answer is correct (0..500 characters)."
+        },
+        "subject": {
+          "type": "string",
+          "enum": ["GENERAL", "MATH", "SCIENCE", "CODING", "MEDICAL", "LAW"],
+          "description": "Normalized subject bucket."
+        },
+        "confidence": {
+          "type": "integer",
+          "description": "Verified confidence percentage (70..100)."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Immutable creation timestamp set via FieldValue.serverTimestamp()."
+        }
+      },
+      "required": [
+        "questionHash",
+        "createdByUid",
+        "answerBadge",
+        "shortAnswer",
+        "explanation",
+        "subject",
+        "confidence",
+        "createdAt"
+      ]
     }
   },
   "firestore": {
+    "/users/{userId}": {
+      "schema": "UserActivityProfile",
+      "description": "Per-user telemetry dashboard profile showing active time, request counts, average speed, and backend usage."
+    },
+    "/users/{userId}/requestLogs/{requestId}": {
+      "schema": "UserRequestLog",
+      "description": "Immutable per-user log of every solve request raised across Dynamic Island, Google Forms, Photos, and PDFs."
+    },
+    "/users/{userId}/activeSessions/{sessionId}": {
+      "schema": "UserActiveSession",
+      "description": "Per-user active time sessions recorded from foreground app usage and floating Dynamic Island usage."
+    },
     "/users/{userId}/solvedQuestions/{questionId}": {
       "schema": "SolvedQuestion",
       "description": "Per-user private collection of solved questions, explanations, bookmarks, and mistake flashcards."
+    },
+    "/sharedQuizCache/{questionHash}": {
+      "schema": "SharedQuizCache",
+      "description": "Global verified question-hash answer cache enabling instant zero-AI-quota hits across users."
     }
   }
 }

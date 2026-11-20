@@ -1,77 +1,72 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">prism-ocr-solver</string>
-    <string name="accessibility_service_description">prism-ocr-solver: Assistive study tool for reading on-screen quiz questions and tapping solved options when enabled.</string>
+    <string name="app_name">Prism Solver</string>
 
     <!-- Header & Navigation -->
-    <string name="header_subtitle">Instant Floating Solver</string>
+    <string name="header_subtitle">Instant Screen &amp; Quiz Helper</string>
     <string name="nav_home">Home</string>
     <string name="nav_stats">Stats</string>
     <string name="nav_settings">Settings</string>
 
     <!-- Home Screen -->
-    <string name="cta_start_solver">Start Floating Overlay</string>
-    <string name="cta_stop_solver">Stop Floating Overlay</string>
-    <string name="home_methods_title">Select Answer Method</string>
-    <string name="home_methods_subtitle">Choose how the floating overlay solves questions on your screen.</string>
-    <string name="home_selected_title">Selected Setup</string>
+    <string name="cta_start_solver">Start Floating Helper</string>
+    <string name="cta_stop_solver">Stop Floating Helper</string>
+    <string name="home_methods_title">Choose Solving Style</string>
+    <string name="home_methods_subtitle">Pick how the floating pill reads and answers your questions.</string>
+    <string name="home_selected_title">Active Setup</string>
     <string name="btn_grant">Allow</string>
     <string name="btn_enabled">Allowed</string>
     <string name="btn_open_settings">Open Settings</string>
 
     <!-- Settings Screen -->
-    <string name="settings_keys_title">Local API Keys (Stored on Device Only)</string>
-    <string name="settings_keys_subtitle">Enter your AI keys here. Keys are saved strictly locally on your phone and never stored in the app.</string>
-    <string name="settings_format_title">Answer Display Format (ABCD vs Charging)</string>
-    <string name="settings_format_subtitle" formatted="false">Switch between showing letters A, B, C, D or charging numbers 91%, 92%, 93%, 94%.</string>
+    <string name="settings_keys_title">Personal AI Keys (Optional — Saved on Phone Only)</string>
+    <string name="settings_keys_subtitle">Only needed if you want to plug in your own paid or free developer keys.</string>
+    <string name="settings_format_title">Answer Look (A, B, C, D vs Charging %)</string>
+    <string name="settings_format_subtitle" formatted="false">Show answer letters (A, B, C, D) or disguise them quietly as battery percentage (91%–94%).</string>
     <string name="format_abcd_title">Option Letters (A, B, C, D)</string>
-    <string name="format_abcd_desc">Shows solved options directly as A, B, C, D on the floating pill.</string>
-    <string name="format_charging_title" formatted="false">Charging Numbers (91, 92, 93, 94)</string>
-    <string name="format_charging_desc" formatted="false">Disguises answers as charging percentage: 91% = A, 92% = B, 93% = C, 94% = D.</string>
+    <string name="format_abcd_desc">Shows answers clearly as A, B, C, or D on the floating pill.</string>
+    <string name="format_charging_title" formatted="false">Charging Disguise (91%–94%)</string>
+    <string name="format_charging_desc" formatted="false">Quietly shows answers like battery status: 91% = A, 92% = B, 93% = C, 94% = D.</string>
 
-    <string name="settings_logins_title">Server &amp; Gemini Logins + Permissions</string>
-    <string name="settings_overlay_title">Floating Overlay Appearance &amp; Controls</string>
-    <string name="style_island_title">Top Dynamic Pill</string>
-    <string name="style_island_desc">Compact pill docked near the status bar.</string>
-    <string name="style_bubble_title">Draggable Mini Bubble</string>
-    <string name="style_bubble_desc">Floating circular badge you can drag anywhere.</string>
-    <string name="opacity_label">Overlay Visibility / Opacity</string>
+    <string name="settings_logins_title">Google Account &amp; Permissions</string>
+    <string name="settings_overlay_title">Floating Pill Look &amp; Controls</string>
+    <string name="style_island_title">Top Floating Pill</string>
+    <string name="style_island_desc">Sleek capsule anchored cleanly near the top of your screen.</string>
+    <string name="style_bubble_title">Movable Round Bubble</string>
+    <string name="style_bubble_desc">Small floating button you can drag anywhere on screen.</string>
+    <string name="opacity_label">Pill Transparency</string>
 
-    <string name="haptic_title">Vibration Answer Pulses</string>
+    <string name="haptic_title">Pocket Vibration Pulses</string>
     <string name="haptic_desc">1 buzz = A  •  2 buzzes = B  •  3 buzzes = C  •  4 buzzes = D</string>
     <string name="btn_test_vibration">Test 2 Buzzes (Option B)</string>
 
-    <string name="autotap_answer_title">Auto-Tap Solved Option</string>
-    <string name="autotap_answer_desc">Automatically taps option A, B, C, or D on screen when solved.</string>
-    <string name="autotap_next_title">Auto-Advance Next Question</string>
-    <string name="autotap_next_desc">Taps Next or Continue after selecting the solved answer.</string>
-    <string name="instant_detect_title">Auto-Detect Question Changes</string>
-    <string name="instant_detect_desc">Automatically triggers a new scan when the screen question changes.</string>
+    <string name="instant_detect_title">Auto-Check New Questions</string>
+    <string name="instant_detect_desc">Automatically checks again when the question on your screen changes.</string>
 
-    <string name="overlapping_google_title">Overlapping Google Completely</string>
-    <string name="overlapping_google_desc">Opens a full interactive floating Google / Gemini window overlapping completely on top of any app.</string>
+    <string name="overlapping_google_title">Floating AI Window</string>
+    <string name="overlapping_google_desc">Keeps a small movable AI chat window open above any app.</string>
 
-    <string name="history_title">Quick Test &amp; Solved History</string>
-    <string name="history_empty">No recent solved questions saved locally.</string>
-    <string name="btn_clear_history">Clear Local</string>
-    <string name="btn_solve_sample">Test Solver</string>
-    <string name="btn_next_sample">Next Sample</string>
+    <string name="history_title">Saved Questions &amp; History</string>
+    <string name="history_empty">No solved questions saved yet.</string>
+    <string name="btn_clear_history">Clear History</string>
+    <string name="btn_solve_sample">Quick Check</string>
+    <string name="btn_next_sample">Next Question</string>
 
-    <string name="login_header_title">Connect Google Gemini</string>
+    <string name="login_header_title">Sign in for Private Forms</string>
     <string name="login_done_button">Done</string>
 
     <!-- Legal, Privacy & Terms Agreement Dialog -->
-    <string name="legal_consent_title">Welcome to prism-ocr-solver</string>
-    <string name="legal_consent_subtitle">Please review and accept our Terms of Service &amp; Privacy Policy before starting.</string>
-    <string name="legal_consent_checkbox">I agree to the Terms of Service &amp; Privacy Policy. I confirm I will use this application strictly for personal study, learning, and educational revision.</string>
+    <string name="legal_consent_title">Welcome to Prism Solver</string>
+    <string name="legal_consent_subtitle">Quick privacy promise before you get started.</string>
+    <string name="legal_consent_checkbox">I agree to the Terms of Service &amp; Privacy Policy and will use Prism Solver for study and personal learning.</string>
     <string name="legal_consent_btn_accept">Accept &amp; Continue</string>
-    <string name="legal_consent_academic_notice">Academic Integrity: prism-ocr-solver is an assistive learning tool. You are solely responsible for complying with your institution\'s examination policies.</string>
-    <string name="legal_policy_link_text">View Privacy Policy &amp; Terms Online</string>
+    <string name="legal_consent_academic_notice">Study Companion: Prism Solver is built to help you review and learn. Always follow your school or exam rules.</string>
+    <string name="legal_policy_link_text">Read Privacy Policy &amp; Terms</string>
 
     <!-- Feature Guide & Legal Section -->
-    <string name="feature_guide_title">How prism-ocr-solver Works</string>
-    <string name="feature_guide_subtitle">Complete feature walkthrough and operational manual.</string>
-    <string name="privacy_legal_title">Legal &amp; Privacy Policies</string>
-    <string name="privacy_legal_subtitle">On-device privacy guarantees, zero-tracker policy, and official website documentation.</string>
-    <string name="btn_open_website_policy">Open virusboss.in/app/prism-ocr-solver/#privacy-policy</string>
+    <string name="feature_guide_title">How Prism Solver Works</string>
+    <string name="feature_guide_subtitle">Simple 4-step walkthrough.</string>
+    <string name="privacy_legal_title">Privacy &amp; Safety</string>
+    <string name="privacy_legal_subtitle">We only read your screen when you tap the pill—nothing is recorded or stored.</string>
+    <string name="btn_open_website_policy">View Full Privacy Policy</string>
 </resources>

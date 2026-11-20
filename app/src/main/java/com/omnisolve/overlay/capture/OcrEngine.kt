@@ -1,124 +1,397 @@
 package com.omnisolve.overlay.capture
 
 import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
+import android.graphics.Paint
 import android.graphics.Rect
 import android.util.Log
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import com.omnisolve.overlay.util.PrismPerfLogger
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.coroutines.cancellation.CancellationException
+import kotlin.math.max
+import kotlin.math.roundToInt
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
+
+data class OcrExtractionResult(
+    val text: String,
+    val blocks: List<Pair<String, Rect>>,
+    val durationMs: Long,
+    val passCount: Int,
+    val timedOut: Boolean = false,
+    val errorReason: String? = null
+)
 
 /**
- * On-device OCR using Google ML Kit.
- * Extracts all visible text from a screen bitmap — no network required.
+ * High-Speed Asynchronous OCR Pipeline with Pre-Allocated Bitmap Buffer Pool.
+ *
+ * Physical-Device Reliability Improvements:
+ * 1. Dedicated off-main-thread coroutine worker pool (`ocrWorkerDispatcher`).
+ * 2. Pre-allocated reusable `ARGB_8888` bitmap & canvas ring buffer pool to avoid GC pauses.
+ * 3. Tracked ML Kit warm-up (`warmupDeferred` + explicit `PRISM_PERF` timing/status — never silent).
+ * 4. Hard per-pass timeout (`8000ms`) so a stalled ML Kit binder call can never hang the pipeline.
+ * 5. Downscaled second high-contrast pass ONLY when Pass 1 < 6 chars and didn't time out.
  */
-class OcrEngine {
+open class OcrEngine {
 
     companion object {
         private const val TAG = "OcrEngine"
+        private const val MAX_OCR_SIDE = 1280
+        private const val POOL_SIZE = 2
+        private const val WARMUP_AWAIT_BUDGET_MS = 1200L
+        internal const val OCR_RECOGNIZE_TIMEOUT_MS = 8000L
     }
 
-    // ML Kit text recognizer — runs fully on-device, no API key needed
-    private val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+    private val ocrExecutor = Executors.newFixedThreadPool(2) { runnable ->
+        Thread(runnable, "PrismOcrWorker").apply {
+            isDaemon = true
+            priority = Thread.NORM_PRIORITY + 1
+        }
+    }
+    private val ocrWorkerDispatcher = ocrExecutor.asCoroutineDispatcher()
+    private val workerScope = CoroutineScope(SupervisorJob() + ocrWorkerDispatcher)
 
-    /**
-     * Extract all text from the given bitmap using ML Kit OCR.
-     * Returns the raw text string, or empty string on failure.
-     * Must be called from a coroutine context.
-     */
-    suspend fun extractText(bitmap: Bitmap): String {
-        return try {
-            val inputImage = InputImage.fromBitmap(bitmap, 0)
-            val result = recognizer.process(inputImage).await()
-            val text = result.text.trim()
-            Log.d(TAG, "OCR extracted ${text.length} chars: ${text.take(200)}")
-            text
-        } catch (e: Exception) {
-            Log.e(TAG, "OCR failed", e)
-            ""
+    private class PreAllocatedBitmapSlot(width: Int, height: Int) {
+        var bitmap: Bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        var canvas: Canvas = Canvas(bitmap)
+        val inUse = AtomicBoolean(false)
+
+        fun ensureCapacity(targetW: Int, targetH: Int): Bitmap {
+            if (bitmap.isRecycled || bitmap.width != targetW || bitmap.height != targetH) {
+                try {
+                    if (!bitmap.isRecycled) {
+                        bitmap.reconfigure(targetW, targetH, Bitmap.Config.ARGB_8888)
+                        canvas = Canvas(bitmap)
+                        return bitmap
+                    }
+                } catch (_: Exception) {
+                    // Fallback to fresh allocation when size grows beyond allocation byte count
+                }
+                try { if (!bitmap.isRecycled) bitmap.recycle() } catch (_: Exception) {}
+                bitmap = Bitmap.createBitmap(targetW, targetH, Bitmap.Config.ARGB_8888)
+                canvas = Canvas(bitmap)
+            }
+            return bitmap
         }
     }
 
-    /**
-     * Extract text AND bounding box coordinates for each text block.
-     * Returns a Pair of:
-     *   - Full extracted text (same as extractText)
-     *   - List of (blockText, boundingRect) for each recognized text block
-     *
-     * The bounding rects are in the bitmap's coordinate space (= screen pixels).
-     * This is used by the auto-click bot to locate MCQ options on screen.
-     */
-    suspend fun extractTextWithBounds(bitmap: Bitmap): Pair<String, List<Pair<String, Rect>>> {
-        return try {
-            // Memory & Speed optimization: downscale 2x for OCR inference if large screen bitmap
-            val scaleFactor = if (bitmap.width > 1200 || bitmap.height > 1200) 0.5f else 1.0f
-            val scaledBitmap = if (scaleFactor < 1.0f) {
-                Bitmap.createScaledBitmap(
-                    bitmap,
-                    (bitmap.width * scaleFactor).toInt(),
-                    (bitmap.height * scaleFactor).toInt(),
-                    true
+    private val bufferPoolMutex = Mutex()
+    private val preAllocatedPool = ArrayList<PreAllocatedBitmapSlot>(POOL_SIZE)
+    private val warmupDeferred = CompletableDeferred<Boolean>()
+
+    @Volatile
+    var lastWarmupStatus: String = "PENDING"
+        private set
+
+    @Volatile
+    var lastOcrError: String? = null
+        private set
+
+    private val contrastPaint = Paint(Paint.FILTER_BITMAP_FLAG).apply {
+        val contrast = 1.42f
+        val translate = (-0.5f * contrast + 0.5f) * 255f
+        colorFilter = ColorMatrixColorFilter(
+            ColorMatrix(
+                floatArrayOf(
+                    contrast, 0f, 0f, 0f, translate,
+                    0f, contrast, 0f, 0f, translate,
+                    0f, 0f, contrast, 0f, translate,
+                    0f, 0f, 0f, 1f, 0f
                 )
+            )
+        )
+    }
+    private val scalePaint = Paint(Paint.FILTER_BITMAP_FLAG)
+
+    private val recognizer by lazy {
+        TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+    }
+
+    init {
+        workerScope.launch {
+            val startMs = PrismPerfLogger.nowMs()
+            var warmSlot: PreAllocatedBitmapSlot? = null
+            try {
+                bufferPoolMutex.withLock {
+                    if (preAllocatedPool.isEmpty()) {
+                        repeat(POOL_SIZE) {
+                            preAllocatedPool.add(PreAllocatedBitmapSlot(720, 1280))
+                        }
+                    }
+                }
+                warmSlot = acquirePreAllocatedSlot(720, 1280)
+                val warmImg = InputImage.fromBitmap(warmSlot.bitmap, 0)
+                withTimeout(OCR_RECOGNIZE_TIMEOUT_MS) {
+                    recognizer.process(warmImg).await()
+                }
+                val elapsed = PrismPerfLogger.nowMs() - startMs
+                lastWarmupStatus = "READY:${elapsed}ms"
+                PrismPerfLogger.logStage(0L, "MLKIT_INIT", elapsed, status = "OK", detail = "warmup_ready")
+                warmupDeferred.complete(true)
+            } catch (ce: CancellationException) {
+                if (ce !is TimeoutCancellationException) {
+                    lastWarmupStatus = "CANCELLED"
+                    warmupDeferred.complete(false)
+                    throw ce
+                }
+                val elapsed = PrismPerfLogger.nowMs() - startMs
+                lastWarmupStatus = "TIMEOUT:${elapsed}ms"
+                lastOcrError = lastWarmupStatus
+                Log.w(TAG, "ML Kit warm-up timed out after ${elapsed}ms")
+                PrismPerfLogger.logStage(0L, "MLKIT_INIT", elapsed, status = "TIMEOUT", detail = "warmup_timeout")
+                warmupDeferred.complete(false)
+            } catch (e: Exception) {
+                val elapsed = PrismPerfLogger.nowMs() - startMs
+                lastWarmupStatus = "ERROR:${e.javaClass.simpleName}"
+                lastOcrError = "${e.javaClass.simpleName}: ${e.message}"
+                Log.w(TAG, "ML Kit warm-up failed: ${e.javaClass.simpleName}: ${e.message}")
+                PrismPerfLogger.logStage(
+                    0L,
+                    "MLKIT_INIT",
+                    elapsed,
+                    status = "FAILED",
+                    detail = "${e.javaClass.simpleName}: ${e.message}"
+                )
+                warmupDeferred.complete(false)
+            } finally {
+                releaseSlot(warmSlot)
+            }
+        }
+    }
+
+    private suspend fun acquirePreAllocatedSlot(targetW: Int, targetH: Int): PreAllocatedBitmapSlot {
+        bufferPoolMutex.withLock {
+            for (slot in preAllocatedPool) {
+                if (slot.inUse.compareAndSet(false, true)) {
+                    slot.ensureCapacity(targetW, targetH)
+                    return slot
+                }
+            }
+            val newSlot = PreAllocatedBitmapSlot(targetW, targetH)
+            newSlot.inUse.set(true)
+            if (preAllocatedPool.size < POOL_SIZE + 2) {
+                preAllocatedPool.add(newSlot)
+            }
+            return newSlot
+        }
+    }
+
+    private fun releaseSlot(slot: PreAllocatedBitmapSlot?) {
+        slot?.inUse?.set(false)
+    }
+
+    open suspend fun extractText(bitmap: Bitmap): String = withContext(ocrWorkerDispatcher) {
+        if (bitmap.isRecycled || bitmap.width <= 0 || bitmap.height <= 0) return@withContext ""
+        val result = extractTextWithDiagnostics(bitmap, sessionId = 0L)
+        result.text
+    }
+
+    open suspend fun extractTextWithBounds(bitmap: Bitmap): Pair<String, List<Pair<String, Rect>>> =
+        withContext(ocrWorkerDispatcher) {
+            if (bitmap.isRecycled || bitmap.width <= 0 || bitmap.height <= 0) {
+                return@withContext Pair("", emptyList())
+            }
+            val result = extractTextWithDiagnostics(bitmap, sessionId = 0L)
+            Pair(result.text, result.blocks)
+        }
+
+    open suspend fun extractTextWithDiagnostics(
+        bitmap: Bitmap,
+        sessionId: Long = 0L
+    ): OcrExtractionResult = withContext(ocrWorkerDispatcher) {
+        val totalStart = PrismPerfLogger.nowMs()
+        if (bitmap.isRecycled || bitmap.width <= 0 || bitmap.height <= 0) {
+            lastOcrError = "INVALID_BITMAP"
+            return@withContext OcrExtractionResult("", emptyList(), 0L, 0, false, "INVALID_BITMAP")
+        }
+
+        // Wait briefly for in-flight model warm-up so first solve never races TFLite initialization
+        if (!warmupDeferred.isCompleted) {
+            withTimeoutOrNull(WARMUP_AWAIT_BUDGET_MS) { warmupDeferred.await() }
+        }
+
+        val srcW = bitmap.width
+        val srcH = bitmap.height
+        val longestSide = max(srcW, srcH)
+        val scale = if (longestSide > MAX_OCR_SIDE) {
+            MAX_OCR_SIDE.toFloat() / longestSide.toFloat()
+        } else {
+            1.0f
+        }
+        val targetW = (srcW * scale).roundToInt().coerceAtLeast(64)
+        val targetH = (srcH * scale).roundToInt().coerceAtLeast(64)
+        val invScale = 1.0f / scale
+
+        var slot1: PreAllocatedBitmapSlot? = null
+        var slot2: PreAllocatedBitmapSlot? = null
+        try {
+            val prepStart = PrismPerfLogger.nowMs()
+            val workingBitmap = if (scale < 1.0f) {
+                slot1 = acquirePreAllocatedSlot(targetW, targetH)
+                val destRect = Rect(0, 0, targetW, targetH)
+                slot1.canvas.drawBitmap(bitmap, null, destRect, scalePaint)
+                slot1.bitmap
             } else {
                 bitmap
             }
-
-            val inputImage = InputImage.fromBitmap(scaledBitmap, 0)
-            val result = recognizer.process(inputImage).await()
-
-            // If we created a temporary downscaled bitmap, recycle it
-            if (scaledBitmap != bitmap) {
-                scaledBitmap.recycle()
+            val prepMs = PrismPerfLogger.nowMs() - prepStart
+            if (prepMs >= 5L) {
+                PrismPerfLogger.logStage(
+                    sessionId,
+                    "BITMAP_PREP",
+                    prepMs,
+                    status = "OK",
+                    detail = "${srcW}x${srcH}->${targetW}x${targetH}"
+                )
             }
 
-            val fullText = result.text.trim()
-            Log.d(TAG, "OCR extracted ${fullText.length} chars with bounds (scale=$scaleFactor)")
-
-            val blocks = mutableListOf<Pair<String, Rect>>()
-            val invScale = 1.0f / scaleFactor
-
-            for (block in result.textBlocks) {
-                // First extract each line so individual options (A, B, C, D) have exact bounds
-                for (line in block.lines) {
-                    val lineText = line.text.trim()
-                    val lineBounds = line.boundingBox
-                    if (lineBounds != null && lineText.isNotBlank()) {
-                        val unscaled = if (scaleFactor < 1.0f) {
-                            Rect(
-                                (lineBounds.left * invScale).toInt(),
-                                (lineBounds.top * invScale).toInt(),
-                                (lineBounds.right * invScale).toInt(),
-                                (lineBounds.bottom * invScale).toInt()
-                            )
-                        } else lineBounds
-                        blocks.add(Pair(lineText, unscaled))
-                    }
-                }
-                // Also keep the block-level entry
-                val blockText = block.text.trim()
-                val bounds = block.boundingBox
-                if (bounds != null && blockText.isNotBlank()) {
-                    val unscaled = if (scaleFactor < 1.0f) {
-                        Rect(
-                            (bounds.left * invScale).toInt(),
-                            (bounds.top * invScale).toInt(),
-                            (bounds.right * invScale).toInt(),
-                            (bounds.bottom * invScale).toInt()
-                        )
-                    } else bounds
-                    blocks.add(Pair(blockText, unscaled))
-                }
+            // Pass 1: Fast asynchronous ML Kit recognition with strict timeout
+            val pass1 = runMlKitRecognition(workingBitmap, invScale)
+            val pass1Assessment = OcrQualityValidator.assess(pass1.first, pass1.second)
+            if (pass1Assessment.isUsableQuestion) {
+                lastOcrError = null
+                val elapsed = PrismPerfLogger.nowMs() - totalStart
+                PrismPerfLogger.logStage(
+                    sessionId,
+                    "OCR",
+                    elapsed,
+                    status = "OK",
+                    detail = "passes=1 chars=${pass1Assessment.meaningfulCharCount} opts=${pass1Assessment.optionMarkerCount} blocks=${pass1.second.size}"
+                )
+                return@withContext OcrExtractionResult(pass1.first, pass1.second, elapsed, passCount = 1)
             }
 
-            Pair(fullText, blocks)
+            coroutineContext.ensureActive()
+
+            // Pass 2: High-contrast pass from already-downscaled workingBitmap (no oversized source copy)
+            slot2 = acquirePreAllocatedSlot(targetW, targetH)
+            val destRect = Rect(0, 0, targetW, targetH)
+            slot2.canvas.drawBitmap(workingBitmap, null, destRect, contrastPaint)
+            val pass2 = runMlKitRecognition(slot2.bitmap, invScale)
+            val pass2Assessment = OcrQualityValidator.assess(pass2.first, pass2.second)
+            val best = if (pass2Assessment.qualityScore > pass1Assessment.qualityScore) pass2 else pass1
+            val bestChars = max(pass1Assessment.meaningfulCharCount, pass2Assessment.meaningfulCharCount)
+            val elapsed = PrismPerfLogger.nowMs() - totalStart
+            lastOcrError = null
+            PrismPerfLogger.logStage(
+                sessionId,
+                "OCR",
+                elapsed,
+                status = "OK",
+                detail = "passes=2 chars=$bestChars blocks=${best.second.size}"
+            )
+            return@withContext OcrExtractionResult(best.first, best.second, elapsed, passCount = 2)
+        } catch (ce: CancellationException) {
+            val elapsed = PrismPerfLogger.nowMs() - totalStart
+            if (ce !is TimeoutCancellationException) {
+                PrismPerfLogger.logStage(sessionId, "OCR", elapsed, status = "CANCELLED")
+                throw ce
+            }
+            lastOcrError = "OCR_TIMEOUT_${OCR_RECOGNIZE_TIMEOUT_MS}MS"
+            Log.e(TAG, "OCR timed out after ${elapsed}ms")
+            PrismPerfLogger.logStage(
+                sessionId,
+                "OCR",
+                elapsed,
+                status = "TIMEOUT",
+                detail = "warmup=$lastWarmupStatus"
+            )
+            return@withContext OcrExtractionResult("", emptyList(), elapsed, passCount = 1, timedOut = true, errorReason = lastOcrError)
         } catch (e: Exception) {
-            Log.e(TAG, "OCR with bounds failed", e)
-            Pair("", emptyList())
+            val elapsed = PrismPerfLogger.nowMs() - totalStart
+            val err = "${e.javaClass.simpleName}: ${e.message}"
+            lastOcrError = err
+            Log.e(TAG, "Async OCR worker failed ($err)")
+            PrismPerfLogger.logStage(
+                sessionId,
+                "OCR",
+                elapsed,
+                status = "FAILED",
+                detail = err
+            )
+            return@withContext OcrExtractionResult("", emptyList(), elapsed, passCount = 1, timedOut = false, errorReason = err)
+        } finally {
+            releaseSlot(slot1)
+            releaseSlot(slot2)
         }
     }
 
+    private suspend fun runMlKitRecognition(
+        workingBitmap: Bitmap,
+        invScale: Float
+    ): Pair<String, List<Pair<String, Rect>>> {
+        val inputImage = InputImage.fromBitmap(workingBitmap, 0)
+        val result = withTimeout(OCR_RECOGNIZE_TIMEOUT_MS) {
+            recognizer.process(inputImage).await()
+        }
+        val fullText = result.text.trim()
+        val blocks = ArrayList<Pair<String, Rect>>(result.textBlocks.size * 3)
+        val needsUnscale = invScale != 1.0f
+
+        for (block in result.textBlocks) {
+            for (line in block.lines) {
+                val lineText = line.text.trim()
+                val lineBounds = line.boundingBox
+                if (lineBounds != null && lineText.isNotBlank()) {
+                    val rect = if (needsUnscale) {
+                        Rect(
+                            (lineBounds.left * invScale).roundToInt(),
+                            (lineBounds.top * invScale).roundToInt(),
+                            (lineBounds.right * invScale).roundToInt(),
+                            (lineBounds.bottom * invScale).roundToInt()
+                        )
+                    } else {
+                        lineBounds
+                    }
+                    blocks.add(Pair(lineText, rect))
+                }
+            }
+            val blockText = block.text.trim()
+            val blockBounds = block.boundingBox
+            if (blockBounds != null && blockText.isNotBlank()) {
+                val rect = if (needsUnscale) {
+                    Rect(
+                        (blockBounds.left * invScale).roundToInt(),
+                        (blockBounds.top * invScale).roundToInt(),
+                        (blockBounds.right * invScale).roundToInt(),
+                        (blockBounds.bottom * invScale).roundToInt()
+                    )
+                } else {
+                    blockBounds
+                }
+                blocks.add(Pair(blockText, rect))
+            }
+        }
+        return Pair(fullText, blocks)
+    }
+
     fun close() {
+        try { workerScope.cancel() } catch (_: Exception) {}
         try { recognizer.close() } catch (_: Exception) {}
+        try { ocrExecutor.shutdownNow() } catch (_: Exception) {}
+        try {
+            for (slot in preAllocatedPool) {
+                if (!slot.bitmap.isRecycled) slot.bitmap.recycle()
+            }
+            preAllocatedPool.clear()
+        } catch (_: Exception) {}
     }
 }
-

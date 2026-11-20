@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- iOS TrueDepth Sensor Camera Housing -->
+    <item>
+        <shape android:shape="oval">
+            <gradient
+                android:startColor="#FF14161D"
+                android:endColor="#FF090A0D"
+                android:angle="270" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="oval">
+            <stroke
+                android:width="0.9dp"
+                android:color="#30FFFFFF" />
+        </shape>
+    </item>
+</layer-list>

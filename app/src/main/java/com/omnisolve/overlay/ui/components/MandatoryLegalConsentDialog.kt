@@ -65,8 +65,14 @@ fun MandatoryLegalConsentDialog(
     modifier: Modifier = Modifier
 ) {
     val palette = LocalWhiteGlassPalette.current
-    val context = LocalContext.current
     var isChecked by remember { mutableStateOf(false) }
+    var showFullPrivacyPolicy by remember { mutableStateOf(false) }
+
+    if (showFullPrivacyPolicy) {
+        com.omnisolve.overlay.ui.screens.PrivacyPolicyModalDialog(
+            onDismiss = { showFullPrivacyPolicy = false }
+        )
+    }
 
     Dialog(
         onDismissRequest = { /* Non-dismissible: Must accept to proceed */ },
@@ -120,7 +126,7 @@ fun MandatoryLegalConsentDialog(
                             color = palette.inkPrimary
                         )
                         Text(
-                            text = "Legal Terms & Privacy Disclosure",
+                            text = "Privacy & Study Promise",
                             style = MaterialTheme.typography.bodySmall,
                             color = palette.inkSecondary
                         )
@@ -133,33 +139,31 @@ fun MandatoryLegalConsentDialog(
 
                 // Summary points
                 LegalSummaryBullet(
-                    title = "1. Personal Educational Use Only",
-                    description = "prism-ocr-solver is designed strictly as an assistive learning companion and study revision aid. You agree to use it in compliance with your school or exam policies."
+                    title = "1. Only Reads When You Tap",
+                    description = "We only read the question on your screen when you tap the floating pill—never automatically in the background."
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 LegalSummaryBullet(
-                    title = "2. On-Device RAM Processing & Zero Log Policy",
-                    description = "Screen captures are temporarily processed strictly in device memory (RAM) via ML Kit on-device OCR and immediately destroyed. We never record, store, or sell your screen captures."
+                    title = "2. Nothing Recorded or Stored",
+                    description = "Your screen is never recorded, saved, or sold. Temporary text is cleared immediately after showing your answer."
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 LegalSummaryBullet(
-                    title = "3. Private Device-Only Storage for Keys",
-                    description = "Your AI API keys are saved locally on your phone only and are never uploaded to our servers or shared with third parties."
+                    title = "3. Made for Personal Learning",
+                    description = "Use Prism Solver as a study and revision helper in line with your school or test guidelines."
                 )
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                // Public Policy Link
+                // In-App Updated Privacy Policy Viewer Button
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(12.dp))
-                        .background(if (palette.isDarkObsidian) Color(0xFF0F172A) else Color(0xFFF1F5F9))
+                        .background(palette.glassMedium)
+                        .border(1.dp, palette.accentSky.copy(alpha = 0.55f), RoundedCornerShape(12.dp))
                         .clickable {
-                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(MainActivity.URL_PRIVACY_POLICY_WEB))
-                            try {
-                                context.startActivity(intent)
-                            } catch (_: Exception) {}
+                            showFullPrivacyPolicy = true
                         }
                         .padding(horizontal = 12.dp, vertical = 10.dp)
                         .testTag("btn_consent_open_policy_link"),
@@ -175,16 +179,17 @@ fun MandatoryLegalConsentDialog(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "virusboss.in/app/prism-ocr-solver/#privacy-policy",
+                            text = "Privacy Policy & Terms",
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.SemiBold,
-                            color = palette.accentSky
+                            color = palette.inkPrimary
                         )
                     }
                     Text(
                         text = "Read Policy",
                         style = MaterialTheme.typography.labelSmall,
-                        color = palette.inkSecondary
+                        fontWeight = FontWeight.Bold,
+                        color = palette.accentSky
                     )
                 }
 
@@ -205,9 +210,9 @@ fun MandatoryLegalConsentDialog(
                         checked = isChecked,
                         onCheckedChange = { isChecked = it },
                         colors = CheckboxDefaults.colors(
-                            checkedColor = palette.accentEmerald,
+                            checkedColor = palette.accentSky,
                             uncheckedColor = palette.inkSecondary,
-                            checkmarkColor = Color.White
+                            checkmarkColor = palette.onAccentInk
                         ),
                         modifier = Modifier.testTag("checkbox_accept_terms")
                     )
@@ -223,20 +228,13 @@ fun MandatoryLegalConsentDialog(
                 Spacer(modifier = Modifier.height(16.dp))
 
                 // Accept & Continue Button (Disabled until checked)
-                val btnBg = if (isChecked) {
-                    androidx.compose.ui.graphics.Brush.horizontalGradient(
-                        listOf(Color(0xFF0284C7), Color(0xFF1D4ED8))
-                    )
-                } else {
-                    androidx.compose.ui.graphics.Brush.horizontalGradient(
-                        listOf(Color(0xFF64748B), Color(0xFF475569))
-                    )
-                }
+                val btnBg = if (isChecked) palette.accentSky else palette.glassSubtle
+                val btnInk = if (isChecked) palette.onAccentInk else palette.inkMuted
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .minimumInteractiveComponentSize()
-                        .clip(RoundedCornerShape(16.dp))
+                        .clip(RoundedCornerShape(14.dp))
                         .background(btnBg)
                         .clickable(
                             enabled = isChecked,
@@ -253,7 +251,7 @@ fun MandatoryLegalConsentDialog(
                         Icon(
                             imageVector = Icons.Filled.Check,
                             contentDescription = null,
-                            tint = if (isChecked) Color.White else Color(0xFFCBD5E1),
+                            tint = btnInk,
                             modifier = Modifier.size(20.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
@@ -261,7 +259,7 @@ fun MandatoryLegalConsentDialog(
                             text = stringResource(R.string.legal_consent_btn_accept),
                             style = MaterialTheme.typography.labelLarge,
                             fontWeight = FontWeight.Bold,
-                            color = if (isChecked) Color.White else Color(0xFFCBD5E1)
+                            color = btnInk
                         )
                     }
                 }

@@ -1,31 +1,31 @@
 <?xml version="1.0" encoding="utf-8"?>
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Daylight White Liquid Glass Toolbar Pill -->
+    <!-- Pure OLED Black Toolbar Pill -->
     <item>
         <shape android:shape="rectangle">
             <gradient
-                android:startColor="#F8FFFFFF"
-                android:centerColor="#F5F8FAFC"
-                android:endColor="#F2F1F5F9"
+                android:startColor="#FF000000"
+                android:centerColor="#FF050508"
+                android:endColor="#FF0A0A0E"
                 android:angle="270" />
-            <corners android:radius="34dp" />
+            <corners android:radius="36dp" />
         </shape>
     </item>
     <item>
         <shape android:shape="rectangle">
             <gradient
-                android:startColor="#BBFFFFFF"
+                android:startColor="#1EFFFFFF"
                 android:endColor="#00FFFFFF"
                 android:angle="270" />
-            <corners android:radius="34dp" />
+            <corners android:radius="36dp" />
         </shape>
     </item>
     <item>
         <shape android:shape="rectangle">
-            <corners android:radius="34dp" />
+            <corners android:radius="36dp" />
             <stroke
                 android:width="1.2dp"
-                android:color="#550284C7" />
+                android:color="#77D71921" />
         </shape>
     </item>
 </layer-list>

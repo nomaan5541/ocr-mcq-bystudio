@@ -30,6 +30,7 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.Home
@@ -52,8 +53,10 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.PathNode
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -112,19 +115,20 @@ enum class AppTab(
     val testTag: String
 ) {
     Home(R.string.nav_home, Icons.Filled.Home, Icons.Outlined.Home, "nav_tab_home"),
-    Stats(R.string.nav_stats, BarChartVector, BarChartVector, "nav_tab_stats"),
+    Stats(R.string.nav_stats, Icons.Filled.Add, Icons.Filled.Add, "nav_tab_stats"),
     Settings(R.string.nav_settings, Icons.Filled.Settings, Icons.Outlined.Settings, "nav_tab_settings")
 }
 
 /**
- * Prism Crimson Floating Navigation Pill Dock matching Screenshot 1:
- * Dark #1A1B20 pill container, active #D71921 crimson pill with subtle bottom red glow bar,
- * #EEEEEE text, and subtle vertical dividers between tabs.
+ * Prism Crimson Floating Navigation Pill Dock:
+ * Left = Home, Center = Animated `+` Tree Launcher (rotates 45deg to X when open), Right = Settings.
  */
 @Composable
 fun LiquidMorphBottomDock(
     selectedTab: AppTab,
     onSelectTab: (AppTab) -> Unit,
+    isPlusMenuOpen: Boolean = false,
+    onTogglePlusMenu: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val palette = LocalWhiteGlassPalette.current
@@ -218,22 +222,24 @@ fun LiquidMorphBottomDock(
             ) {
                 val tabWidth = maxWidth / tabs.size
                 val isCompactTab = tabWidth < 104.dp || isEditorial || isFlushAtelier
-                val indicatorOffset by animateDpAsState(
-                    targetValue = tabWidth * selectedIndex,
-                    animationSpec = MotionTokens.liquidMorph(reducedMotion, springCfg),
-                    label = "dock_liquid_pill_offset"
+                val density = LocalDensity.current
+                val tabWidthPx = with(density) { tabWidth.toPx() }
+                val indicatorOffsetPxState = animateFloatAsState(
+                    targetValue = tabWidthPx * selectedIndex,
+                    animationSpec = MotionTokens.dockSpringFor(archetype, reducedMotion, springCfg),
+                    label = "dock_liquid_pill_offset_px"
                 )
                 val pillShape = RoundedCornerShape(pillCorner)
 
                 Box(modifier = Modifier.fillMaxWidth()) {
-                    // Architectural sliding active indicator matched to ThemeLayoutArchetype
+                    // Architectural sliding active indicator running 100% on GPU graphicsLayer
                     Box(modifier = Modifier.matchParentSize()) {
                         when (archetype) {
                             ThemeLayoutArchetype.ATELIER_BENTO -> {
                                 // Razor-thin sliding architectural top accent rail
                                 Box(
                                     modifier = Modifier
-                                        .offset(x = indicatorOffset)
+                                        .graphicsLayer { translationX = indicatorOffsetPxState.value }
                                         .width(tabWidth)
                                         .fillMaxHeight()
                                 ) {
@@ -252,7 +258,7 @@ fun LiquidMorphBottomDock(
                                 // Beveled HUD highlight block with top avionics notch
                                 Box(
                                     modifier = Modifier
-                                        .offset(x = indicatorOffset)
+                                        .graphicsLayer { translationX = indicatorOffsetPxState.value }
                                         .width(tabWidth)
                                         .fillMaxHeight()
                                         .padding(horizontal = 2.dp)
@@ -275,7 +281,7 @@ fun LiquidMorphBottomDock(
                                 // Whisper-quiet editorial bottom dot indicator
                                 Box(
                                     modifier = Modifier
-                                        .offset(x = indicatorOffset)
+                                        .graphicsLayer { translationX = indicatorOffsetPxState.value }
                                         .width(tabWidth)
                                         .fillMaxHeight()
                                 ) {
@@ -294,7 +300,7 @@ fun LiquidMorphBottomDock(
                                 // Elevated recessed titanium hardware keycap indicator
                                 Box(
                                     modifier = Modifier
-                                        .offset(x = indicatorOffset)
+                                        .graphicsLayer { translationX = indicatorOffsetPxState.value }
                                         .width(tabWidth)
                                         .fillMaxHeight()
                                         .padding(horizontal = 2.dp)
@@ -308,7 +314,7 @@ fun LiquidMorphBottomDock(
                                 // Apple iOS 26 Liquid Glass frosted sliding capsule indicator
                                 Box(
                                     modifier = Modifier
-                                        .offset(x = indicatorOffset)
+                                        .graphicsLayer { translationX = indicatorOffsetPxState.value }
                                         .width(tabWidth)
                                         .fillMaxHeight()
                                         .padding(horizontal = 3.dp, vertical = 2.dp)
@@ -339,7 +345,7 @@ fun LiquidMorphBottomDock(
                                 // Original Gliding Crimson Liquid Glass Pill
                                 Box(
                                     modifier = Modifier
-                                        .offset(x = indicatorOffset)
+                                        .graphicsLayer { translationX = indicatorOffsetPxState.value }
                                         .width(tabWidth)
                                         .fillMaxHeight()
                                         .padding(horizontal = 2.dp)
@@ -379,121 +385,176 @@ fun LiquidMorphBottomDock(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         tabs.forEachIndexed { index, tab ->
-                            val isSelected = tab == selectedTab
+                            val isCenterPlus = tab == AppTab.Stats
+                            val isSelected = if (isCenterPlus) isPlusMenuOpen else (tab == selectedTab)
                             val interactionSource = remember(tab) { MutableInteractionSource() }
-                            val selectedFgColor = when (archetype) {
-                                ThemeLayoutArchetype.CLASSIC_PRISM -> palette.onAccentInk
-                                ThemeLayoutArchetype.IOS_LIQUID_LIGHT -> palette.accentSky
-                                ThemeLayoutArchetype.ATELIER_BENTO,
-                                ThemeLayoutArchetype.EDITORIAL_MONOGRAPH,
-                                ThemeLayoutArchetype.TELEMETRY_HUD,
-                                ThemeLayoutArchetype.KINETIC_DECK -> palette.accentSkyBright
-                            }
-                            val tabTextColor by animateColorAsState(
-                                targetValue = if (isSelected) selectedFgColor else palette.inkSecondary,
-                                animationSpec = spring(stiffness = 600f),
-                                label = "navText_${tab.name}"
-                            )
-                            val iconScale by animateFloatAsState(
-                                targetValue = if (isSelected && !reducedMotion) 1.12f else 1.0f,
-                                animationSpec = MotionTokens.tactilePress(reducedMotion, springCfg),
-                                label = "navIconScale_${tab.name}"
-                            )
-                            val rawLabel = stringResource(tab.labelRes)
-                            val displayLabel = if (isTelemetryHud) rawLabel.uppercase() else rawLabel
-                            val labelFont = when (archetype) {
-                                ThemeLayoutArchetype.TELEMETRY_HUD -> FontFamily.Monospace
-                                ThemeLayoutArchetype.EDITORIAL_MONOGRAPH -> FontFamily.Serif
-                                else -> FontFamily.Default
-                            }
 
-                            if (isCompactTab) {
-                                Column(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .heightIn(min = 48.dp)
-                                        .minimumInteractiveComponentSize()
-                                        .liquidPressScale(interactionSource, pressedScale = 0.94f)
-                                        .clip(pillShape)
-                                        .selectable(
-                                            selected = isSelected,
-                                            interactionSource = interactionSource,
-                                            indication = ripple(color = palette.accentSky),
-                                            onClick = { onSelectTab(tab) },
-                                            role = Role.Tab
-                                        )
-                                        .padding(vertical = 6.dp, horizontal = 4.dp)
-                                        .testTag(tab.testTag),
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.Center
-                                ) {
-                                    Icon(
-                                        imageVector = if (isSelected) tab.selectedIcon else tab.unselectedIcon,
-                                        contentDescription = rawLabel,
-                                        tint = tabTextColor,
-                                        modifier = Modifier
-                                            .size(18.dp)
-                                            .scale(iconScale)
-                                    )
-                                    Spacer(modifier = Modifier.height(2.dp))
-                                    Text(
-                                        text = displayLabel,
-                                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = labelFont),
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                        fontSize = if (isTelemetryHud) 10.sp else 11.sp,
-                                        color = tabTextColor,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
-                            } else {
-                                Row(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .heightIn(min = 48.dp)
-                                        .minimumInteractiveComponentSize()
-                                        .liquidPressScale(interactionSource, pressedScale = 0.94f)
-                                        .clip(pillShape)
-                                        .selectable(
-                                            selected = isSelected,
-                                            interactionSource = interactionSource,
-                                            indication = ripple(color = palette.accentSky),
-                                            onClick = { onSelectTab(tab) },
-                                            role = Role.Tab
-                                        )
-                                        .padding(horizontal = 6.dp, vertical = 10.dp)
-                                        .testTag(tab.testTag),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.Center
-                                ) {
-                                    Icon(
-                                        imageVector = if (isSelected) tab.selectedIcon else tab.unselectedIcon,
-                                        contentDescription = rawLabel,
-                                        tint = tabTextColor,
-                                        modifier = Modifier
-                                            .size(19.dp)
-                                            .scale(iconScale)
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(
-                                        text = displayLabel,
-                                        style = MaterialTheme.typography.labelLarge.copy(fontFamily = labelFont),
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                        fontSize = if (isTelemetryHud) 12.sp else 13.5.sp,
-                                        color = tabTextColor,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
-                            }
+                            if (isCenterPlus) {
+                                val plusRotation by animateFloatAsState(
+                                    targetValue = if (isPlusMenuOpen && !reducedMotion) 45f else if (isPlusMenuOpen) 45f else 0f,
+                                    animationSpec = MotionTokens.tactilePress(reducedMotion, springCfg),
+                                    label = "dock_plus_rotation"
+                                )
+                                val plusBg by animateColorAsState(
+                                    targetValue = if (isPlusMenuOpen) palette.inkPrimary else palette.accentSky,
+                                    animationSpec = spring(stiffness = 620f),
+                                    label = "dock_plus_bg"
+                                )
+                                val plusTint by animateColorAsState(
+                                    targetValue = if (isPlusMenuOpen) Color(0xFF0A0A0C) else palette.onAccentInk,
+                                    animationSpec = spring(stiffness = 620f),
+                                    label = "dock_plus_tint"
+                                )
 
-                            if (index < tabs.lastIndex && !isSelected && index + 1 != selectedIndex && !isEditorial) {
                                 Box(
                                     modifier = Modifier
-                                        .width(1.dp)
-                                        .height(18.dp)
-                                        .background(palette.cardHairlineBorder.copy(alpha = 0.65f))
+                                        .weight(1f)
+                                        .heightIn(min = 48.dp)
+                                        .minimumInteractiveComponentSize()
+                                        .liquidPressScale(interactionSource, pressedScale = 0.90f)
+                                        .clickable(
+                                            interactionSource = interactionSource,
+                                            indication = null,
+                                            role = Role.Button,
+                                            onClick = {
+                                                if (onTogglePlusMenu != null) {
+                                                    onTogglePlusMenu()
+                                                } else {
+                                                    onSelectTab(tab)
+                                                }
+                                            }
+                                        )
+                                        .testTag(tab.testTag),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(44.dp)
+                                            .clip(CircleShape)
+                                            .background(plusBg)
+                                            .border(
+                                                width = 1.dp,
+                                                color = if (isPlusMenuOpen) palette.cardHairlineBorder else palette.accentSkyBright.copy(alpha = 0.55f),
+                                                shape = CircleShape
+                                            ),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.Add,
+                                            contentDescription = if (isPlusMenuOpen) "Close quick options" else "Open quick solve options",
+                                            tint = plusTint,
+                                            modifier = Modifier
+                                                .size(23.dp)
+                                                .graphicsLayer { rotationZ = plusRotation }
+                                        )
+                                    }
+                                }
+                            } else {
+                                val selectedFgColor = when (archetype) {
+                                    ThemeLayoutArchetype.CLASSIC_PRISM -> palette.onAccentInk
+                                    ThemeLayoutArchetype.IOS_LIQUID_LIGHT -> palette.accentSky
+                                    ThemeLayoutArchetype.ATELIER_BENTO,
+                                    ThemeLayoutArchetype.EDITORIAL_MONOGRAPH,
+                                    ThemeLayoutArchetype.TELEMETRY_HUD,
+                                    ThemeLayoutArchetype.KINETIC_DECK -> palette.accentSkyBright
+                                }
+                                val tabTextColor by animateColorAsState(
+                                    targetValue = if (isSelected) selectedFgColor else palette.inkSecondary,
+                                    animationSpec = spring(stiffness = 600f),
+                                    label = "navText_${tab.name}"
                                 )
+                                val iconScale by animateFloatAsState(
+                                    targetValue = if (isSelected && !reducedMotion) 1.12f else 1.0f,
+                                    animationSpec = MotionTokens.tactilePress(reducedMotion, springCfg),
+                                    label = "navIconScale_${tab.name}"
+                                )
+                                val rawLabel = stringResource(tab.labelRes)
+                                val displayLabel = if (isTelemetryHud) rawLabel.uppercase() else rawLabel
+                                val labelFont = when (archetype) {
+                                    ThemeLayoutArchetype.TELEMETRY_HUD -> FontFamily.Monospace
+                                    ThemeLayoutArchetype.EDITORIAL_MONOGRAPH -> FontFamily.Serif
+                                    else -> FontFamily.Default
+                                }
+
+                                if (isCompactTab) {
+                                    Column(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .heightIn(min = 48.dp)
+                                            .minimumInteractiveComponentSize()
+                                            .liquidPressScale(interactionSource, pressedScale = 0.94f)
+                                            .clip(pillShape)
+                                            .selectable(
+                                                selected = isSelected,
+                                                interactionSource = interactionSource,
+                                                indication = ripple(color = palette.accentSky),
+                                                onClick = { onSelectTab(tab) },
+                                                role = Role.Tab
+                                            )
+                                            .padding(vertical = 6.dp, horizontal = 4.dp)
+                                            .testTag(tab.testTag),
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = if (isSelected) tab.selectedIcon else tab.unselectedIcon,
+                                            contentDescription = rawLabel,
+                                            tint = tabTextColor,
+                                            modifier = Modifier
+                                                .size(18.dp)
+                                                .scale(iconScale)
+                                        )
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Text(
+                                            text = displayLabel,
+                                            style = MaterialTheme.typography.labelSmall.copy(fontFamily = labelFont),
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                            fontSize = if (isTelemetryHud) 10.sp else 11.sp,
+                                            color = tabTextColor,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                } else {
+                                    Row(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .heightIn(min = 48.dp)
+                                            .minimumInteractiveComponentSize()
+                                            .liquidPressScale(interactionSource, pressedScale = 0.94f)
+                                            .clip(pillShape)
+                                            .selectable(
+                                                selected = isSelected,
+                                                interactionSource = interactionSource,
+                                                indication = ripple(color = palette.accentSky),
+                                                onClick = { onSelectTab(tab) },
+                                                role = Role.Tab
+                                            )
+                                            .padding(horizontal = 6.dp, vertical = 10.dp)
+                                            .testTag(tab.testTag),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = if (isSelected) tab.selectedIcon else tab.unselectedIcon,
+                                            contentDescription = rawLabel,
+                                            tint = tabTextColor,
+                                            modifier = Modifier
+                                                .size(19.dp)
+                                                .scale(iconScale)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = displayLabel,
+                                            style = MaterialTheme.typography.labelLarge.copy(fontFamily = labelFont),
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                            fontSize = if (isTelemetryHud) 12.sp else 13.5.sp,
+                                            color = tabTextColor,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
                             }
                         }
                     }

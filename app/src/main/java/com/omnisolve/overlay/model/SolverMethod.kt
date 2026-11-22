@@ -32,7 +32,7 @@ enum class SolverMethod(
         howItWorksSimple = "Reads your screen only when you tap the pill and shows the answer in seconds.",
         ratingScore = "4.8",
         ratingStars = 5,
-        ratingLabel = "Top Choice • Works Signed Out",
+        ratingLabel = "Recommended Default",
         isRecommendedDefault = true
     ),
     TURBO_HYBRID(
@@ -61,7 +61,7 @@ enum class SolverMethod(
         id = "CIRCLE_TO_SEARCH",
         shortName = "Web + Facts",
         title = "Web Facts Lookup",
-        subtitle = "Checks live web facts alongside AI — handy for trivia, history, and GK.",
+        subtitle = "Checks live web facts alongside AI. Helpful for trivia, history, and GK.",
         beginnerTag = "Web Facts",
         howItWorksSimple = "Looks up reliable web facts and matches them to the best option.",
         ratingScore = "4.7",

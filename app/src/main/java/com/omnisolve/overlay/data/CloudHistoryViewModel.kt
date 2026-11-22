@@ -142,7 +142,7 @@ class CloudHistoryViewModel(
     fun buildMarkdownStudySheet(records: List<SolvedQuestionRecord>): String {
         val formatter = SimpleDateFormat("MMM d, yyyy h:mm a", Locale.US)
         return buildString {
-            appendLine("# Prism AI — Study & Revision Sheet")
+            appendLine("# Prism Solver: Study & Revision Sheet")
             appendLine("Generated items: ${records.size}")
             appendLine()
             records.forEachIndexed { idx, rec ->
@@ -153,7 +153,7 @@ class CloudHistoryViewModel(
                 if (!rec.translatedQuestion.isNullOrBlank()) {
                     appendLine("**English Translation:** ${rec.translatedQuestion}")
                 }
-                val shortSuffix = if (rec.shortAnswer.isNotBlank()) " — ${rec.shortAnswer}" else ""
+                val shortSuffix = if (rec.shortAnswer.isNotBlank()) ": ${rec.shortAnswer}" else ""
                 appendLine("**Answer:** `${rec.answerBadge}`$shortSuffix")
                 if (rec.explanation.isNotBlank()) {
                     appendLine("**Explanation:** ${rec.explanation}")

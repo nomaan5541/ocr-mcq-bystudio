@@ -139,18 +139,18 @@ fun MandatoryLegalConsentDialog(
 
                 // Summary points
                 LegalSummaryBullet(
-                    title = "1. Only Reads When You Tap",
-                    description = "We only read the question on your screen when you tap the floating pill—never automatically in the background."
+                    title = "1. On-Demand Reading Only",
+                    description = "We only capture a temporary screen frame when you tap the floating pill, or process a photo or PDF you explicitly pick. Screenshots are never saved to your gallery."
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 LegalSummaryBullet(
-                    title = "2. Nothing Recorded or Stored",
-                    description = "Your screen is never recorded, saved, or sold. Temporary text is cleared immediately after showing your answer."
+                    title = "2. Solving, Shared Form Answers & Ads",
+                    description = "Questions (and photos or PDFs you pick) are sent securely to generate answers. History syncs to your signed-in Google account, solved Google Form links may be cached so classmates get instant answers, and Google AdMob ads are shown."
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 LegalSummaryBullet(
                     title = "3. Made for Personal Learning",
-                    description = "Use Prism Solver as a study and revision helper in line with your school or test guidelines."
+                    description = "Use Prism Solver as a study and revision helper in line with your school or exam rules. You can clear history or delete your account anytime in Settings."
                 )
 
                 Spacer(modifier = Modifier.height(14.dp))

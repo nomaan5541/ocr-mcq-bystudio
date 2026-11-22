@@ -41,6 +41,83 @@ object DirectVisionSolverEngine {
     @Volatile
     private var lastSolvedQuestionSignature: String = ""
 
+    @Volatile
+    internal var directMultimodalVisionOverrideForTest: (suspend (Bitmap?, String, Long) -> AnswerModel?)? = null
+
+    /**
+     * Clean single-shot multimodal vision entrypoint for [com.omnisolve.overlay.f1.DirectVisionF1Provider].
+     * Reuses F1's already-extracted text and bitmap with ZERO duplicate ML Kit OCR and ZERO nested
+     * Cloudflare / Online AI / WebView racing.
+     */
+    suspend fun solveMultimodalDirectForF1(
+        rawBitmap: Bitmap?,
+        preExtractedText: String,
+        requestedModel: String = PrismAiSolverEngine.MODEL_FLASH,
+        subjectMode: SubjectMode = SubjectMode.GENERAL,
+        solveMode: QuestionSolveMode = QuestionSolveMode.STANDARD,
+        translateToEnglish: Boolean = false,
+        forceFreshResolve: Boolean = false,
+        previousWrongAnswer: String? = null,
+        timeoutMs: Long = 4_500L
+    ): AnswerModel? = withContext(Dispatchers.IO) {
+        if (rawBitmap == null || rawBitmap.isRecycled || rawBitmap.width <= 0 || rawBitmap.height <= 0) {
+            return@withContext null
+        }
+        val effectiveTimeout = timeoutMs.coerceAtLeast(800L)
+        directMultimodalVisionOverrideForTest?.let { overrideFn ->
+            return@withContext withTimeout(effectiveTimeout) {
+                overrideFn.invoke(rawBitmap, preExtractedText, effectiveTimeout)
+            }
+        }
+        if (PrismAiSolverEngine.isCloudTemporarilyUnavailable()) {
+            return@withContext null
+        }
+
+        val viewportCrop = cropActiveQuizViewport(rawBitmap)
+        val visionBitmap = downscaleForVision(viewportCrop.first, maxDim = if (forceFreshResolve) 1024 else 840)
+        try {
+            val cleanText = preExtractedText.trim()
+            val effectiveTextForPrompt = if (forceFreshResolve && !previousWrongAnswer.isNullOrBlank()) {
+                com.omnisolve.overlay.service.OverlaySolveOrchestrator.buildCriticalRecheckPrompt(
+                    baseText = cleanText.ifBlank { "Inspect the attached screen image carefully." },
+                    previousWrongAnswer = previousWrongAnswer
+                )
+            } else {
+                cleanText
+            }
+            val geminiVisionPrompt = GeminiVisionClient.buildGeminiScreenSolverPrompt(
+                screenText = effectiveTextForPrompt,
+                questionCountHint = 1,
+                subjectMode = subjectMode,
+                solveMode = solveMode,
+                hasAttachedImage = true
+            )
+            val ans = withTimeout(effectiveTimeout) {
+                invokeDedicatedMultimodalVision(
+                    visionBitmap = visionBitmap,
+                    structuredScreenText = effectiveTextForPrompt,
+                    fullVisionPrompt = geminiVisionPrompt,
+                    requestedModel = if (forceFreshResolve) PrismAiSolverEngine.MODEL_FLASH else requestedModel,
+                    subjectMode = subjectMode,
+                    solveMode = solveMode,
+                    dualVerify = false,
+                    translateToEnglish = translateToEnglish,
+                    totalTimeoutMs = effectiveTimeout
+                )
+            }
+            ans?.takeIf { it.correctChoice.isNotBlank() && it.correctChoice != "?" }?.copy(
+                engineLabel = if (forceFreshResolve) "Vision Re-Check • Firebase AI" else "Direct Vision • Firebase AI"
+            )
+        } finally {
+            if (visionBitmap !== viewportCrop.first && visionBitmap !== rawBitmap && !visionBitmap.isRecycled) {
+                try { visionBitmap.recycle() } catch (_: Exception) {}
+            }
+            if (viewportCrop.first !== rawBitmap && !viewportCrop.first.isRecycled) {
+                try { viewportCrop.first.recycle() } catch (_: Exception) {}
+            }
+        }
+    }
+
     data class VisionSolveResult(
         val answerModel: AnswerModel?,
         val extractedQuestionPreview: String,
@@ -300,13 +377,15 @@ object DirectVisionSolverEngine {
         subjectMode: SubjectMode,
         solveMode: QuestionSolveMode,
         dualVerify: Boolean,
-        translateToEnglish: Boolean
+        translateToEnglish: Boolean,
+        totalTimeoutMs: Long = 12_500L
     ): AnswerModel? {
-        // 1. Fast direct option-only Multimodal Vision (`FINAL_ANSWER: <option>`, maxOutputTokens = 56)
+        val deadlineMonoMs = (System.nanoTime() / 1_000_000L) + totalTimeoutMs.coerceAtLeast(800L)
+        // 1. Fast direct option-only Multimodal Vision (`FINAL_ANSWER: <option>`, maxOutputTokens = 256)
         val candidates = listOf(
+            PrismAiSolverEngine.MODEL_FLASH,
             PrismAiSolverEngine.normalizeCloudModel(requestedModel),
-            PrismAiSolverEngine.MODEL_LITE,
-            PrismAiSolverEngine.MODEL_FLASH
+            PrismAiSolverEngine.MODEL_LITE
         ).distinct()
 
         val promptWithTranslation = if (translateToEnglish) {
@@ -316,15 +395,17 @@ object DirectVisionSolverEngine {
         }
 
         for (modelId in candidates) {
+            val remainingMs = deadlineMonoMs - (System.nanoTime() / 1_000_000L)
+            if (remainingMs < 500L) break
             try {
                 val model = Firebase.ai.generativeModel(
                     modelName = modelId,
                     generationConfig = generationConfig {
                         temperature = 0.0f
-                        maxOutputTokens = 256
+                        maxOutputTokens = 320
                     }
                 )
-                val response = withTimeout(12_500L) {
+                val response = withTimeout(remainingMs) {
                     if (visionBitmap != null) {
                         model.generateContent(
                             content {
@@ -349,6 +430,7 @@ object DirectVisionSolverEngine {
                 }
             } catch (ce: CancellationException) {
                 if (ce !is TimeoutCancellationException) throw ce
+                break
             } catch (e: Exception) {
                 Log.w(TAG, "Vision candidate $modelId failed: ${e.message}")
                 if (PrismAiSolverEngine.isNonRetryableCloudFailure(e)) {
@@ -358,10 +440,11 @@ object DirectVisionSolverEngine {
             }
         }
 
-        // 2. Fallback to structured JSON Multimodal Vision via PrismAiSolverEngine if needed
-        if (!PrismAiSolverEngine.isCloudTemporarilyUnavailable()) {
+        // 2. Fallback to structured JSON Multimodal Vision via PrismAiSolverEngine if budget remains
+        val remainingFallbackMs = deadlineMonoMs - (System.nanoTime() / 1_000_000L)
+        if (!PrismAiSolverEngine.isCloudTemporarilyUnavailable() && remainingFallbackMs >= 1_200L) {
             try {
-                val structuredAns = withTimeout(8_500L) {
+                val structuredAns = withTimeout(minOf(remainingFallbackMs, 8_500L)) {
                     PrismAiSolverEngine.solveQuestion(
                         extractedText = structuredScreenText.ifBlank {
                             "Inspect the attached screen image and solve the multiple-choice or math question."

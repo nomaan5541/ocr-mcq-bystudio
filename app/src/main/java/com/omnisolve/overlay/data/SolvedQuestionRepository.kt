@@ -196,6 +196,36 @@ class SolvedQuestionRepository(
     }
 
     /**
+     * Automatically clears a signed-in user's cloud MCQ history records older than [cutoffMs] (7 days).
+     */
+    suspend fun deleteOlderThan(userId: String, cutoffMs: Long): Result<Int> {
+        val path = "users/$userId/solvedQuestions"
+        return try {
+            var deleted = 0
+            val cutoffDate = java.util.Date(cutoffMs.coerceAtLeast(0L))
+            while (true) {
+                val snapshot = userQuestionsCollection(userId)
+                    .whereLessThan("createdAt", cutoffDate)
+                    .limit(200L)
+                    .get()
+                    .await()
+                if (snapshot.isEmpty) break
+                val batch = db.batch()
+                snapshot.documents.forEach { doc -> batch.delete(doc.reference) }
+                batch.commit().await()
+                deleted += snapshot.size()
+                if (snapshot.size() < 200) break
+            }
+            Result.success(deleted)
+        } catch (ce: CancellationException) {
+            throw ce
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.DELETE, path, auth)
+            Result.failure(e)
+        }
+    }
+
+    /**
      * Deletes all solved question documents owned by `userId` (used during in-app account deletion).
      */
     suspend fun deleteAllUserQuestions(userId: String): Result<Unit> {

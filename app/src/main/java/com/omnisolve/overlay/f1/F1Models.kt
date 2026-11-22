@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.Rect
 import com.omnisolve.overlay.model.AnswerModel
 import com.omnisolve.overlay.model.QuestionSolveMode
+import com.omnisolve.overlay.model.SolverMethod
 import com.omnisolve.overlay.model.SubjectMode
 
 enum class F1RaceMode {
@@ -69,7 +70,17 @@ enum class F1FailureKind {
     TIMEOUT
 }
 
+enum class F1FailureCategory {
+    NONE,
+    AUTH_OR_APP_CHECK,
+    QUOTA_LIMITED,
+    UNREADABLE_SCREEN,
+    NETWORK_TIMEOUT,
+    ALL_PROVIDERS_FAILED
+}
+
 data class F1TimeoutConfig(
+    val ocrBudgetMs: Long = 4_500L,
     val fastTargetMs: Long = 3_000L,
     val primaryProviderDeadlineMs: Long = 5_000L,
     val onlineRaceDeadlineMs: Long = 8_000L,
@@ -144,6 +155,7 @@ data class F1RaceReport(
     val winnerBadge: String = "",
     val providerMetrics: List<F1ProviderMetricLine> = emptyList(),
     val authBlocked: Boolean = false,
+    val failureCategory: F1FailureCategory = F1FailureCategory.NONE,
     val failureReason: String = ""
 )
 
@@ -157,6 +169,8 @@ data class F1SolveRequest(
     val subjectMode: SubjectMode = SubjectMode.GENERAL,
     val solveMode: QuestionSolveMode = QuestionSolveMode.STANDARD,
     val raceMode: F1RaceMode = F1RaceMode.FAST,
+    val preferredMethod: SolverMethod? = null,
+    val autoFailover: Boolean = true,
     val requestedModel: String = "gemini-3.5-flash-lite",
     val dualVerify: Boolean = false,
     val translateToEnglish: Boolean = false,
@@ -180,5 +194,6 @@ data class F1SolveResult(
     val authRequired: Boolean = false,
     val authErrorMessage: String = "",
     val websiteFallbackReady: Boolean = false,
+    val failureCategory: F1FailureCategory = F1FailureCategory.NONE,
     val errorMessage: String = ""
 )

@@ -79,7 +79,7 @@ object BatterySurvivalHelper {
                     isIgnoringBatteryOptimizations = ignoring,
                     isPowerSaveModeActive = powerSave,
                     oemDisplayName = "Vivo / iQOO",
-                    oemStepsHint = "Tap Battery → High background power consumption (Unrestricted) to keep the floating pill instant.",
+                    oemStepsHint = "Tap Battery → High background power consumption (Unrestricted) to keep the floating pill responsive.",
                     isAggressiveOem = true
                 )
             }

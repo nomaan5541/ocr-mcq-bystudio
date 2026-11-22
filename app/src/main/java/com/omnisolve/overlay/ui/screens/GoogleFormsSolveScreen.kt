@@ -4,21 +4,36 @@ import android.Manifest
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,6 +42,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -43,8 +59,9 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.AutoFixHigh
+import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
@@ -52,21 +69,20 @@ import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.ErrorOutline
-import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.FileDownload
-import androidx.compose.material.icons.filled.ImageSearch
 import androidx.compose.material.icons.filled.Link
-import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.OpenInBrowser
-import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Widgets
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -77,6 +93,7 @@ import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -84,6 +101,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
@@ -101,13 +124,23 @@ import com.omnisolve.overlay.api.GoogleFormSolveResult
 import com.omnisolve.overlay.api.GoogleFormSolvedItem
 import com.omnisolve.overlay.api.GoogleFormsModelOption
 import com.omnisolve.overlay.api.GoogleFormsSolverEngine
+import com.omnisolve.overlay.data.UsageLimitFeature
 import com.omnisolve.overlay.model.SubjectMode
 import com.omnisolve.overlay.service.GoogleFormsNotificationHelper
 import com.omnisolve.overlay.ui.MainUiState
+import com.omnisolve.overlay.ui.physics.LocalReducedMotion
 import com.omnisolve.overlay.ui.theme.LocalPrismThemeSpec
 import com.omnisolve.overlay.ui.theme.LocalWhiteGlassPalette
 import com.omnisolve.overlay.ui.theme.contrastOnColor
+import kotlinx.coroutines.delay
 
+/**
+ * UNSLOP Editorial Google Forms Solver Screen:
+ * - Deep dark obsidian surfaces with disciplined crimson (#D71921) accent usage.
+ * - Eliminates generic "01 / 02 / 03" card-inside-card clutter in favor of clear visual hierarchy.
+ * - GPU-accelerated multi-stage solving indicator, tactile press springs, Instant Class Cache
+ *   status feedback, and 1-tap self-healing question re-solve.
+ */
 @Composable
 fun GoogleFormsSolveScreen(
     state: MainUiState,
@@ -119,8 +152,9 @@ fun GoogleFormsSolveScreen(
     onToggleAppendMode: () -> Unit,
     onSolveFromUrl: () -> Unit,
     onSolveFromPastedText: () -> Unit,
-    onSolveFromImageUri: (Uri) -> Unit,
+    onSolveFromImageUri: (Uri) -> Unit = {},
     onSolveFromPdfUri: (Uri) -> Unit = {},
+    onOpenAskAiStudio: () -> Unit = {},
     onReSolveQuestion: (Int) -> Unit,
     onPinToDynamicIsland: () -> Unit,
     onUnpinFromDynamicIsland: () -> Unit,
@@ -136,12 +170,15 @@ fun GoogleFormsSolveScreen(
     val context = LocalContext.current
     val palette = LocalWhiteGlassPalette.current
     val themeSpec = LocalPrismThemeSpec.current
-    val cardCorner = themeSpec.cornerRadiusDp.coerceIn(14, 24).dp
+    val reducedMotion = LocalReducedMotion.current
+    val cornerDp = themeSpec.cornerRadiusDp.coerceIn(12, 20).dp
     val onEmeraldInk = contrastOnColor(palette.accentEmerald)
+
     val listState = rememberLazyListState()
     var showManualPasteFallback by rememberSaveable { mutableStateOf(false) }
     var showMoreOptions by rememberSaveable { mutableStateOf(false) }
     var showFillPreviewDialog by remember { mutableStateOf(false) }
+
     val isSignedIn = !state.firebaseUserId.isNullOrBlank()
     val selectedModel = remember(state.googleFormsModel) {
         GoogleFormsModelOption.fromId(state.googleFormsModel)
@@ -171,22 +208,6 @@ fun GoogleFormsSolveScreen(
         contract = ActivityResultContracts.StartActivityForResult()
     ) {
         onRefreshPinStatus()
-    }
-
-    val imagePickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickVisualMedia()
-    ) { uri ->
-        if (uri != null) {
-            onSolveFromImageUri(uri)
-        }
-    }
-
-    val pdfPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        if (uri != null) {
-            onSolveFromPdfUri(uri)
-        }
     }
 
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
@@ -241,6 +262,7 @@ fun GoogleFormsSolveScreen(
         webBrowserLauncher.launch(GoogleFormsWebActivity.createIntent(context, targetUrl))
     }
 
+    // ── Auto-Fill Confirmation Preview Dialog ──────────────────────────────
     val previewDialogResult = state.googleFormResult
     if (showFillPreviewDialog && previewDialogResult != null) {
         AlertDialog(
@@ -250,17 +272,18 @@ fun GoogleFormsSolveScreen(
             textContentColor = palette.inkSecondary,
             title = {
                 Text(
-                    text = "Preview Before Auto-Fill",
+                    text = "Confirm Auto-Fill",
                     fontWeight = FontWeight.Bold,
                     fontSize = 17.sp,
                     color = palette.inkPrimary
                 )
             },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(
-                        text = "Review every selected answer below. Auto-Fill selects matching options on the form page and never submits automatically.",
+                        text = "Prism matches each answer by option text (safe for shuffled options) and never submits automatically.",
                         fontSize = 12.sp,
+                        lineHeight = 17.sp,
                         color = palette.inkSecondary
                     )
                     LazyColumn(
@@ -271,28 +294,39 @@ fun GoogleFormsSolveScreen(
                     ) {
                         itemsIndexed(previewDialogResult.items, key = { _, it -> "prev_${it.number}" }) { _, item ->
                             val isUnverified = item.answerLetter.isBlank() || item.answerLetter == "?"
-                            Column(
+                            Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(10.dp))
                                     .background(palette.canvasBottom)
-                                    .border(1.dp, palette.cardHairlineBorder, RoundedCornerShape(10.dp))
-                                    .padding(10.dp),
-                                verticalArrangement = Arrangement.spacedBy(3.dp)
+                                    .padding(horizontal = 10.dp, vertical = 9.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
                                 Text(
-                                    text = "Q${item.number}: ${item.answerLetter}${if (item.shortAnswer.isNotBlank()) " • ${item.shortAnswer}" else ""}",
-                                    color = if (isUnverified) palette.inkSecondary else palette.accentEmerald,
+                                    text = "Q${item.number}",
+                                    color = palette.inkSecondary,
+                                    fontFamily = FontFamily.Monospace,
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 12.5.sp
+                                    fontSize = 11.5.sp
                                 )
-                                Text(
-                                    text = item.questionText,
-                                    color = palette.inkPrimary,
-                                    fontSize = 11.5.sp,
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis
-                                )
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "${item.answerLetter}${if (item.shortAnswer.isNotBlank()) " · ${item.shortAnswer}" else ""}",
+                                        color = if (isUnverified) palette.inkSecondary else palette.accentEmerald,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.5.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = item.questionText,
+                                        color = palette.inkPrimary,
+                                        fontSize = 11.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
                             }
                         }
                     }
@@ -306,7 +340,7 @@ fun GoogleFormsSolveScreen(
                     },
                     modifier = Modifier.testTag("btn_confirm_forms_screen_autofill")
                 ) {
-                    Text("Open Form & Fill", color = palette.accentEmerald, fontWeight = FontWeight.Bold)
+                    Text("Open & Fill", color = palette.accentEmerald, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
@@ -325,71 +359,62 @@ fun GoogleFormsSolveScreen(
         modifier = modifier
             .fillMaxSize()
             .testTag("google_forms_solve_screen"),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 96.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 104.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
+        // ── SIGN-IN GATE BANNER (ONLY WHEN SIGNED OUT) ──────────────────────
         if (!isSignedIn) {
             item(key = "forms_google_signin_gate") {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(cardCorner))
+                        .clip(RoundedCornerShape(cornerDp))
                         .background(palette.glassStrong)
-                        .border(1.dp, palette.accentEmerald.copy(alpha = 0.55f), RoundedCornerShape(cardCorner))
+                        .border(1.dp, palette.accentSky.copy(alpha = 0.45f), RoundedCornerShape(cornerDp))
                         .clickable(role = Role.Button, onClick = onSignInGoogle)
-                        .padding(14.dp)
+                        .padding(horizontal = 14.dp, vertical = 12.dp)
                         .testTag("card_forms_signin_gate"),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        modifier = Modifier.weight(1f).padding(end = 10.dp)
+                    Column(
+                        modifier = Modifier.weight(1f).padding(end = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Filled.AutoAwesome,
-                            contentDescription = null,
-                            tint = palette.accentEmerald,
-                            modifier = Modifier.size(20.dp)
+                        Text(
+                            text = "Sign in to solve forms",
+                            style = MaterialTheme.typography.titleSmall.copy(
+                                color = palette.inkPrimary,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp
+                            )
                         )
-                        Column {
-                            Text(
-                                text = "Free Workers AI Unlocked",
-                                style = MaterialTheme.typography.titleSmall.copy(
-                                    color = palette.inkPrimary,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 13.5.sp
-                                )
-                            )
-                            Text(
-                                text = "Solve & Auto-Fill works right away. Optional Google Sign-In adds cloud crowd-cache sync.",
-                                style = MaterialTheme.typography.bodySmall.copy(
-                                    color = palette.inkSecondary,
-                                    fontSize = 11.5.sp
-                                ),
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
+                        Text(
+                            text = "Unlocks instant class cache and live Auto-Fill.",
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                color = palette.inkSecondary,
+                                fontSize = 11.5.sp
+                            ),
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
                     }
                     Box(
                         contentAlignment = Alignment.Center,
                         modifier = Modifier
                             .heightIn(min = 48.dp)
                             .clip(RoundedCornerShape(10.dp))
-                            .background(palette.glassMedium)
-                            .border(1.dp, palette.cardHairlineBorder, RoundedCornerShape(10.dp))
+                            .background(palette.accentSky)
                             .clickable(role = Role.Button, onClick = onSignInGoogle)
-                            .padding(horizontal = 12.dp, vertical = 8.dp)
+                            .padding(horizontal = 14.dp, vertical = 10.dp)
                             .testTag("btn_forms_google_signin")
                     ) {
                         Text(
-                            text = "Sync",
+                            text = "Sign In",
                             style = MaterialTheme.typography.labelMedium.copy(
-                                color = palette.inkPrimary,
+                                color = palette.onAccentInk,
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp
+                                fontSize = 12.5.sp
                             )
                         )
                     }
@@ -397,23 +422,85 @@ fun GoogleFormsSolveScreen(
             }
         }
 
-        // ── STEP 01: GOOGLE FORM LINK & SOLVE CTA ──────────────────────────
-        item(key = "step_01_url_input") {
+        // ── EDITORIAL HEADER + LINK COMPOSER ────────────────────────────────
+        item(key = "forms_link_composer") {
+            val formsRemaining = state.dailyUsage.remainingFor(UsageLimitFeature.GOOGLE_FORMS)
+            val solveInteraction = remember { MutableInteractionSource() }
+            val solvePressed by solveInteraction.collectIsPressedAsState()
+            val solveScale by animateFloatAsState(
+                targetValue = if (solvePressed && !reducedMotion) 0.975f else 1f,
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                    stiffness = Spring.StiffnessMedium
+                ),
+                label = "solve_cta_scale"
+            )
+            val optionsChevronRotation by animateFloatAsState(
+                targetValue = if (showMoreOptions) 180f else 0f,
+                animationSpec = tween(durationMillis = if (reducedMotion) 0 else 200),
+                label = "options_chevron_rot"
+            )
+
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(cardCorner))
+                    .clip(RoundedCornerShape(cornerDp))
                     .background(palette.glassStrong)
-                    .border(1.dp, palette.accentSky.copy(alpha = 0.4f), RoundedCornerShape(cardCorner))
+                    .border(1.dp, palette.cardHairlineBorder, RoundedCornerShape(cornerDp))
                     .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                StepSectionHeader(
-                    stepNumber = "01",
-                    title = "Solve a Google Form",
-                    subtitle = "Paste your quiz link below and tap Solve Form"
-                )
+                // Header row: Clean title + quiet quota counter
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1f).padding(end = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        Text(
+                            text = "Google Forms",
+                            style = MaterialTheme.typography.titleLarge.copy(
+                                color = palette.inkPrimary,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 19.sp,
+                                letterSpacing = (-0.3).sp
+                            )
+                        )
+                        Text(
+                            text = "Same class link solves instantly, even with shuffled options",
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                color = palette.inkSecondary,
+                                fontSize = 11.5.sp
+                            ),
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    if (isSignedIn) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(palette.canvasBottom)
+                                .border(1.dp, palette.cardHairlineBorder, RoundedCornerShape(8.dp))
+                                .padding(horizontal = 9.dp, vertical = 5.dp)
+                        ) {
+                            Text(
+                                text = "$formsRemaining/${UsageLimitFeature.GOOGLE_FORMS.dailyLimit} left",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    color = if (formsRemaining > 0) palette.inkPrimary else palette.accentSky,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 11.sp
+                                )
+                            )
+                        }
+                    }
+                }
 
+                // Recessed URL input field
                 OutlinedTextField(
                     value = state.googleFormUrlInput,
                     onValueChange = onUpdateUrl,
@@ -422,8 +509,8 @@ fun GoogleFormsSolveScreen(
                         .testTag("input_google_form_url"),
                     placeholder = {
                         Text(
-                            text = "Paste Google Form link here",
-                            color = palette.inkSecondary.copy(alpha = 0.7f),
+                            text = "forms.gle/... or docs.google.com/forms/...",
+                            color = palette.inkSecondary.copy(alpha = 0.65f),
                             fontSize = 13.sp,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
@@ -433,8 +520,8 @@ fun GoogleFormsSolveScreen(
                         Icon(
                             imageVector = Icons.Filled.Link,
                             contentDescription = "Google Forms Link",
-                            tint = palette.accentSky,
-                            modifier = Modifier.size(20.dp)
+                            tint = if (state.googleFormUrlInput.isNotBlank()) palette.accentSky else palette.inkSecondary,
+                            modifier = Modifier.size(19.dp)
                         )
                     },
                     trailingIcon = {
@@ -491,7 +578,7 @@ fun GoogleFormsSolveScreen(
                     keyboardActions = KeyboardActions(
                         onDone = { onSolveFromUrl() }
                     ),
-                    shape = RoundedCornerShape(14.dp),
+                    shape = RoundedCornerShape(12.dp),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = palette.accentSky,
                         unfocusedBorderColor = palette.cardHairlineBorder,
@@ -503,253 +590,226 @@ fun GoogleFormsSolveScreen(
                     )
                 )
 
-                // Primary Solve CTA + Cancel action while solving
-                Column(
+                // Primary CTA + inline Cancel when solving
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                        modifier = Modifier
+                            .weight(1f)
+                            .graphicsLayer {
+                                scaleX = solveScale
+                                scaleY = solveScale
+                            }
+                            .heightIn(min = 52.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(
+                                if (state.isSolvingGoogleForm) palette.accentSky.copy(alpha = 0.72f)
+                                else palette.accentSky
+                            )
+                            .clickable(
+                                interactionSource = solveInteraction,
+                                indication = null,
+                                enabled = !state.isSolvingGoogleForm,
+                                role = Role.Button,
+                                onClick = onSolveFromUrl
+                            )
+                            .padding(horizontal = 16.dp, vertical = 13.dp)
+                            .testTag("btn_solve_google_form"),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
                     ) {
-                        Row(
-                            modifier = Modifier
-                                .weight(1f)
-                                .heightIn(min = 50.dp)
-                                .clip(RoundedCornerShape(14.dp))
-                                .background(
-                                    if (state.isSolvingGoogleForm) palette.accentSky.copy(alpha = 0.65f) else palette.accentSky
-                                )
-                                .clickable(
-                                    enabled = !state.isSolvingGoogleForm,
-                                    role = Role.Button,
-                                    onClick = onSolveFromUrl
-                                )
-                                .padding(horizontal = 14.dp, vertical = 13.dp)
-                                .testTag("btn_solve_google_form"),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center
-                        ) {
-                            if (state.isSolvingGoogleForm) {
-                                CircularProgressIndicator(
-                                    color = palette.onAccentInk,
-                                    strokeWidth = 2.2.dp,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(Modifier.width(10.dp))
-                                Text(
-                                    text = "Getting answers...",
-                                    style = MaterialTheme.typography.labelLarge.copy(
-                                        color = palette.onAccentInk,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 13.5.sp
-                                    ),
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            } else {
-                                Icon(
-                                    imageVector = Icons.Filled.AutoAwesome,
-                                    contentDescription = null,
-                                    tint = palette.onAccentInk,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(Modifier.width(8.dp))
-                                Text(
-                                    text = if (state.googleFormAppendMode && currentResult != null) {
-                                        "Solve & Add Next Page"
-                                    } else {
-                                        "Solve Form"
-                                    },
-                                    style = MaterialTheme.typography.labelLarge.copy(
-                                        color = palette.onAccentInk,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 14.5.sp
-                                    ),
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                        }
-
                         if (state.isSolvingGoogleForm) {
-                            Row(
-                                modifier = Modifier
-                                    .heightIn(min = 50.dp)
-                                    .clip(RoundedCornerShape(14.dp))
-                                    .background(palette.glassMedium)
-                                    .border(1.dp, palette.accentSky.copy(alpha = 0.55f), RoundedCornerShape(14.dp))
-                                    .clickable(role = Role.Button, onClick = onCancelSolve)
-                                    .padding(horizontal = 14.dp, vertical = 13.dp)
-                                    .testTag("btn_cancel_google_form"),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Filled.Close,
-                                    contentDescription = "Cancel solving",
-                                    tint = palette.inkPrimary,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(Modifier.width(4.dp))
-                                Text(
-                                    text = "Cancel",
-                                    style = MaterialTheme.typography.labelLarge.copy(
-                                        color = palette.inkPrimary,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 13.sp
-                                    )
-                                )
-                            }
+                            CircularProgressIndicator(
+                                color = palette.onAccentInk,
+                                strokeWidth = 2.dp,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Text(
+                                text = "Solving...",
+                                style = MaterialTheme.typography.labelLarge.copy(
+                                    color = palette.onAccentInk,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp
+                                ),
+                                maxLines = 1
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Filled.Bolt,
+                                contentDescription = null,
+                                tint = palette.onAccentInk,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(Modifier.width(7.dp))
+                            Text(
+                                text = if (state.googleFormAppendMode && currentResult != null) {
+                                    "Solve & Add Next Page"
+                                } else {
+                                    "Solve Form"
+                                },
+                                style = MaterialTheme.typography.labelLarge.copy(
+                                    color = palette.onAccentInk,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.5.sp
+                                ),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
                         }
                     }
 
                     if (state.isSolvingGoogleForm) {
-                        Text(
-                            text = "Reading your form questions and checking answers carefully...",
-                            style = MaterialTheme.typography.bodySmall.copy(
-                                color = palette.inkSecondary,
-                                fontSize = 11.5.sp
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .heightIn(min = 52.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(palette.canvasBottom)
+                                .border(1.dp, palette.cardHairlineBorder, RoundedCornerShape(12.dp))
+                                .clickable(role = Role.Button, onClick = onCancelSolve)
+                                .padding(horizontal = 16.dp, vertical = 13.dp)
+                                .testTag("btn_cancel_google_form")
+                        ) {
+                            Text(
+                                text = "Cancel",
+                                style = MaterialTheme.typography.labelLarge.copy(
+                                    color = palette.inkPrimary,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 13.sp
+                                )
                             )
-                        )
+                        }
                     }
                 }
 
-                // Quick Photo & PDF Cloudflare Edge Solvers (always 1-tap accessible)
+                // Purposeful Live Solving Progress Rail (smooth draw-phase animation)
+                AnimatedVisibility(
+                    visible = state.isSolvingGoogleForm,
+                    enter = expandVertically(animationSpec = tween(220)) + fadeIn(tween(180)),
+                    exit = shrinkVertically(animationSpec = tween(180)) + fadeOut(tween(140))
+                ) {
+                    FormsSolvingLiveTrack(
+                        accentColor = palette.accentSky,
+                        trackColor = palette.canvasBottom,
+                        textColor = palette.inkSecondary,
+                        reducedMotion = reducedMotion
+                    )
+                }
+
+                // Quiet Secondary Utility Row: Form Browser + Options toggle
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     Row(
                         modifier = Modifier
                             .weight(1f)
                             .heightIn(min = 48.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(palette.glassMedium)
-                            .border(1.dp, palette.accentSky.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
-                            .clickable(enabled = !state.isSolvingGoogleForm, role = Role.Button) {
-                                imagePickerLauncher.launch(
-                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                                )
-                            }
-                            .padding(horizontal = 10.dp, vertical = 10.dp)
-                            .testTag("btn_quick_scan_photo"),
+                            .clip(RoundedCornerShape(11.dp))
+                            .background(palette.canvasBottom)
+                            .border(1.dp, palette.cardHairlineBorder, RoundedCornerShape(11.dp))
+                            .clickable(role = Role.Button) { launchInteractiveFormsBrowser() }
+                            .padding(horizontal = 12.dp, vertical = 10.dp)
+                            .testTag("btn_open_forms_webview"),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.Center
                     ) {
                         Icon(
-                            imageVector = Icons.Filled.ImageSearch,
+                            imageVector = Icons.Filled.OpenInBrowser,
                             contentDescription = null,
-                            tint = palette.accentSky,
-                            modifier = Modifier.size(17.dp)
+                            tint = palette.inkPrimary,
+                            modifier = Modifier.size(16.dp)
                         )
-                        Spacer(Modifier.width(6.dp))
+                        Spacer(Modifier.width(7.dp))
                         Text(
-                            text = "Solve Photo",
+                            text = "Form Browser",
                             style = MaterialTheme.typography.labelMedium.copy(
                                 color = palette.inkPrimary,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 12.5.sp
                             ),
-                            maxLines = 1
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
 
                     Row(
                         modifier = Modifier
-                            .weight(1f)
                             .heightIn(min = 48.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(palette.glassMedium)
-                            .border(1.dp, palette.accentEmerald.copy(alpha = 0.45f), RoundedCornerShape(12.dp))
-                            .clickable(enabled = !state.isSolvingGoogleForm, role = Role.Button) {
-                                pdfPickerLauncher.launch(arrayOf("application/pdf"))
-                            }
-                            .padding(horizontal = 10.dp, vertical = 10.dp)
-                            .testTag("btn_quick_scan_pdf"),
+                            .clip(RoundedCornerShape(11.dp))
+                            .background(if (showMoreOptions) palette.accentSkyContainer else palette.canvasBottom)
+                            .border(
+                                1.dp,
+                                if (showMoreOptions) palette.accentSky.copy(alpha = 0.55f) else palette.cardHairlineBorder,
+                                RoundedCornerShape(11.dp)
+                            )
+                            .clickable(role = Role.Button) { showMoreOptions = !showMoreOptions }
+                            .padding(horizontal = 14.dp, vertical = 10.dp)
+                            .testTag("btn_forms_more_options"),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.Center
                     ) {
                         Icon(
-                            imageVector = Icons.Filled.PictureAsPdf,
-                            contentDescription = null,
-                            tint = palette.accentEmerald,
-                            modifier = Modifier.size(17.dp)
+                            imageVector = Icons.Filled.Tune,
+                            contentDescription = "Options",
+                            tint = if (showMoreOptions) palette.accentSky else palette.inkSecondary,
+                            modifier = Modifier.size(16.dp)
                         )
                         Spacer(Modifier.width(6.dp))
                         Text(
-                            text = "Solve PDF",
+                            text = "Options",
                             style = MaterialTheme.typography.labelMedium.copy(
                                 color = palette.inkPrimary,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 12.5.sp
                             ),
                             maxLines = 1
+                        )
+                        Spacer(Modifier.width(2.dp))
+                        Icon(
+                            imageVector = Icons.Filled.ExpandMore,
+                            contentDescription = null,
+                            tint = palette.inkSecondary,
+                            modifier = Modifier
+                                .size(16.dp)
+                                .graphicsLayer { rotationZ = optionsChevronRotation }
                         )
                     }
                 }
 
-                // Clean Secondary Action: Open Form Browser for private forms & auto-fill
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 48.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(palette.accentSkyContainer)
-                        .border(1.dp, palette.accentSky.copy(alpha = 0.45f), RoundedCornerShape(12.dp))
-                        .clickable(role = Role.Button) { launchInteractiveFormsBrowser() }
-                        .padding(horizontal = 12.dp, vertical = 10.dp)
-                        .testTag("btn_open_forms_webview"),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.OpenInBrowser,
-                        contentDescription = null,
-                        tint = palette.accentSky,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = "Open Form Browser (Private Forms & Auto-Fill)",
-                        style = MaterialTheme.typography.labelMedium.copy(
-                            color = palette.inkPrimary,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 12.sp
-                        ),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-
-                // Error Banner with Actionable Recovery Controls
-                if (!state.googleFormError.isNullOrBlank()) {
+                // Error Banner with Clean Recovery Actions
+                AnimatedVisibility(visible = !state.googleFormError.isNullOrBlank()) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(12.dp))
                             .background(palette.accentSkyContainer)
-                            .border(1.dp, palette.accentSky.copy(alpha = 0.65f), RoundedCornerShape(12.dp))
+                            .border(1.dp, palette.accentSky.copy(alpha = 0.55f), RoundedCornerShape(12.dp))
                             .padding(12.dp)
                             .testTag("tv_google_form_error"),
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         Row(
-                            verticalAlignment = Alignment.CenterVertically,
+                            verticalAlignment = Alignment.Top,
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Filled.ErrorOutline,
                                 contentDescription = null,
                                 tint = palette.accentSky,
-                                modifier = Modifier.size(18.dp)
+                                modifier = Modifier.size(18.dp).padding(top = 1.dp)
                             )
                             Text(
-                                text = state.googleFormError,
+                                text = state.googleFormError.orEmpty(),
                                 style = MaterialTheme.typography.bodySmall.copy(
                                     color = palette.inkPrimary,
-                                    fontSize = 12.sp
+                                    fontSize = 12.sp,
+                                    lineHeight = 17.sp
                                 )
                             )
                         }
@@ -791,14 +851,13 @@ fun GoogleFormsSolveScreen(
                                     .testTag("btn_error_open_browser")
                             ) {
                                 Text(
-                                    text = "Open Form Browser",
+                                    text = "Open Browser",
                                     style = MaterialTheme.typography.labelMedium.copy(
                                         color = palette.onAccentInk,
                                         fontWeight = FontWeight.Bold,
-                                        fontSize = 11.5.sp
+                                        fontSize = 12.sp
                                     ),
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
+                                    maxLines = 1
                                 )
                             }
                             Box(
@@ -807,78 +866,39 @@ fun GoogleFormsSolveScreen(
                                     .weight(1f)
                                     .heightIn(min = 48.dp)
                                     .clip(RoundedCornerShape(10.dp))
-                                    .background(palette.glassMedium)
+                                    .background(palette.canvasBottom)
                                     .border(1.dp, palette.cardHairlineBorder, RoundedCornerShape(10.dp))
                                     .clickable(role = Role.Button) { showManualPasteFallback = true }
                                     .padding(horizontal = 10.dp, vertical = 8.dp)
                                     .testTag("btn_error_paste_text")
                             ) {
                                 Text(
-                                    text = "Paste Text Instead",
+                                    text = "Paste Text",
                                     style = MaterialTheme.typography.labelMedium.copy(
                                         color = palette.inkPrimary,
                                         fontWeight = FontWeight.SemiBold,
-                                        fontSize = 11.5.sp
+                                        fontSize = 12.sp
                                     ),
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
+                                    maxLines = 1
                                 )
                             }
                         }
                     }
                 }
 
-                // Collapsible "More Ways & Options" Drawer (Collapsed by default for simplicity)
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 48.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(palette.glassMedium)
-                        .border(1.dp, palette.cardHairlineBorder, RoundedCornerShape(12.dp))
-                        .clickable(role = Role.Button) {
-                            showMoreOptions = !showMoreOptions
-                        }
-                        .padding(horizontal = 12.dp, vertical = 10.dp)
-                        .testTag("btn_forms_more_options"),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+                // Expandable Options Drawer (Sample, Paste Text, Multi-page, Subject, Engine)
+                AnimatedVisibility(
+                    visible = showMoreOptions,
+                    enter = expandVertically(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) + fadeIn(tween(180)),
+                    exit = shrinkVertically(animationSpec = tween(180)) + fadeOut(tween(140))
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "More Ways & Options",
-                            style = MaterialTheme.typography.labelMedium.copy(
-                                color = palette.inkPrimary,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.5.sp
-                            )
-                        )
-                        Text(
-                            text = "Scan photo, paste text, try sample quiz, or pick subject",
-                            style = MaterialTheme.typography.bodySmall.copy(
-                                color = palette.inkSecondary,
-                                fontSize = 11.sp
-                            ),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                    Icon(
-                        imageVector = if (showMoreOptions) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
-                        contentDescription = if (showMoreOptions) "Hide more options" else "Show more options",
-                        tint = palette.accentSky,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-
-                AnimatedVisibility(visible = showMoreOptions) {
                     Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 2.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        // Scan Photo + Sample Quiz + Paste Text row
+                        HorizontalDivider(color = palette.cardHairlineBorder, thickness = 0.8.dp)
+
+                        // Quick tools row: Sample Quiz + Paste Text
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -887,44 +907,9 @@ fun GoogleFormsSolveScreen(
                                 modifier = Modifier
                                     .weight(1f)
                                     .heightIn(min = 48.dp)
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(palette.glassMedium)
-                                    .border(1.dp, palette.cardHairlineBorder, RoundedCornerShape(12.dp))
-                                    .clickable(enabled = !state.isSolvingGoogleForm, role = Role.Button) {
-                                        imagePickerLauncher.launch(
-                                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                                        )
-                                    }
-                                    .padding(horizontal = 10.dp, vertical = 10.dp)
-                                    .testTag("btn_scan_quiz_image"),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Filled.ImageSearch,
-                                    contentDescription = null,
-                                    tint = palette.accentSky,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(Modifier.width(6.dp))
-                                Text(
-                                    text = "Scan Image",
-                                    style = MaterialTheme.typography.labelMedium.copy(
-                                        color = palette.inkPrimary,
-                                        fontWeight = FontWeight.SemiBold,
-                                        fontSize = 11.5.sp
-                                    ),
-                                    maxLines = 1
-                                )
-                            }
-
-                            Row(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .heightIn(min = 48.dp)
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(palette.glassMedium)
-                                    .border(1.dp, palette.cardHairlineBorder, RoundedCornerShape(12.dp))
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(palette.canvasBottom)
+                                    .border(1.dp, palette.cardHairlineBorder, RoundedCornerShape(10.dp))
                                     .clickable(role = Role.Button) {
                                         onUpdateUrl(GoogleFormsSolverEngine.SAMPLE_TEST_FORM_URL)
                                         onShowBannerMessage("Sample quiz link filled")
@@ -938,7 +923,7 @@ fun GoogleFormsSolveScreen(
                                     imageVector = Icons.Filled.Description,
                                     contentDescription = null,
                                     tint = palette.accentSky,
-                                    modifier = Modifier.size(16.dp)
+                                    modifier = Modifier.size(15.dp)
                                 )
                                 Spacer(Modifier.width(6.dp))
                                 Text(
@@ -946,59 +931,54 @@ fun GoogleFormsSolveScreen(
                                     style = MaterialTheme.typography.labelMedium.copy(
                                         color = palette.inkPrimary,
                                         fontWeight = FontWeight.SemiBold,
-                                        fontSize = 11.5.sp
+                                        fontSize = 12.sp
+                                    ),
+                                    maxLines = 1
+                                )
+                            }
+
+                            Row(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .heightIn(min = 48.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(if (showManualPasteFallback) palette.accentSkyContainer else palette.canvasBottom)
+                                    .border(
+                                        1.dp,
+                                        if (showManualPasteFallback) palette.accentSky.copy(alpha = 0.55f) else palette.cardHairlineBorder,
+                                        RoundedCornerShape(10.dp)
+                                    )
+                                    .clickable(role = Role.Button) {
+                                        showManualPasteFallback = !showManualPasteFallback
+                                    }
+                                    .padding(horizontal = 10.dp, vertical = 10.dp)
+                                    .testTag("btn_toggle_paste_form_text"),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                Text(
+                                    text = "Paste Text",
+                                    style = MaterialTheme.typography.labelMedium.copy(
+                                        color = palette.inkPrimary,
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = 12.sp
                                     ),
                                     maxLines = 1
                                 )
                             }
                         }
 
-                        // Manual Paste Trigger
+                        // Multi-page combine switch row
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .heightIn(min = 48.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(palette.glassMedium)
-                                .border(1.dp, palette.cardHairlineBorder, RoundedCornerShape(12.dp))
-                                .clickable(role = Role.Button) {
-                                    showManualPasteFallback = !showManualPasteFallback
-                                }
-                                .padding(horizontal = 12.dp, vertical = 10.dp)
-                                .testTag("btn_toggle_paste_form_text"),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(
-                                text = "Paste questions as text instead",
-                                style = MaterialTheme.typography.labelMedium.copy(
-                                    color = palette.inkPrimary,
-                                    fontWeight = FontWeight.SemiBold,
-                                    fontSize = 12.sp
-                                ),
-                                modifier = Modifier.weight(1f)
-                            )
-                            Icon(
-                                imageVector = if (showManualPasteFallback) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
-                                contentDescription = if (showManualPasteFallback) "Hide paste box" else "Show paste box",
-                                tint = palette.inkPrimary,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-
-                        // Multi-Page Append Toggle Row
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(min = 48.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(
-                                    if (state.googleFormAppendMode) palette.accentEmeraldContainer else palette.glassMedium
-                                )
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(palette.canvasBottom)
                                 .border(
                                     1.dp,
-                                    if (state.googleFormAppendMode) palette.accentEmerald.copy(alpha = 0.65f) else palette.cardHairlineBorder,
-                                    RoundedCornerShape(12.dp)
+                                    if (state.googleFormAppendMode) palette.accentEmerald.copy(alpha = 0.55f) else palette.cardHairlineBorder,
+                                    RoundedCornerShape(10.dp)
                                 )
                                 .clickable(role = Role.Switch, onClick = onToggleAppendMode)
                                 .padding(horizontal = 12.dp, vertical = 10.dp)
@@ -1014,15 +994,15 @@ fun GoogleFormsSolveScreen(
                                 Icon(
                                     imageVector = Icons.Filled.Add,
                                     contentDescription = null,
-                                    tint = if (state.googleFormAppendMode) palette.accentEmerald else palette.accentSky,
+                                    tint = if (state.googleFormAppendMode) palette.accentEmerald else palette.inkSecondary,
                                     modifier = Modifier.size(16.dp)
                                 )
                                 Text(
-                                    text = "Combine multi-page form into one answer list",
+                                    text = "Combine multi-page sections",
                                     style = MaterialTheme.typography.labelMedium.copy(
                                         color = palette.inkPrimary,
-                                        fontWeight = FontWeight.SemiBold,
-                                        fontSize = 11.5.sp
+                                        fontWeight = FontWeight.Medium,
+                                        fontSize = 12.sp
                                     ),
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
@@ -1032,70 +1012,74 @@ fun GoogleFormsSolveScreen(
                                 text = if (state.googleFormAppendMode) "ON" else "OFF",
                                 style = MaterialTheme.typography.labelSmall.copy(
                                     color = if (state.googleFormAppendMode) palette.accentEmerald else palette.inkSecondary,
-                                    fontWeight = FontWeight.ExtraBold,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontWeight = FontWeight.Bold,
                                     fontSize = 11.sp
                                 )
                             )
                         }
 
                         // Subject Focus Chips
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            SubjectMode.entries.forEach { subj ->
-                                val selected = state.subjectMode == subj
-                                Box(
-                                    contentAlignment = Alignment.Center,
-                                    modifier = Modifier
-                                        .heightIn(min = 48.dp)
-                                        .clip(RoundedCornerShape(10.dp))
-                                        .background(if (selected) palette.accentEmeraldContainer else palette.glassMedium)
-                                        .border(
-                                            1.dp,
-                                            if (selected) palette.accentEmerald.copy(alpha = 0.7f) else palette.cardHairlineBorder,
-                                            RoundedCornerShape(10.dp)
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(
+                                text = "SUBJECT FOCUS",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    color = palette.inkSecondary,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 0.9.sp,
+                                    fontSize = 10.sp
+                                )
+                            )
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                SubjectMode.entries.forEach { subj ->
+                                    val selected = state.subjectMode == subj
+                                    Box(
+                                        contentAlignment = Alignment.Center,
+                                        modifier = Modifier
+                                            .heightIn(min = 48.dp)
+                                            .clip(RoundedCornerShape(10.dp))
+                                            .background(if (selected) palette.accentEmeraldContainer else palette.canvasBottom)
+                                            .border(
+                                                1.dp,
+                                                if (selected) palette.accentEmerald.copy(alpha = 0.7f) else palette.cardHairlineBorder,
+                                                RoundedCornerShape(10.dp)
+                                            )
+                                            .clickable(role = Role.RadioButton) { onSelectSubjectMode(subj) }
+                                            .padding(horizontal = 12.dp, vertical = 8.dp)
+                                            .testTag("chip_forms_subject_${subj.id}")
+                                    ) {
+                                        Text(
+                                            text = subj.label,
+                                            style = MaterialTheme.typography.labelSmall.copy(
+                                                color = if (selected) palette.accentEmerald else palette.inkSecondary,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 11.5.sp
+                                            )
                                         )
-                                        .clickable(role = Role.RadioButton) { onSelectSubjectMode(subj) }
-                                        .padding(horizontal = 11.dp, vertical = 8.dp)
-                                        .testTag("chip_forms_subject_${subj.id}")
-                                ) {
-                                    Text(
-                                        text = subj.label,
-                                        style = MaterialTheme.typography.labelSmall.copy(
-                                            color = if (selected) palette.accentEmerald else palette.inkSecondary,
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 11.sp
-                                        )
-                                    )
+                                    }
                                 }
                             }
                         }
 
                         // Solving Engine Picker
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(palette.canvasBottom)
-                                .border(1.dp, palette.cardHairlineBorder, RoundedCornerShape(12.dp))
-                                .padding(10.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = "SOLVING ENGINE",
+                                    text = "SOLVER ENGINE",
                                     style = MaterialTheme.typography.labelSmall.copy(
                                         color = palette.inkSecondary,
                                         fontWeight = FontWeight.Bold,
-                                        letterSpacing = 0.7.sp,
+                                        letterSpacing = 0.9.sp,
                                         fontSize = 10.sp
                                     )
                                 )
@@ -1103,7 +1087,7 @@ fun GoogleFormsSolveScreen(
                                     text = selectedModel.badge,
                                     style = MaterialTheme.typography.labelSmall.copy(
                                         color = palette.accentEmerald,
-                                        fontWeight = FontWeight.Bold,
+                                        fontWeight = FontWeight.SemiBold,
                                         fontSize = 10.5.sp
                                     )
                                 )
@@ -1113,7 +1097,7 @@ fun GoogleFormsSolveScreen(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .horizontalScroll(rememberScrollState()),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 GoogleFormsModelOption.entries.forEach { option ->
@@ -1123,7 +1107,7 @@ fun GoogleFormsSolveScreen(
                                         modifier = Modifier
                                             .heightIn(min = 48.dp)
                                             .clip(RoundedCornerShape(10.dp))
-                                            .background(if (isSelected) palette.accentSky else palette.glassMedium)
+                                            .background(if (isSelected) palette.accentSky else palette.canvasBottom)
                                             .border(
                                                 1.dp,
                                                 if (isSelected) palette.accentSky else palette.cardHairlineBorder,
@@ -1146,71 +1130,57 @@ fun GoogleFormsSolveScreen(
                                 }
                             }
 
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
+                            if ((selectedModel == GoogleFormsModelOption.GEMINI_WEB_AI || state.googleFormsNeedsWebLogin) &&
+                                !state.isGoogleWebLoggedIn
                             ) {
-                                Text(
-                                    text = selectedModel.description,
-                                    style = MaterialTheme.typography.bodySmall.copy(
-                                        color = palette.inkSecondary,
-                                        fontSize = 11.sp
-                                    ),
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.weight(1f).padding(end = 8.dp)
-                                )
-                                if ((selectedModel == GoogleFormsModelOption.GEMINI_WEB_AI || state.googleFormsNeedsWebLogin) &&
-                                    !state.isGoogleWebLoggedIn
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .heightIn(min = 48.dp)
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(palette.accentSkyContainer)
+                                        .border(1.dp, palette.accentSky.copy(alpha = 0.6f), RoundedCornerShape(10.dp))
+                                        .clickable(role = Role.Button, onClick = onOpenGeminiWebLogin)
+                                        .padding(horizontal = 12.dp, vertical = 10.dp)
+                                        .testTag("btn_connect_gemini_web")
                                 ) {
-                                    Box(
-                                        contentAlignment = Alignment.Center,
-                                        modifier = Modifier
-                                            .heightIn(min = 48.dp)
-                                            .clip(RoundedCornerShape(10.dp))
-                                            .background(palette.accentSkyContainer)
-                                            .border(1.dp, palette.accentSky.copy(alpha = 0.65f), RoundedCornerShape(10.dp))
-                                            .clickable(role = Role.Button, onClick = onOpenGeminiWebLogin)
-                                            .padding(horizontal = 10.dp, vertical = 8.dp)
-                                            .testTag("btn_connect_gemini_web")
-                                    ) {
-                                        Text(
-                                            text = "Connect Web Helper",
-                                            style = MaterialTheme.typography.labelSmall.copy(
-                                                color = palette.accentSky,
-                                                fontWeight = FontWeight.Bold,
-                                                fontSize = 11.sp
-                                            )
+                                    Text(
+                                        text = "Connect Web Helper",
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            color = palette.accentSky,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 12.sp
                                         )
-                                    }
+                                    )
                                 }
                             }
                         }
                     }
                 }
 
-                // Expandable Fallback: Paste Form Text Manually (reachable from More Ways or Error Recovery)
+                // Expandable Manual Text Paste Box
                 AnimatedVisibility(visible = showManualPasteFallback) {
                     Column(
                         modifier = Modifier.fillMaxWidth(),
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
+                        HorizontalDivider(color = palette.cardHairlineBorder, thickness = 0.8.dp)
                         OutlinedTextField(
                             value = state.googleFormPastedTextInput,
                             onValueChange = onUpdatePastedText,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .heightIn(min = 120.dp)
+                                .heightIn(min = 116.dp)
                                 .testTag("input_google_form_pasted_text"),
                             placeholder = {
                                 Text(
-                                    text = "Paste your question and answer choices here",
+                                    text = "Paste questions and options here",
                                     color = palette.inkSecondary.copy(alpha = 0.65f),
-                                    fontSize = 12.sp
+                                    fontSize = 12.5.sp
                                 )
                             },
-                            shape = RoundedCornerShape(14.dp),
+                            shape = RoundedCornerShape(12.dp),
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = palette.accentSky,
                                 unfocusedBorderColor = palette.cardHairlineBorder,
@@ -1221,23 +1191,21 @@ fun GoogleFormsSolveScreen(
                                 unfocusedContainerColor = palette.canvasBottom
                             )
                         )
-
-                        Row(
+                        Box(
+                            contentAlignment = Alignment.Center,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .heightIn(min = 48.dp)
-                                .clip(RoundedCornerShape(12.dp))
+                                .clip(RoundedCornerShape(11.dp))
                                 .background(palette.accentSkyContainer)
-                                .border(1.dp, palette.accentSky.copy(alpha = 0.7f), RoundedCornerShape(12.dp))
+                                .border(1.dp, palette.accentSky.copy(alpha = 0.65f), RoundedCornerShape(11.dp))
                                 .clickable(
                                     enabled = !state.isSolvingGoogleForm,
                                     role = Role.Button,
                                     onClick = onSolveFromPastedText
                                 )
                                 .padding(horizontal = 16.dp, vertical = 12.dp)
-                                .testTag("btn_solve_pasted_form"),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center
+                                .testTag("btn_solve_pasted_form")
                         ) {
                             Text(
                                 text = "Solve Pasted Questions",
@@ -1253,16 +1221,16 @@ fun GoogleFormsSolveScreen(
             }
         }
 
-        // ── EXISTING NOTIFICATION BANNER IF NO LOADED SESSION ────────────────
+        // ── EXISTING PINNED BAR STATUS WHEN NO ACTIVE RESULT ────────────────
         if (currentResult == null && state.isGoogleFormPinned) {
             item(key = "existing_pinned_banner") {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(16.dp))
+                        .clip(RoundedCornerShape(cornerDp))
                         .background(palette.glassStrong)
-                        .border(1.dp, palette.accentEmerald.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
-                        .padding(14.dp),
+                        .border(1.dp, palette.accentEmerald.copy(alpha = 0.45f), RoundedCornerShape(cornerDp))
+                        .padding(horizontal = 14.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
@@ -1275,18 +1243,19 @@ fun GoogleFormsSolveScreen(
                             imageVector = Icons.Filled.NotificationsActive,
                             contentDescription = null,
                             tint = palette.accentEmerald,
-                            modifier = Modifier.size(20.dp)
+                            modifier = Modifier.size(18.dp)
                         )
                         Column {
                             Text(
-                                text = "Answer Notification Pinned",
+                                text = "Answer Strip Pinned",
                                 style = MaterialTheme.typography.titleSmall.copy(
                                     color = palette.inkPrimary,
-                                    fontWeight = FontWeight.Bold
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.5.sp
                                 )
                             )
                             Text(
-                                text = "Ongoing notification is active in your status bar",
+                                text = "Active in your top notification shade",
                                 style = MaterialTheme.typography.bodySmall.copy(
                                     color = palette.inkSecondary,
                                     fontSize = 11.5.sp
@@ -1299,8 +1268,8 @@ fun GoogleFormsSolveScreen(
                         modifier = Modifier
                             .heightIn(min = 48.dp)
                             .clip(RoundedCornerShape(10.dp))
-                            .background(palette.accentSkyContainer)
-                            .border(1.dp, palette.accentSky.copy(alpha = 0.6f), RoundedCornerShape(10.dp))
+                            .background(palette.canvasBottom)
+                            .border(1.dp, palette.cardHairlineBorder, RoundedCornerShape(10.dp))
                             .clickable(role = Role.Button) { triggerUnpinNotification() }
                             .padding(horizontal = 12.dp, vertical = 8.dp)
                             .testTag("btn_unpin_existing_forms_notification")
@@ -1317,9 +1286,10 @@ fun GoogleFormsSolveScreen(
             }
         }
 
-        // ── STEP 02: ANSWER KEY SUMMARY, PINNING & AUTO-FILL ─────────────────
+        // ── ANSWER KEY SHEET (HERO RESULT BLOCK) ────────────────────────────
         if (currentResult != null) {
-            item(key = "step_02_pin_notification") {
+            item(key = "forms_answer_key_sheet") {
+                val isInstantClassCache = currentResult.engineLabel.contains("Class Cache", ignoreCase = true)
                 val hasNeedsVerify = currentResult.engineLabel.contains("Fallback", ignoreCase = true) ||
                     currentResult.engineLabel.contains("Unverified", ignoreCase = true) ||
                     currentResult.engineLabel.contains("Emergency", ignoreCase = true) ||
@@ -1328,38 +1298,88 @@ fun GoogleFormsSolveScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(cardCorner))
+                        .clip(RoundedCornerShape(cornerDp))
                         .background(palette.glassStrong)
                         .border(
                             1.dp,
-                            if (state.isGoogleFormPinned || state.isFormsKeyPinnedOnIsland) palette.accentEmerald.copy(alpha = 0.6f)
-                            else palette.accentSky.copy(alpha = 0.5f),
-                            RoundedCornerShape(cardCorner)
+                            when {
+                                state.isGoogleFormPinned || isInstantClassCache -> palette.accentEmerald.copy(alpha = 0.45f)
+                                else -> palette.cardHairlineBorder
+                            },
+                            RoundedCornerShape(cornerDp)
                         )
                         .padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
+                    // Title + source tag + Clear icon
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Box(modifier = Modifier.weight(1f)) {
-                            StepSectionHeader(
-                                stepNumber = "02",
-                                title = "Answer Key & Auto-Fill",
-                                subtitle = "${currentResult.formTitle} • ${currentResult.items.size} Qs • ${currentResult.engineLabel}"
+                        Column(
+                            modifier = Modifier.weight(1f).padding(end = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(
+                                text = currentResult.formTitle,
+                                style = MaterialTheme.typography.titleMedium.copy(
+                                    color = palette.inkPrimary,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 15.5.sp
+                                ),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                if (isInstantClassCache) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(palette.accentEmeraldContainer)
+                                            .padding(horizontal = 7.dp, vertical = 2.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.Bolt,
+                                            contentDescription = null,
+                                            tint = palette.accentEmerald,
+                                            modifier = Modifier.size(11.dp)
+                                        )
+                                        Text(
+                                            text = "Instant Class Cache · 0 credits",
+                                            style = MaterialTheme.typography.labelSmall.copy(
+                                                color = palette.accentEmerald,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 10.sp
+                                            )
+                                        )
+                                    }
+                                } else {
+                                    Text(
+                                        text = "${currentResult.items.size} questions · ${currentResult.engineLabel}",
+                                        style = MaterialTheme.typography.bodySmall.copy(
+                                            color = palette.inkSecondary,
+                                            fontSize = 11.5.sp
+                                        ),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
                         }
+
                         Box(
                             contentAlignment = Alignment.Center,
                             modifier = Modifier
                                 .minimumInteractiveComponentSize()
                                 .clip(RoundedCornerShape(10.dp))
-                                .background(palette.glassMedium)
-                                .border(1.dp, palette.cardHairlineBorder, RoundedCornerShape(10.dp))
+                                .background(palette.canvasBottom)
                                 .clickable(role = Role.Button, onClick = onClearFormsResult)
-                                .padding(8.dp)
                                 .testTag("btn_clear_forms_session")
                         ) {
                             Icon(
@@ -1371,19 +1391,20 @@ fun GoogleFormsSolveScreen(
                         }
                     }
 
+                    // Unverified Warning Bar with 1-tap Retry
                     if (hasNeedsVerify) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
+                                .clip(RoundedCornerShape(10.dp))
                                 .background(palette.accentSkyContainer)
-                                .border(1.dp, palette.accentSky.copy(alpha = 0.55f), RoundedCornerShape(12.dp))
+                                .border(1.dp, palette.accentSky.copy(alpha = 0.45f), RoundedCornerShape(10.dp))
                                 .padding(horizontal = 12.dp, vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Text(
-                                text = "Some answers could not be confirmed. Tap Retry or pick another engine in More Ways.",
+                                text = "Some questions were skipped. Retry or re-solve individually below.",
                                 style = MaterialTheme.typography.bodySmall.copy(
                                     color = palette.inkPrimary,
                                     fontSize = 11.sp
@@ -1409,211 +1430,153 @@ fun GoogleFormsSolveScreen(
                                     .testTag("btn_retry_forms_with_ai")
                             ) {
                                 Text(
-                                    text = "Retry Solving",
+                                    text = "Retry",
                                     style = MaterialTheme.typography.labelSmall.copy(
                                         color = palette.onAccentInk,
                                         fontWeight = FontWeight.Bold,
-                                        fontSize = 11.sp
+                                        fontSize = 11.5.sp
                                     )
                                 )
                             }
                         }
                     }
 
-                    // Compact Format Preview Box
-                    Column(
+                    // Signature Monospace Answer Key Strip (with inline Copy icon)
+                    Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(14.dp))
+                            .clip(RoundedCornerShape(12.dp))
                             .background(palette.canvasBottom)
-                            .border(1.dp, palette.cardHairlineBorder, RoundedCornerShape(14.dp))
-                            .padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                            .padding(start = 14.dp, end = 6.dp, top = 10.dp, bottom = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
+                        Column(
+                            modifier = Modifier.weight(1f).padding(end = 6.dp),
+                            verticalArrangement = Arrangement.spacedBy(3.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text(
+                                    text = "ANSWER KEY",
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        color = palette.inkSecondary,
+                                        fontWeight = FontWeight.Bold,
+                                        letterSpacing = 0.9.sp,
+                                        fontSize = 9.5.sp
+                                    )
+                                )
+                                if (state.isGoogleFormPinned) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(3.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.CheckCircle,
+                                            contentDescription = null,
+                                            tint = palette.accentEmerald,
+                                            modifier = Modifier.size(11.dp)
+                                        )
+                                        Text(
+                                            text = "PINNED",
+                                            style = MaterialTheme.typography.labelSmall.copy(
+                                                color = palette.accentEmerald,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 9.5.sp
+                                            )
+                                        )
+                                    }
+                                }
+                            }
+                            Text(
+                                text = currentResult.compactNotificationOutput,
+                                style = MaterialTheme.typography.titleLarge.copy(
+                                    color = palette.inkPrimary,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontSize = 16.5.sp,
+                                    lineHeight = 22.sp
+                                ),
+                                modifier = Modifier.testTag("tv_google_form_compact_output")
+                            )
+                        }
+
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                text = "COMPACT ANSWER KEY",
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    color = palette.inkSecondary,
-                                    fontWeight = FontWeight.Bold,
-                                    letterSpacing = 0.8.sp,
-                                    fontSize = 10.sp
-                                )
-                            )
-                            if (state.isGoogleFormPinned) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(6.dp))
-                                        .background(palette.accentEmeraldContainer)
-                                        .padding(horizontal = 8.dp, vertical = 3.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Filled.CheckCircle,
-                                        contentDescription = null,
-                                        tint = palette.accentEmerald,
-                                        modifier = Modifier.size(12.dp)
-                                    )
-                                    Text(
-                                        text = "PINNED IN BAR",
-                                        style = MaterialTheme.typography.labelSmall.copy(
-                                            color = palette.accentEmerald,
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 10.sp
-                                        )
-                                    )
-                                }
-                            }
-                        }
-
-                        Text(
-                            text = currentResult.compactNotificationOutput,
-                            style = MaterialTheme.typography.titleLarge.copy(
-                                color = palette.inkPrimary,
-                                fontFamily = FontFamily.Monospace,
-                                fontWeight = FontWeight.ExtraBold,
-                                fontSize = 17.sp,
-                                lineHeight = 23.sp
-                            ),
-                            modifier = Modifier.testTag("tv_google_form_compact_output")
-                        )
-                    }
-
-                    // Pin / Unpin Notification Bar Row
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        val pinBtnInk = if (state.isGoogleFormPinned) onEmeraldInk else palette.onAccentInk
-                        Row(
-                            modifier = Modifier
-                                .weight(1f)
-                                .heightIn(min = 48.dp)
-                                .clip(RoundedCornerShape(13.dp))
-                                .background(
-                                    if (state.isGoogleFormPinned) palette.accentEmerald else palette.accentSky
-                                )
-                                .clickable(role = Role.Button) {
-                                    triggerPinNotification(currentResult)
-                                }
-                                .padding(horizontal = 14.dp, vertical = 12.dp)
-                                .testTag("btn_pin_forms_notification"),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.PushPin,
-                                contentDescription = null,
-                                tint = pinBtnInk,
-                                modifier = Modifier.size(17.dp)
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Text(
-                                text = if (state.isGoogleFormPinned) "Update Pin" else "Pin to Notification",
-                                style = MaterialTheme.typography.labelLarge.copy(
-                                    color = pinBtnInk,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 13.sp
-                                ),
-                                maxLines = 1
-                            )
-                        }
-
-                        if (state.isGoogleFormPinned) {
-                            Row(
+                            Box(
+                                contentAlignment = Alignment.Center,
                                 modifier = Modifier
-                                    .heightIn(min = 48.dp)
-                                    .clip(RoundedCornerShape(13.dp))
-                                    .background(palette.accentSkyContainer)
-                                    .border(1.dp, palette.accentSky.copy(alpha = 0.65f), RoundedCornerShape(13.dp))
+                                    .minimumInteractiveComponentSize()
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(palette.glassStrong)
                                     .clickable(role = Role.Button) {
-                                        triggerUnpinNotification()
+                                        copyToClipboard(context, currentResult.compactNotificationOutput)
+                                        onShowBannerMessage("Copied ${currentResult.compactNotificationOutput}")
                                     }
-                                    .padding(horizontal = 16.dp, vertical = 12.dp)
-                                    .testTag("btn_unpin_forms_notification"),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.Center
+                                    .testTag("btn_copy_google_form_answers")
                             ) {
                                 Icon(
-                                    imageVector = Icons.Filled.NotificationsOff,
-                                    contentDescription = null,
-                                    tint = palette.accentSky,
+                                    imageVector = Icons.Filled.ContentCopy,
+                                    contentDescription = "Copy answer key",
+                                    tint = palette.inkPrimary,
                                     modifier = Modifier.size(17.dp)
                                 )
-                                Spacer(Modifier.width(6.dp))
-                                Text(
-                                    text = "Unpin",
-                                    style = MaterialTheme.typography.labelLarge.copy(
-                                        color = palette.inkPrimary,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 13.sp
-                                    )
+                            }
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .minimumInteractiveComponentSize()
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(palette.glassStrong)
+                                    .clickable(role = Role.Button) {
+                                        val shareBody = buildString {
+                                            appendLine(currentResult.formTitle.ifBlank { "Form Answers" })
+                                            appendLine("Key: ${currentResult.compactNotificationOutput}")
+                                            appendLine()
+                                            currentResult.items.forEach { item ->
+                                                val ansDetail = if (item.shortAnswer.isNotBlank()) " — ${item.shortAnswer}" else ""
+                                                appendLine("Q${item.number}: ${item.answerLetter}$ansDetail")
+                                            }
+                                        }.trim()
+                                        runCatching {
+                                            val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                                                type = "text/plain"
+                                                putExtra(Intent.EXTRA_SUBJECT, currentResult.formTitle.ifBlank { "Form Answers" })
+                                                putExtra(Intent.EXTRA_TEXT, shareBody)
+                                            }
+                                            context.startActivity(Intent.createChooser(sendIntent, "Share answer key"))
+                                        }
+                                    }
+                                    .testTag("btn_share_form_answers")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Share,
+                                    contentDescription = "Share answer key",
+                                    tint = palette.inkPrimary,
+                                    modifier = Modifier.size(17.dp)
                                 )
                             }
                         }
                     }
 
-                    // Dynamic Island Pin + Auto-Fill Form Row
+                    // Tier 1 Actions: Auto-Fill Form (hero) + Pin to Shade
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Row(
                             modifier = Modifier
                                 .weight(1f)
                                 .heightIn(min = 48.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(
-                                    if (state.isFormsKeyPinnedOnIsland) palette.accentEmeraldContainer else palette.glassMedium
-                                )
-                                .border(
-                                    1.dp,
-                                    if (state.isFormsKeyPinnedOnIsland) palette.accentEmerald.copy(alpha = 0.6f) else palette.cardHairlineBorder,
-                                    RoundedCornerShape(12.dp)
-                                )
-                                .clickable(role = Role.Button) {
-                                    if (state.isFormsKeyPinnedOnIsland) onUnpinFromDynamicIsland()
-                                    else onPinToDynamicIsland()
-                                }
-                                .padding(horizontal = 10.dp, vertical = 10.dp)
-                                .testTag("btn_pin_forms_dynamic_island"),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.Widgets,
-                                contentDescription = null,
-                                tint = if (state.isFormsKeyPinnedOnIsland) palette.accentEmerald else palette.accentSky,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(Modifier.width(6.dp))
-                            Text(
-                                text = if (state.isFormsKeyPinnedOnIsland) "Clear Island" else "Show on Island",
-                                style = MaterialTheme.typography.labelMedium.copy(
-                                    color = palette.inkPrimary,
-                                    fontWeight = FontWeight.SemiBold,
-                                    fontSize = 12.sp
-                                ),
-                                maxLines = 1
-                            )
-                        }
-
-                        Row(
-                            modifier = Modifier
-                                .weight(1f)
-                                .heightIn(min = 48.dp)
-                                .clip(RoundedCornerShape(12.dp))
+                                .clip(RoundedCornerShape(11.dp))
                                 .background(palette.accentEmeraldContainer)
-                                .border(1.dp, palette.accentEmerald.copy(alpha = 0.6f), RoundedCornerShape(12.dp))
-                                .clickable(role = Role.Button) {
-                                    showFillPreviewDialog = true
-                                }
-                                .padding(horizontal = 10.dp, vertical = 10.dp)
+                                .border(1.dp, palette.accentEmerald.copy(alpha = 0.6f), RoundedCornerShape(11.dp))
+                                .clickable(role = Role.Button) { showFillPreviewDialog = true }
+                                .padding(horizontal = 12.dp, vertical = 11.dp)
                                 .testTag("btn_launch_autofill_browser"),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.Center
@@ -1624,90 +1587,89 @@ fun GoogleFormsSolveScreen(
                                 tint = palette.accentEmerald,
                                 modifier = Modifier.size(16.dp)
                             )
+                            Spacer(Modifier.width(7.dp))
+                            Text(
+                                text = "Auto-Fill",
+                                style = MaterialTheme.typography.labelLarge.copy(
+                                    color = palette.inkPrimary,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp
+                                ),
+                                maxLines = 1
+                            )
+                        }
+
+                        val pinBtnInk = if (state.isGoogleFormPinned) onEmeraldInk else palette.onAccentInk
+                        Row(
+                            modifier = Modifier
+                                .weight(1f)
+                                .heightIn(min = 48.dp)
+                                .clip(RoundedCornerShape(11.dp))
+                                .background(if (state.isGoogleFormPinned) palette.accentEmerald else palette.accentSky)
+                                .clickable(role = Role.Button) { triggerPinNotification(currentResult) }
+                                .padding(horizontal = 12.dp, vertical = 11.dp)
+                                .testTag("btn_pin_forms_notification"),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.PushPin,
+                                contentDescription = null,
+                                tint = pinBtnInk,
+                                modifier = Modifier.size(15.dp)
+                            )
                             Spacer(Modifier.width(6.dp))
                             Text(
-                                text = "Auto-Fill in Form",
-                                style = MaterialTheme.typography.labelMedium.copy(
-                                    color = palette.inkPrimary,
-                                    fontWeight = FontWeight.SemiBold,
-                                    fontSize = 12.sp
+                                text = if (state.isGoogleFormPinned) "Update Pin" else "Pin to Shade",
+                                style = MaterialTheme.typography.labelLarge.copy(
+                                    color = pinBtnInk,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp
                                 ),
                                 maxLines = 1
                             )
                         }
                     }
 
-                    // Copy Key & Save to Export Queue Row
+                    // Tier 2 Quiet Utility Strip: Unpin (if pinned) + Island + Export
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Row(
-                            modifier = Modifier
-                                .weight(1f)
-                                .heightIn(min = 48.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(palette.glassMedium)
-                                .border(1.dp, palette.cardHairlineBorder, RoundedCornerShape(12.dp))
-                                .clickable(role = Role.Button) {
-                                    copyToClipboard(context, currentResult.compactNotificationOutput)
-                                    onShowBannerMessage("Copied ${currentResult.compactNotificationOutput}")
-                                }
-                                .padding(horizontal = 12.dp, vertical = 10.dp)
-                                .testTag("btn_copy_google_form_answers"),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.ContentCopy,
-                                contentDescription = null,
-                                tint = palette.accentSky,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(Modifier.width(6.dp))
-                            Text(
-                                text = "Copy Key",
-                                style = MaterialTheme.typography.labelMedium.copy(
-                                    color = palette.inkPrimary,
-                                    fontWeight = FontWeight.SemiBold,
-                                    fontSize = 12.5.sp
-                                )
+                        if (state.isGoogleFormPinned) {
+                            QuietUtilityPill(
+                                icon = Icons.Filled.NotificationsOff,
+                                label = "Unpin",
+                                active = false,
+                                onClick = { triggerUnpinNotification() },
+                                testTag = "btn_unpin_forms_notification",
+                                modifier = Modifier.weight(1f)
                             )
                         }
-
-                        Row(
-                            modifier = Modifier
-                                .weight(1f)
-                                .heightIn(min = 48.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(palette.glassMedium)
-                                .border(1.dp, palette.cardHairlineBorder, RoundedCornerShape(12.dp))
-                                .clickable(role = Role.Button, onClick = onSaveToExportQueue)
-                                .padding(horizontal = 12.dp, vertical = 10.dp)
-                                .testTag("btn_save_forms_to_export"),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.FileDownload,
-                                contentDescription = null,
-                                tint = palette.accentSky,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(Modifier.width(6.dp))
-                            Text(
-                                text = "Save to Export",
-                                style = MaterialTheme.typography.labelMedium.copy(
-                                    color = palette.inkPrimary,
-                                    fontWeight = FontWeight.SemiBold,
-                                    fontSize = 12.5.sp
-                                )
-                            )
-                        }
+                        QuietUtilityPill(
+                            icon = Icons.Filled.Widgets,
+                            label = if (state.isFormsKeyPinnedOnIsland) "Clear Pill" else "On Pill",
+                            active = state.isFormsKeyPinnedOnIsland,
+                            onClick = {
+                                if (state.isFormsKeyPinnedOnIsland) onUnpinFromDynamicIsland()
+                                else onPinToDynamicIsland()
+                            },
+                            testTag = "btn_pin_forms_dynamic_island",
+                            modifier = Modifier.weight(1f)
+                        )
+                        QuietUtilityPill(
+                            icon = Icons.Filled.FileDownload,
+                            label = "Save",
+                            active = false,
+                            onClick = onSaveToExportQueue,
+                            testTag = "btn_save_forms_to_export",
+                            modifier = Modifier.weight(1f)
+                        )
                     }
                 }
             }
 
+            // ── QUESTIONS BREAKDOWN INDEX + ACCORDION ───────────────────────
             val unverifiedCount = currentResult.items.count { it.answerLetter.isBlank() || it.answerLetter == "?" }
             val displayedItems = if (showUnverifiedOnly && unverifiedCount > 0) {
                 currentResult.items.filter { it.answerLetter.isBlank() || it.answerLetter == "?" }
@@ -1715,16 +1677,10 @@ fun GoogleFormsSolveScreen(
                 currentResult.items
             }
 
-            // ── STEP 03: COMPACT QUESTION SELECTOR & SINGLE-OPEN ACCORDION ─────
-            item(key = "step_03_header") {
+            item(key = "forms_questions_header") {
                 Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(cardCorner))
-                        .background(palette.glassStrong)
-                        .border(1.dp, palette.cardHairlineBorder, RoundedCornerShape(cardCorner))
-                        .padding(horizontal = 14.dp, vertical = 12.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -1733,7 +1689,7 @@ fun GoogleFormsSolveScreen(
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "03 • Questions Breakdown",
+                                text = "Questions (${currentResult.items.size})",
                                 style = MaterialTheme.typography.titleSmall.copy(
                                     color = palette.inkPrimary,
                                     fontWeight = FontWeight.Bold,
@@ -1741,13 +1697,14 @@ fun GoogleFormsSolveScreen(
                                 )
                             )
                             Text(
-                                text = "Tap any question below to inspect options & explanation",
+                                text = "Tap any row to inspect options or re-solve a wrong answer",
                                 style = MaterialTheme.typography.bodySmall.copy(
                                     color = palette.inkSecondary,
-                                    fontSize = 11.sp
+                                    fontSize = 11.5.sp
                                 )
                             )
                         }
+
                         if (unverifiedCount > 0) {
                             Box(
                                 contentAlignment = Alignment.Center,
@@ -1755,15 +1712,13 @@ fun GoogleFormsSolveScreen(
                                     .heightIn(min = 48.dp)
                                     .clip(RoundedCornerShape(10.dp))
                                     .background(if (showUnverifiedOnly) palette.accentSky else palette.accentSkyContainer)
-                                    .border(1.dp, palette.accentSky.copy(alpha = 0.6f), RoundedCornerShape(10.dp))
-                                    .clickable(role = Role.Button) {
-                                        showUnverifiedOnly = !showUnverifiedOnly
-                                    }
+                                    .border(1.dp, palette.accentSky.copy(alpha = 0.55f), RoundedCornerShape(10.dp))
+                                    .clickable(role = Role.Button) { showUnverifiedOnly = !showUnverifiedOnly }
                                     .padding(horizontal = 10.dp, vertical = 6.dp)
                                     .testTag("btn_filter_unverified_questions")
                             ) {
                                 Text(
-                                    text = if (showUnverifiedOnly) "Show All (${currentResult.items.size})" else "Skipped ($unverifiedCount)",
+                                    text = if (showUnverifiedOnly) "Show All" else "Skipped ($unverifiedCount)",
                                     style = MaterialTheme.typography.labelSmall.copy(
                                         color = if (showUnverifiedOnly) palette.onAccentInk else palette.inkPrimary,
                                         fontWeight = FontWeight.Bold,
@@ -1772,19 +1727,10 @@ fun GoogleFormsSolveScreen(
                                     maxLines = 1
                                 )
                             }
-                        } else {
-                            Text(
-                                text = "${currentResult.items.size} Qs",
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    color = palette.accentSky,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 11.5.sp
-                                )
-                            )
                         }
                     }
 
-                    // Quick-Jump Question Pill Selector
+                    // Horizontal Quick-Jump Pill Rail
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1804,7 +1750,7 @@ fun GoogleFormsSolveScreen(
                                         when {
                                             isActive -> palette.accentSky
                                             isUnknown -> palette.accentSkyContainer
-                                            else -> palette.canvasBottom
+                                            else -> palette.glassStrong
                                         }
                                     )
                                     .border(
@@ -1815,11 +1761,11 @@ fun GoogleFormsSolveScreen(
                                     .clickable(role = Role.Button) {
                                         expandedQuestionNumber = if (isActive) null else qItem.number
                                     }
-                                    .padding(horizontal = 10.dp, vertical = 8.dp)
+                                    .padding(horizontal = 11.dp, vertical = 8.dp)
                                     .testTag("pill_form_q_${qItem.number}")
                             ) {
                                 Text(
-                                    text = "Q${qItem.number} • ${qItem.answerLetter}",
+                                    text = "Q${qItem.number} · ${qItem.answerLetter}",
                                     style = MaterialTheme.typography.labelSmall.copy(
                                         color = if (isActive) palette.onAccentInk else palette.inkPrimary,
                                         fontWeight = FontWeight.Bold,
@@ -1839,10 +1785,11 @@ fun GoogleFormsSolveScreen(
                 key = { _, item -> "form_q_${item.number}" }
             ) { _, item ->
                 val isExpanded = expandedQuestionNumber == item.number
-                CollapsibleSolvedQuestionRow(
+                EditorialSolvedQuestionRow(
                     item = item,
                     expanded = isExpanded,
                     isReSolving = state.reSolvingFormQuestionNumber == item.number,
+                    reducedMotion = reducedMotion,
                     onToggleExpand = {
                         expandedQuestionNumber = if (isExpanded) null else item.number
                     },
@@ -1851,7 +1798,7 @@ fun GoogleFormsSolveScreen(
             }
         }
 
-        // ── SPONSORED BANNER AT BOTTOM OF FORMS / PHOTO / PDF SOLVER ───────
+        // ── SPONSORED BANNER ────────────────────────────────────────────────
         item(key = "forms_bottom_ad_slot") {
             InAppAdMobBanner(
                 placementTag = "forms_bottom",
@@ -1859,15 +1806,15 @@ fun GoogleFormsSolveScreen(
             )
         }
 
-        // ── BACK TO HOME CTA ────────────────────────────────────────────────
+        // ── BACK TO HOME ────────────────────────────────────────────────────
         item(key = "back_to_home_button") {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = 48.dp)
-                    .clip(RoundedCornerShape(14.dp))
+                    .clip(RoundedCornerShape(12.dp))
                     .background(palette.glassStrong)
-                    .border(1.dp, palette.cardHairlineBorder, RoundedCornerShape(14.dp))
+                    .border(1.dp, palette.cardHairlineBorder, RoundedCornerShape(12.dp))
                     .clickable(role = Role.Button, onClick = onBackToHome)
                     .padding(horizontal = 16.dp, vertical = 12.dp)
                     .testTag("btn_google_forms_back"),
@@ -1878,14 +1825,14 @@ fun GoogleFormsSolveScreen(
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                     contentDescription = null,
                     tint = palette.inkPrimary,
-                    modifier = Modifier.size(18.dp)
+                    modifier = Modifier.size(17.dp)
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    text = "Back to Home Screen",
+                    text = "Back to Home",
                     style = MaterialTheme.typography.labelLarge.copy(
                         color = palette.inkPrimary,
-                        fontWeight = FontWeight.Bold,
+                        fontWeight = FontWeight.SemiBold,
                         fontSize = 13.5.sp
                     )
                 )
@@ -1895,50 +1842,88 @@ fun GoogleFormsSolveScreen(
 }
 
 @Composable
-private fun StepSectionHeader(
-    stepNumber: String,
-    title: String,
-    subtitle: String
+private fun FormsSolvingLiveTrack(
+    accentColor: Color,
+    trackColor: Color,
+    textColor: Color,
+    reducedMotion: Boolean
 ) {
-    val palette = LocalWhiteGlassPalette.current
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        modifier = Modifier.fillMaxWidth()
+    val stages = remember {
+        listOf(
+            "Opening form & reading questions...",
+            "Checking instant class answer cache...",
+            "Matching options & verifying answers..."
+        )
+    }
+    var stageIndex by remember { mutableIntStateOf(0) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(1_800L)
+            stageIndex = (stageIndex + 1) % stages.size
+        }
+    }
+
+    val scanProgress = if (reducedMotion) {
+        0.5f
+    } else {
+        val transition = rememberInfiniteTransition(label = "forms_scan_bar")
+        val value by transition.animateFloat(
+            initialValue = -0.35f,
+            targetValue = 1.35f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 1250, easing = LinearEasing),
+                repeatMode = RepeatMode.Restart
+            ),
+            label = "forms_scan_sweep"
+        )
+        value
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(trackColor)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Box(
-            contentAlignment = Alignment.Center,
+        Canvas(
             modifier = Modifier
-                .size(34.dp)
-                .clip(RoundedCornerShape(10.dp))
-                .background(palette.accentSkyContainer)
-                .border(1.dp, palette.accentSky.copy(alpha = 0.65f), RoundedCornerShape(10.dp))
+                .fillMaxWidth()
+                .height(3.dp)
+                .clip(CircleShape)
         ) {
-            Text(
-                text = stepNumber,
-                style = MaterialTheme.typography.labelMedium.copy(
-                    color = palette.accentSky,
-                    fontWeight = FontWeight.ExtraBold,
-                    fontSize = 12.sp
-                )
+            drawRoundRect(
+                color = accentColor.copy(alpha = 0.18f),
+                cornerRadius = CornerRadius(size.height / 2f, size.height / 2f)
+            )
+            val beamW = size.width * 0.38f
+            val left = (scanProgress * size.width) - (beamW / 2f)
+            drawRoundRect(
+                brush = Brush.horizontalGradient(
+                    colors = listOf(Color.Transparent, accentColor, Color.Transparent),
+                    startX = left,
+                    endX = left + beamW
+                ),
+                topLeft = Offset(left.coerceAtLeast(0f), 0f),
+                size = Size(beamW.coerceAtMost(size.width), size.height),
+                cornerRadius = CornerRadius(size.height / 2f, size.height / 2f)
             )
         }
-        Column(modifier = Modifier.weight(1f)) {
+        AnimatedContent(
+            targetState = stages[stageIndex],
+            transitionSpec = {
+                fadeIn(tween(220, easing = FastOutSlowInEasing)) togetherWith fadeOut(tween(160))
+            },
+            label = "forms_stage_label"
+        ) { label ->
             Text(
-                text = title,
-                style = MaterialTheme.typography.titleMedium.copy(
-                    color = palette.inkPrimary,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 15.5.sp
-                )
-            )
-            Text(
-                text = subtitle,
+                text = label,
                 style = MaterialTheme.typography.bodySmall.copy(
-                    color = palette.inkSecondary,
+                    color = textColor,
                     fontSize = 11.5.sp
                 ),
-                maxLines = 2,
+                maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
         }
@@ -1946,72 +1931,108 @@ private fun StepSectionHeader(
 }
 
 @Composable
-private fun CollapsibleSolvedQuestionRow(
+private fun QuietUtilityPill(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    active: Boolean,
+    onClick: () -> Unit,
+    testTag: String,
+    modifier: Modifier = Modifier
+) {
+    val palette = LocalWhiteGlassPalette.current
+    Row(
+        modifier = modifier
+            .heightIn(min = 44.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(if (active) palette.accentEmeraldContainer else palette.canvasBottom)
+            .border(
+                1.dp,
+                if (active) palette.accentEmerald.copy(alpha = 0.55f) else palette.cardHairlineBorder,
+                RoundedCornerShape(10.dp)
+            )
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 8.dp)
+            .testTag(testTag),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = if (active) palette.accentEmerald else palette.inkSecondary,
+            modifier = Modifier.size(15.dp)
+        )
+        Spacer(Modifier.width(5.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall.copy(
+                color = palette.inkPrimary,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 11.5.sp
+            ),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+@Composable
+private fun EditorialSolvedQuestionRow(
     item: GoogleFormSolvedItem,
     expanded: Boolean,
     isReSolving: Boolean,
+    reducedMotion: Boolean,
     onToggleExpand: () -> Unit,
     onReSolve: () -> Unit
 ) {
     val palette = LocalWhiteGlassPalette.current
-    val themeSpec = LocalPrismThemeSpec.current
-    val cardCorner = themeSpec.cornerRadiusDp.coerceIn(12, 22).dp
     val onWinnerEmeraldInk = contrastOnColor(palette.accentEmerald)
     val isUnknown = item.answerLetter.isBlank() || item.answerLetter == "?"
+    val chevronRotation by animateFloatAsState(
+        targetValue = if (expanded) 180f else 0f,
+        animationSpec = tween(durationMillis = if (reducedMotion) 0 else 200),
+        label = "q_chevron_${item.number}"
+    )
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(cardCorner))
+            .clip(RoundedCornerShape(14.dp))
             .background(palette.glassStrong)
             .border(
                 1.dp,
-                if (expanded) palette.accentSky.copy(alpha = 0.6f) else palette.cardHairlineBorder,
-                RoundedCornerShape(cardCorner)
+                if (expanded) palette.accentSky.copy(alpha = 0.5f) else palette.cardHairlineBorder,
+                RoundedCornerShape(14.dp)
             )
     ) {
-        // Always-visible compact single-line header row
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = 56.dp)
+                .heightIn(min = 58.dp)
                 .clickable(role = Role.Button, onClick = onToggleExpand)
-                .padding(horizontal = 14.dp, vertical = 10.dp)
+                .padding(horizontal = 14.dp, vertical = 11.dp)
                 .testTag("form_q_row_${item.number}"),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .size(28.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(if (expanded) palette.accentSky else palette.canvasBottom)
-                    .border(
-                        1.dp,
-                        if (expanded) palette.accentSky else palette.cardHairlineBorder,
-                        RoundedCornerShape(8.dp)
-                    )
-            ) {
-                Text(
-                    text = "${item.number}",
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        color = if (expanded) palette.onAccentInk else palette.inkPrimary,
-                        fontWeight = FontWeight.ExtraBold,
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 11.5.sp
-                    )
+            Text(
+                text = String.format(java.util.Locale.US, "%02d", item.number),
+                style = MaterialTheme.typography.labelMedium.copy(
+                    color = if (expanded) palette.accentSky else palette.inkSecondary,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 12.sp
                 )
-            }
+            )
 
             Text(
                 text = item.questionText,
                 style = MaterialTheme.typography.bodyMedium.copy(
                     color = palette.inkPrimary,
-                    fontWeight = if (expanded) FontWeight.Bold else FontWeight.Medium,
+                    fontWeight = if (expanded) FontWeight.SemiBold else FontWeight.Normal,
                     fontSize = 13.sp
                 ),
-                maxLines = if (expanded) 2 else 1,
+                maxLines = if (expanded) 3 else 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f)
             )
@@ -2019,20 +2040,10 @@ private fun CollapsibleSolvedQuestionRow(
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
-                    .widthIn(max = 96.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(
-                        when {
-                            isUnknown -> palette.accentSkyContainer
-                            else -> palette.accentEmeraldContainer
-                        }
-                    )
-                    .border(
-                        1.dp,
-                        if (isUnknown) palette.accentSky.copy(alpha = 0.55f) else palette.accentEmerald.copy(alpha = 0.55f),
-                        RoundedCornerShape(8.dp)
-                    )
-                    .padding(horizontal = 9.dp, vertical = 4.dp)
+                    .widthIn(min = 32.dp, max = 92.dp)
+                    .clip(RoundedCornerShape(7.dp))
+                    .background(if (isUnknown) palette.accentSkyContainer else palette.accentEmeraldContainer)
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
             ) {
                 Text(
                     text = item.answerLetter,
@@ -2048,18 +2059,21 @@ private fun CollapsibleSolvedQuestionRow(
             }
 
             Icon(
-                imageVector = if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                imageVector = Icons.Filled.ExpandMore,
                 contentDescription = if (expanded) "Collapse question ${item.number}" else "Open question ${item.number}",
                 tint = palette.inkSecondary,
-                modifier = Modifier.size(20.dp)
+                modifier = Modifier
+                    .size(19.dp)
+                    .graphicsLayer { rotationZ = chevronRotation }
             )
         }
 
-        // Expanded details — rendered ONLY when the user opens this particular question
         AnimatedVisibility(
             visible = expanded,
-            enter = expandVertically() + fadeIn(),
-            exit = shrinkVertically() + fadeOut()
+            enter = expandVertically(
+                animationSpec = spring(dampingRatio = 0.88f, stiffness = Spring.StiffnessMediumLow)
+            ) + fadeIn(tween(160)),
+            exit = shrinkVertically(animationSpec = tween(160)) + fadeOut(tween(120))
         ) {
             Column(
                 modifier = Modifier
@@ -2068,11 +2082,13 @@ private fun CollapsibleSolvedQuestionRow(
                     .testTag("form_q_detail_${item.number}"),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
+                HorizontalDivider(color = palette.cardHairlineBorder, thickness = 0.8.dp)
+
                 Text(
                     text = item.questionText,
                     style = MaterialTheme.typography.bodyMedium.copy(
                         color = palette.inkPrimary,
-                        fontWeight = FontWeight.SemiBold,
+                        fontWeight = FontWeight.Medium,
                         fontSize = 13.5.sp,
                         lineHeight = 19.sp
                     )
@@ -2085,41 +2101,48 @@ private fun CollapsibleSolvedQuestionRow(
                             .filter { it.isNotEmpty() }
                             .toSet()
                     }
-                    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         item.options.forEachIndexed { idx, opt ->
                             val letter = ('A' + idx).toString()
                             val isWinner = letter in winningLetters
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clip(RoundedCornerShape(9.dp))
-                                    .background(
-                                        if (isWinner) palette.accentEmeraldContainer else palette.canvasBottom
-                                    )
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(if (isWinner) palette.accentEmeraldContainer else palette.canvasBottom)
                                     .border(
                                         1.dp,
-                                        if (isWinner) palette.accentEmerald.copy(alpha = 0.65f) else palette.cardHairlineBorder,
-                                        RoundedCornerShape(9.dp)
+                                        if (isWinner) palette.accentEmerald.copy(alpha = 0.6f) else Color.Transparent,
+                                        RoundedCornerShape(10.dp)
                                     )
-                                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                                    .padding(horizontal = 10.dp, vertical = 9.dp),
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                horizontalArrangement = Arrangement.spacedBy(9.dp)
                             ) {
                                 Box(
                                     modifier = Modifier
                                         .size(22.dp)
                                         .clip(CircleShape)
-                                        .background(if (isWinner) palette.accentEmerald else palette.glassSubtle),
+                                        .background(if (isWinner) palette.accentEmerald else palette.glassStrong),
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    Text(
-                                        text = letter,
-                                        style = MaterialTheme.typography.labelSmall.copy(
-                                            color = if (isWinner) onWinnerEmeraldInk else palette.inkPrimary,
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 11.sp
+                                    if (isWinner) {
+                                        Icon(
+                                            imageVector = Icons.Filled.Check,
+                                            contentDescription = null,
+                                            tint = onWinnerEmeraldInk,
+                                            modifier = Modifier.size(13.dp)
                                         )
-                                    )
+                                    } else {
+                                        Text(
+                                            text = letter,
+                                            style = MaterialTheme.typography.labelSmall.copy(
+                                                color = palette.inkSecondary,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 11.sp
+                                            )
+                                        )
+                                    }
                                 }
                                 Text(
                                     text = opt,
@@ -2127,7 +2150,8 @@ private fun CollapsibleSolvedQuestionRow(
                                         color = if (isWinner) palette.inkPrimary else palette.inkSecondary,
                                         fontWeight = if (isWinner) FontWeight.SemiBold else FontWeight.Normal,
                                         fontSize = 12.5.sp
-                                    )
+                                    ),
+                                    modifier = Modifier.weight(1f)
                                 )
                             }
                         }
@@ -2138,7 +2162,7 @@ private fun CollapsibleSolvedQuestionRow(
                         style = MaterialTheme.typography.bodySmall.copy(
                             color = palette.accentEmerald,
                             fontWeight = FontWeight.SemiBold,
-                            fontSize = 12.5.sp
+                            fontSize = 13.sp
                         )
                     )
                 }
@@ -2149,23 +2173,22 @@ private fun CollapsibleSolvedQuestionRow(
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(10.dp))
                             .background(palette.canvasBottom)
-                            .border(1.dp, palette.cardHairlineBorder, RoundedCornerShape(10.dp))
-                            .padding(10.dp),
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
                         verticalArrangement = Arrangement.spacedBy(3.dp)
                     ) {
                         Text(
-                            text = "EXPLANATION",
+                            text = "WHY THIS ANSWER",
                             style = MaterialTheme.typography.labelSmall.copy(
                                 color = palette.inkSecondary,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 9.5.sp,
-                                letterSpacing = 0.6.sp
+                                letterSpacing = 0.8.sp
                             )
                         )
                         Text(
                             text = item.explanation,
                             style = MaterialTheme.typography.bodySmall.copy(
-                                color = palette.inkSecondary,
+                                color = palette.inkPrimary.copy(alpha = 0.86f),
                                 fontSize = 12.sp,
                                 lineHeight = 17.sp
                             )
@@ -2173,20 +2196,32 @@ private fun CollapsibleSolvedQuestionRow(
                     }
                 }
 
+                // Self-healing Re-solve Footer
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
+                    Text(
+                        text = "Think it's wrong? Re-solving updates the key.",
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            color = palette.inkSecondary,
+                            fontSize = 11.sp
+                        ),
+                        modifier = Modifier.weight(1f).padding(end = 8.dp),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.Center,
                         modifier = Modifier
                             .heightIn(min = 48.dp)
                             .clip(RoundedCornerShape(10.dp))
-                            .background(palette.glassMedium)
+                            .background(palette.canvasBottom)
                             .border(1.dp, palette.accentSky.copy(alpha = 0.55f), RoundedCornerShape(10.dp))
                             .clickable(enabled = !isReSolving, role = Role.Button, onClick = onReSolve)
-                            .padding(horizontal = 14.dp, vertical = 8.dp)
+                            .padding(horizontal = 12.dp, vertical = 8.dp)
                             .testTag("btn_resolve_form_q_${item.number}")
                     ) {
                         if (isReSolving) {
@@ -2195,9 +2230,9 @@ private fun CollapsibleSolvedQuestionRow(
                                 strokeWidth = 2.dp,
                                 modifier = Modifier.size(14.dp)
                             )
-                            Spacer(Modifier.width(8.dp))
+                            Spacer(Modifier.width(7.dp))
                             Text(
-                                text = "Re-solving...",
+                                text = "Checking...",
                                 style = MaterialTheme.typography.labelSmall.copy(
                                     color = palette.inkPrimary,
                                     fontWeight = FontWeight.Bold,
@@ -2209,7 +2244,7 @@ private fun CollapsibleSolvedQuestionRow(
                                 imageVector = Icons.Filled.Refresh,
                                 contentDescription = "Re-solve question ${item.number}",
                                 tint = palette.accentSky,
-                                modifier = Modifier.size(15.dp)
+                                modifier = Modifier.size(14.dp)
                             )
                             Spacer(Modifier.width(6.dp))
                             Text(

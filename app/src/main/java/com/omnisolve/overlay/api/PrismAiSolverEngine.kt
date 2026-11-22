@@ -143,6 +143,12 @@ object PrismAiSolverEngine {
         cloudUnavailableUntilMs = 0L
     }
 
+    internal fun resetCloudflareCooldownForTest() {
+        cloudflareUnavailableUntilMs = 0L
+        cloudflareQuotaBlockedUntilMs = 0L
+        cloudflareConsecutiveTransientFailures.set(0)
+    }
+
     /**
      * Solves the question via Cloudflare Workers AI (`@cf/google/gemma-4-26b-a4b-it` /
      * `@cf/meta/llama-3.1-8b-instruct` — Zero Google Keys, 10,000 free Neurons/day).
@@ -201,13 +207,23 @@ object PrismAiSolverEngine {
             response.use { resp ->
                 val rawBody = resp.body?.string().orEmpty()
                 if (!resp.isSuccessful) {
-                    if (resp.code == 429 ||
+                    val isHardQuotaExhaustion =
                         rawBody.contains("quota", ignoreCase = true) ||
-                        rawBody.contains("neuron", ignoreCase = true) ||
-                        rawBody.contains("limit", ignoreCase = true)
-                    ) {
+                            rawBody.contains("neuron", ignoreCase = true) ||
+                            rawBody.contains("daily", ignoreCase = true) ||
+                            rawBody.contains("exhausted", ignoreCase = true)
+                    if (isHardQuotaExhaustion) {
                         cloudflareQuotaBlockedUntilMs = System.currentTimeMillis() + CLOUDFLARE_COOLDOWN_MS
-                        Log.w(TAG, "Cloudflare Worker rate/quota limit (${resp.code}), shifting to backup engines")
+                        Log.w(TAG, "Cloudflare Worker daily/neuron quota exhausted (${resp.code}), shifting to backup engines for 5m")
+                    } else if (resp.code == 429) {
+                        val retryAfterSecs = resp.header("Retry-After")?.trim()?.toLongOrNull()
+                        val backoffMs = if (retryAfterSecs != null) {
+                            (retryAfterSecs * 1_000L).coerceIn(5_000L, 30_000L)
+                        } else {
+                            12_000L
+                        }
+                        cloudflareUnavailableUntilMs = System.currentTimeMillis() + backoffMs
+                        Log.w(TAG, "Cloudflare Worker transient 429 burst limit, backing off ${backoffMs}ms")
                     } else if (resp.code >= 500) {
                         val streak = cloudflareConsecutiveTransientFailures.incrementAndGet()
                         if (streak >= 3) {

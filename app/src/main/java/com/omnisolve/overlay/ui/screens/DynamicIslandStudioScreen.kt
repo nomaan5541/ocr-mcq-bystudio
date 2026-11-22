@@ -175,7 +175,7 @@ fun DynamicIslandStudioScreen(
                             )
                         )
                         Text(
-                            text = "Pick Subtle, Balanced, or Dark — or slide to adjust",
+                            text = "Pick Subtle, Balanced, or Dark, or slide to adjust",
                             style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.5.sp),
                             color = palette.inkSecondary
                         )

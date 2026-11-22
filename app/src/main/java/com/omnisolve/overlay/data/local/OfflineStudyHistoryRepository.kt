@@ -25,6 +25,8 @@ class OfflineStudyHistoryRepository(
 
     companion object {
         private const val KEY_ROOM_HISTORY_MIGRATED = "PREF_ROOM_HISTORY_MIGRATED_V1"
+        const val MCQ_RETENTION_DAYS = 7
+        const val MCQ_RETENTION_MS = MCQ_RETENTION_DAYS * 24L * 60L * 60L * 1000L
     }
 
     fun observeHistoryEntries(limit: Int = 200): Flow<List<SolvedHistoryEntry>> {
@@ -118,6 +120,15 @@ class OfflineStudyHistoryRepository(
 
     suspend fun deleteEntry(id: Long) {
         dao.deleteById(id)
+    }
+
+    /**
+     * Automatically clears user MCQ history entries older than 7 days so saved data stays
+     * lightweight, fast, and privacy-respecting.
+     */
+    suspend fun purgeExpiredMcqData(nowMs: Long = System.currentTimeMillis()): Int {
+        val cutoff = (nowMs - MCQ_RETENTION_MS).coerceAtLeast(0L)
+        return dao.deleteOlderThan(cutoff)
     }
 
     suspend fun clearAll() {

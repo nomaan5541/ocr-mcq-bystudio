@@ -35,7 +35,7 @@ enum class SurfaceEffectStyle(val id: String, val label: String) {
     LIQUID_SPECULAR("LIQUID_SPECULAR", "Liquid Glass"),
     LAB_RETICLE("LAB_RETICLE", "Lab Telemetry"),
     PRISM_HORIZON("PRISM_HORIZON", "Prism Horizon"),
-    IOS_LIQUID_GLASS("IOS_LIQUID_GLASS", "iOS Liquid Light");
+    IOS_LIQUID_GLASS("IOS_LIQUID_GLASS", "Frosted Light");
 
     companion object {
         fun fromId(id: String?): SurfaceEffectStyle =
@@ -81,37 +81,37 @@ enum class ThemeLayoutArchetype(
         id = "CLASSIC_PRISM",
         label = "Classic Prism",
         shortBadge = "Classic",
-        layoutTagline = "Hero scanner card & vertical tool stack"
+        layoutTagline = "Main scanner card with a vertical list of tools"
     ),
     ATELIER_BENTO(
         id = "ATELIER_BENTO",
-        label = "Atelier Bento",
+        label = "Bento Grid",
         shortBadge = "Bento Grid",
-        layoutTagline = "Orbital launch dial, asymmetric bento grid & flush razor dock"
+        layoutTagline = "Compact grid layout with quick launch tiles"
     ),
     TELEMETRY_HUD(
         id = "TELEMETRY_HUD",
-        label = "Telemetry HUD",
+        label = "Status Deck",
         shortBadge = "HUD Deck",
-        layoutTagline = "Live telemetry ribbon, beveled runway & numbered index rows"
+        layoutTagline = "Structured status strip with numbered tool rows"
     ),
     EDITORIAL_MONOGRAPH(
         id = "EDITORIAL_MONOGRAPH",
         label = "Editorial Studio",
         shortBadge = "Editorial",
-        layoutTagline = "Centered masthead, zen focus stage & horizontal gallery deck"
+        layoutTagline = "Centered header with a clean, focused layout"
     ),
     KINETIC_DECK(
         id = "KINETIC_DECK",
-        label = "Kinetic Deck",
+        label = "Quick Deck",
         shortBadge = "Kinetic",
-        layoutTagline = "Thumb-first split quick tiles & central launch console"
+        layoutTagline = "Split quick-action tiles with a central launch card"
     ),
     IOS_LIQUID_LIGHT(
         id = "IOS_LIQUID_LIGHT",
-        label = "iOS Liquid Glass",
-        shortBadge = "iOS White",
-        layoutTagline = "Apple-inspired white spatial glass, collapsing large title, spring widgets & kinetic pill"
+        label = "Prism Light",
+        shortBadge = "Light",
+        layoutTagline = "Bright white cards, clean layout, and a light floating pill"
     );
 
     companion object {
@@ -125,7 +125,7 @@ data class RemoteThemeSpec(
     val themeId: String = DEFAULT_THEME_ID,
     val themeNumber: Int = 0,
     val name: String = "Red Prism Obsidian",
-    val tagline: String = "Original OLED obsidian & crimson signature look",
+    val tagline: String = "Dark background with Prism red accents",
     val category: ThemeCategory = ThemeCategory.DEFAULT,
     val isDark: Boolean = true,
     val isPublic: Boolean = true,
@@ -640,7 +640,7 @@ val ALL_50_UNSLOP_THEMES: List<RemoteThemeSpec> = listOf(
         number = 5,
         id = "tactical_command",
         name = "Tactical Command",
-        tagline = "Night-ops olive titanium, zero-glare grids & laser amber",
+        tagline = "Matte olive dark panels with crisp amber accents",
         category = ThemeCategory.FUTURISTIC_SCIFI,
         canvas = "#080A08",
         surface = "#101410",
@@ -839,7 +839,7 @@ val ALL_50_UNSLOP_THEMES: List<RemoteThemeSpec> = listOf(
         number = 15,
         id = "digital_brutalism",
         name = "Digital Brutalism",
-        tagline = "Zero-radius architectural blocks, 2dp borders & high-volt lime",
+        tagline = "Sharp square cards, bold borders, and bright lime accents",
         category = ThemeCategory.EXPERIMENTAL_CRAZY,
         canvas = "#080808",
         surface = "#111111",
@@ -1132,7 +1132,7 @@ val ALL_50_UNSLOP_THEMES: List<RemoteThemeSpec> = listOf(
         number = 30,
         id = "monochrome_ultra",
         name = "Monochrome Ultra",
-        tagline = "Pure grayscale discipline — distraction-free study contrast",
+        tagline = "Clean grayscale contrast for distraction-free study",
         category = ThemeCategory.MODERN_LANGUAGE,
         canvas = "#080808",
         surface = "#111111",
@@ -1454,7 +1454,7 @@ val ALL_50_UNSLOP_THEMES: List<RemoteThemeSpec> = listOf(
         number = 46,
         id = "invisible_ui",
         name = "Invisible UI",
-        tagline = "True-black OLED zero-border calm — content & answers stand alone",
+        tagline = "Deep black borderless surfaces that keep answers front and center",
         category = ThemeCategory.UNUSUAL_CONCEPTS,
         canvas = "#000000",
         surface = "#070709",
@@ -1575,7 +1575,7 @@ val SIGNATURE_ATELIER_THEMES: List<RemoteThemeSpec> = listOf(
         number = 101,
         id = "atelier_prism_noir",
         name = "Prism Noir Atelier",
-        tagline = "Abyssal #0A0A0C obsidian, razor #D71921 crimson arc & machined glass",
+        tagline = "Deep black background with signature red highlights",
         category = ThemeCategory.PREMIUM_LUXURY,
         canvas = "#0A0A0C",
         surface = "#111216",
@@ -1599,7 +1599,7 @@ val SIGNATURE_ATELIER_THEMES: List<RemoteThemeSpec> = listOf(
         number = 102,
         id = "atelier_kyoto_amber",
         name = "Kyoto Smoked Amber",
-        tagline = "Charred cedar noir lit by warm burnished brass & serene horizon glow",
+        tagline = "Warm dark background with soft golden amber accents",
         category = ThemeCategory.PREMIUM_LUXURY,
         canvas = "#0A0807",
         surface = "#14110F",
@@ -1622,7 +1622,7 @@ val SIGNATURE_ATELIER_THEMES: List<RemoteThemeSpec> = listOf(
         number = 103,
         id = "atelier_swiss_glacier",
         name = "Swiss Glacier OLED",
-        tagline = "Sapphire crystal horology rings with razor glacial azure telemetry",
+        tagline = "Deep navy dark theme with clear ice-blue accents",
         category = ThemeCategory.FUTURISTIC_SCIFI,
         canvas = "#05080E",
         surface = "#0C121D",
@@ -1646,7 +1646,7 @@ val SIGNATURE_ATELIER_THEMES: List<RemoteThemeSpec> = listOf(
         number = 104,
         id = "atelier_matcha_zen",
         name = "Matcha Zen Slate",
-        tagline = "Zero-fatigue moss obsidian & calming botanical jade focus matrix",
+        tagline = "Soft dark green surfaces with calm jade highlights",
         category = ThemeCategory.NATURE_ATMOSPHERIC,
         canvas = "#060A08",
         surface = "#0D1410",
@@ -1669,7 +1669,7 @@ val SIGNATURE_ATELIER_THEMES: List<RemoteThemeSpec> = listOf(
         number = 105,
         id = "atelier_velvet_indigo",
         name = "Velvet Horizon",
-        tagline = "Midnight plum depth with drifting amethyst synaptic constellations",
+        tagline = "Deep plum background with soft violet highlights",
         category = ThemeCategory.EXPERIMENTAL_CRAZY,
         canvas = "#08070F",
         surface = "#110F1E",
@@ -1692,7 +1692,7 @@ val SIGNATURE_ATELIER_THEMES: List<RemoteThemeSpec> = listOf(
         number = 106,
         id = "atelier_ceramic_crimson",
         name = "Ceramic Studio",
-        tagline = "Machined matte ceramic charcoal, sharp bevels & scarlet optical reticle",
+        tagline = "Matte charcoal cards with crisp red highlights",
         category = ThemeCategory.MODERN_LANGUAGE,
         canvas = "#0C0C0E",
         surface = "#151619",
@@ -1723,8 +1723,8 @@ val SIGNATURE_ATELIER_THEMES: List<RemoteThemeSpec> = listOf(
 val IOS_LIQUID_LIGHT_THEME: RemoteThemeSpec = RemoteThemeSpec(
     themeId = "ios_liquid_light",
     themeNumber = 201,
-    name = "iOS Liquid Glass Light",
-    tagline = "Spatial white glass, collapsing large title, iOS spring physics & frosted Dynamic Island",
+    name = "Prism Light",
+    tagline = "Bright white cards, clean layout, and a light floating pill",
     category = ThemeCategory.MODERN_LANGUAGE,
     isDark = false,
     isPublic = true,

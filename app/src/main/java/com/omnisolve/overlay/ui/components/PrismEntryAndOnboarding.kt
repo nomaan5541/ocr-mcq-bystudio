@@ -737,7 +737,7 @@ fun PrismAppEntryAnimationOverlay(
                 )
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    text = "Instant Quiz & Screen Helper",
+                    text = "Screen & Quiz Study Helper",
                     style = MaterialTheme.typography.labelMedium.copy(
                         color = accentHot,
                         fontWeight = FontWeight.SemiBold,
@@ -771,24 +771,24 @@ private val GUIDE_STEPS = listOf(
         badge = "STEP 01 / 03",
         title = "Floating Pill",
         headline = "Solve MCQs, Math (½, Σ) & Match Over Any App",
-        description = "Tap 'Start Solving' to float a small pill above your quiz. Whenever you tap the pill, Prism reads your screen and shows the right answer + explanation — without leaving your app.",
+        description = "Tap 'Start Solving' to float a small pill above your quiz. Whenever you tap the pill, Prism reads your screen and shows the answer with an explanation, without leaving your app.",
         featureTags = listOf("MCQs & Match", "Math ½ · Σ · ∫", "Only Reads on Tap"),
         icon = Icons.Filled.AutoAwesome
     ),
     GuideStep(
         badge = "STEP 02 / 03",
-        title = "Auto-Math Vision & Offline Cache",
+        title = "Math Vision & Offline Cache",
         headline = "Reads Math Symbols & Saves Answers Offline",
-        description = "Fractions (1/2), Sigma (Σ), roots (√), and diagrams automatically use Math Vision so OCR mistakes never trip you up. Every solved answer is saved in your local Room cache for instant 0ms repeat hits.",
-        featureTags = listOf("Auto-Math Vision", "0ms Offline Cache", "100% Free Fast AI"),
+        description = "Fractions (1/2), Sigma (Σ), roots (√), and diagrams use Math Vision to improve reading accuracy. Solved answers are saved in your local cache for faster repeat lookups.",
+        featureTags = listOf("Math Vision", "Offline Cache", "Built-in AI"),
         icon = Icons.Filled.Layers
     ),
     GuideStep(
         badge = "STEP 03 / 03",
         title = "Google Forms & Themes",
-        headline = "Paste Any Quiz Link or Transform Your UI",
-        description = "Paste a Google Form link to solve all questions together and pin answers to your notification bar — or switch themes in Settings to rearrange the entire app layout.",
-        featureTags = listOf("Google Forms", "Notification Pin", "5 Layout Themes"),
+        headline = "Paste a Quiz Link or Pick Your Layout",
+        description = "Paste a Google Form link to solve questions together and pin answers to your notification bar, or switch themes in Settings to change the app layout.",
+        featureTags = listOf("Google Forms", "Notification Pin", "Layout Themes"),
         icon = Icons.Filled.Description
     )
 )
@@ -946,7 +946,7 @@ fun NewUserFeatureGuideOverlay(
                     }
                     val isLast = pagerState.currentPage == GUIDE_STEPS.lastIndex
                     LivingPrimaryButton(
-                        text = if (isLast) "Done — Open App" else "Next",
+                        text = if (isLast) "Done, Open App" else "Next",
                         icon = null,
                         onClick = {
                             if (isLast) {

@@ -28,8 +28,8 @@ class LoginActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         androidx.core.view.WindowCompat.getInsetsController(window, window.decorView).apply {
-            isAppearanceLightStatusBars = true
-            isAppearanceLightNavigationBars = true
+            isAppearanceLightStatusBars = false
+            isAppearanceLightNavigationBars = false
         }
         setContentView(R.layout.activity_login)
 
@@ -51,8 +51,7 @@ class LoginActivity : AppCompatActivity() {
             cookieManager.setAcceptThirdPartyCookies(webView, true)
         }
 
-        // Software layer avoids GPU DRM rendernode errors on virtualized/cloud emulators
-        webView.setLayerType(View.LAYER_TYPE_SOFTWARE, null)
+        webView.setBackgroundColor(android.graphics.Color.parseColor("#0A0A0C"))
 
         webView.settings.apply {
             javaScriptEnabled = true

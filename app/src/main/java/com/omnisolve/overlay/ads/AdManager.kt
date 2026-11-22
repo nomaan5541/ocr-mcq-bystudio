@@ -22,6 +22,7 @@ object AdManager {
     private const val TAG = "AdManager"
     private const val INTERSTITIAL_COOLDOWN_MS = 180_000L // Max 1 interstitial every 3 minutes
     private const val APP_OPEN_COOLDOWN_MS = 240_000L     // Max 1 app open every 4 minutes
+    private const val APP_OPEN_EXPIRY_MS = 4L * 3_600_000L // AdMob App Open ads expire after 4 hours
 
     private val initScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -37,6 +38,7 @@ object AdManager {
     private var lastInterstitialShownMs: Long = 0L
 
     private var appOpenAd: AppOpenAd? = null
+    private var appOpenLoadTimeMs: Long = 0L
     private var isAppOpenLoading = false
     private var lastAppOpenShownMs: Long = 0L
     private var isShowingFullScreenAd = false
@@ -133,12 +135,14 @@ object AdManager {
                 object : AppOpenAd.AppOpenAdLoadCallback() {
                     override fun onAdLoaded(ad: AppOpenAd) {
                         appOpenAd = ad
+                        appOpenLoadTimeMs = System.currentTimeMillis()
                         isAppOpenLoading = false
                         Log.d(TAG, "AdMob AppOpen loaded successfully")
                     }
 
                     override fun onAdFailedToLoad(loadAdError: LoadAdError) {
                         appOpenAd = null
+                        appOpenLoadTimeMs = 0L
                         isAppOpenLoading = false
                         Log.w(TAG, "AdMob AppOpen failed to load: ${loadAdError.message}")
                     }
@@ -199,24 +203,31 @@ object AdManager {
         if ((now - lastAppOpenShownMs) < APP_OPEN_COOLDOWN_MS) return
 
         val ad = appOpenAd
-        if (ad != null) {
+        val isFresh = ad != null && (now - appOpenLoadTimeMs) < APP_OPEN_EXPIRY_MS
+        if (ad != null && isFresh) {
             isShowingFullScreenAd = true
             ad.fullScreenContentCallback = object : FullScreenContentCallback() {
                 override fun onAdDismissedFullScreenContent() {
                     isShowingFullScreenAd = false
                     lastAppOpenShownMs = System.currentTimeMillis()
                     appOpenAd = null
+                    appOpenLoadTimeMs = 0L
                     preloadAppOpen(activity.applicationContext)
                 }
 
                 override fun onAdFailedToShowFullScreenContent(adError: AdError) {
                     isShowingFullScreenAd = false
                     appOpenAd = null
+                    appOpenLoadTimeMs = 0L
                     preloadAppOpen(activity.applicationContext)
                 }
             }
             ad.show(activity)
         } else {
+            if (ad != null && !isFresh) {
+                appOpenAd = null
+                appOpenLoadTimeMs = 0L
+            }
             preloadAppOpen(activity.applicationContext)
         }
     }

@@ -30,7 +30,16 @@ import com.omnisolve.overlay.api.GoogleFormsSolverEngine
 import com.omnisolve.overlay.api.MultiProviderApiSolver
 import com.omnisolve.overlay.api.OnlineConsensusRaceEngine
 import com.omnisolve.overlay.api.PrismAiSolverEngine
+import com.omnisolve.overlay.api.PrismUniversalGeminiEngine
+import com.omnisolve.overlay.api.UniversalAttachment
+import com.omnisolve.overlay.api.UniversalAttachmentType
+import com.omnisolve.overlay.api.UniversalAuthRequiredException
+import com.omnisolve.overlay.api.UniversalChatMessage
+import com.omnisolve.overlay.api.UniversalDailyLimitExceededException
+import com.omnisolve.overlay.api.UniversalSolveStyle
+import com.omnisolve.overlay.api.UniversalTurnContext
 import com.omnisolve.overlay.capture.OcrEngine
+import com.omnisolve.overlay.data.DailyUsageSnapshot
 import com.omnisolve.overlay.data.FirebaseTelemetryRepository
 import com.omnisolve.overlay.data.GoogleAuthManager
 import com.omnisolve.overlay.data.LocalThemeRepository
@@ -41,12 +50,16 @@ import com.omnisolve.overlay.data.TelemetryBackend
 import com.omnisolve.overlay.data.TelemetryFeature
 import com.omnisolve.overlay.data.TelemetrySessionSource
 import com.omnisolve.overlay.data.TelemetryStatus
+import com.omnisolve.overlay.data.AbuseEnforcementState
+import com.omnisolve.overlay.data.DeviceAbuseGuard
 import com.omnisolve.overlay.data.UserActivityProfile
 import com.omnisolve.overlay.data.UserRequestLog
+import com.omnisolve.overlay.data.UserUsageLimitManager
 import com.omnisolve.overlay.data.local.OfflineStudyHistoryRepository
 import com.omnisolve.overlay.util.PrismCrashlytics
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.tasks.await
+import com.omnisolve.overlay.f1.F1AuthGate
 import com.omnisolve.overlay.f1.F1MasterEngine
 import com.omnisolve.overlay.f1.F1PerformanceMonitor
 import com.omnisolve.overlay.f1.F1ProviderHealthManager
@@ -112,12 +125,12 @@ data class SolvedHistoryEntry(
 )
 
 enum class HomeSubScreen(val title: String, val subtitle: String) {
-    MAIN("Prism Solver", "Instant MCQ, Math & Forms screen helper"),
+    MAIN("Prism Solver", "MCQ, Math & Forms screen helper"),
     ANSWER_MODELS("Solving Speed & Style", "Smart Auto, Double-Check Accuracy, or Math Vision"),
     DYNAMIC_ISLAND_STUDIO("Floating Pill Look", "Pick pill size, look & transparency"),
     GOOGLE_FORMS_SOLVE("Google Forms Solve", "Paste a quiz link to get answers & auto-fill"),
     NOTIFICATION_STUDIO("Notification Studio", "Pin answer strips & quick alerts"),
-    THEME_STUDIO("Themes", "Switch themes & complete layouts instantly"),
+    THEME_STUDIO("Themes", "Switch themes & layouts"),
     EXPORT_QA("History & Offline Cache", "Browse saved answers offline or export study sheets"),
     PRIVACY_POLICY("Privacy Policy & Security", "Only reads screen when you tap the pill")
 }
@@ -237,6 +250,18 @@ data class MainUiState(
     val isGoogleFormPinned: Boolean = false,
     val isFormsKeyPinnedOnIsland: Boolean = false,
 
+    // Prism Ask Universal Gemini Studio (Give anything: text, photo, or PDF)
+    val universalMessages: List<UniversalChatMessage> = emptyList(),
+    val universalPromptInput: String = "",
+    val universalStagedAttachment: UniversalAttachment? = null,
+    val universalSolveStyle: UniversalSolveStyle = UniversalSolveStyle.DEEP_SOLVE,
+    val isUniversalSolving: Boolean = false,
+    val isQuickSolveSheetOpen: Boolean = false,
+    val copiedFormLinkSuggestion: String? = null,
+    val dailyUsage: DailyUsageSnapshot = DailyUsageSnapshot(),
+    val abuseEnforcement: AbuseEnforcementState = AbuseEnforcementState.Clear,
+    val pendingAbuseDialog: AbuseEnforcementState? = null,
+
     // Onboarding Feature Guide & Custom Notification Studio
     val onboardingGuideCompleted: Boolean = false,
     val showOnboardingGuide: Boolean = false,
@@ -298,6 +323,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val localSettingsEpoch = java.util.concurrent.atomic.AtomicLong(0L)
     private var authStateListener: FirebaseAuth.AuthStateListener? = null
     private var googleFormSolveJob: Job? = null
+    private var universalSolveJob: Job? = null
     private var telemetryProfileJob: Job? = null
     private var telemetryLogsJob: Job? = null
     private var appSessionRequestsCount: Long = 0L
@@ -415,6 +441,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             try {
                 offlineHistoryRepo.migrateFromLegacyPrefsIfNeeded(prefs)
+                purgeExpiredMcqDataEverywhere()
             } catch (e: Exception) {
                 PrismCrashlytics.recordNonFatalSolverFailure(
                     context = getApplication(),
@@ -496,7 +523,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 } catch (_: Exception) {
                 }
             }
+            launch {
+                UserUsageLimitManager.snapshotFlow.collect { snap ->
+                    _uiState.update { cur -> cur.copy(dailyUsage = snap) }
+                }
+            }
+            launch {
+                DeviceAbuseGuard.enforcementFlow.collect { enforcement ->
+                    _uiState.update { cur -> cur.copy(abuseEnforcement = enforcement) }
+                }
+            }
+            launch {
+                DeviceAbuseGuard.pendingDialogFlow.collect { dialogState ->
+                    _uiState.update { cur -> cur.copy(pendingAbuseDialog = dialogState) }
+                }
+            }
         }
+    }
+
+    fun dismissAbuseDialog() {
+        DeviceAbuseGuard.dismissPendingDialog()
     }
 
     private fun attachFirebaseAuthObserver() {
@@ -509,13 +555,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 if (user != null) {
                     PrismAiSolverEngine.resetCloudCooldown()
                     restoreSolvedHistoryFromCloudIfNeeded(user.uid)
+                    UserUsageLimitManager.getSnapshot(ctx, user.uid)
                     viewModelScope.launch(Dispatchers.IO) {
                         FirebaseTelemetryRepository.ensureUserProfileSynced(ctx, user)
+                        UserUsageLimitManager.syncFromCloud(ctx, user.uid)
+                        DeviceAbuseGuard.evaluateSignIn(ctx, user.uid, forceCloudSync = true)
+                        UserUsageLimitManager.getSnapshot(ctx, user.uid)
                     }
                     startCloudTelemetryObservers(user.uid)
                 } else {
                     stopCloudTelemetryObservers()
                     F1MasterEngine.onAccountSignedOut()
+                    UserUsageLimitManager.getSnapshot(ctx, "")
                     prefs.edit()
                         .putString(MainActivity.PREF_KEY_SOLVER_METHOD, SolverMethod.BACKGROUND_GEMINI.id)
                         .putString(MainActivity.PREF_KEY_DISPLAY_MODE, MainActivity.MODE_STEALTH)
@@ -652,10 +703,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 if (FirebaseApp.getApps(ctx).isEmpty()) return@launch
-                val cloudRecords = SolvedQuestionRepository(ctx)
+                val repo = SolvedQuestionRepository(ctx)
+                val cutoffMs = (System.currentTimeMillis() - OfflineStudyHistoryRepository.MCQ_RETENTION_MS).coerceAtLeast(0L)
+                // Automatically clear user's cloud MCQ history older than 7 days
+                runCatching { repo.deleteOlderThan(uid, cutoffMs) }
+                val cloudRecords = repo
                     .getSolvedQuestions(uid, 25L)
                     .getOrNull()
                     .orEmpty()
+                    .filter { rec ->
+                        val ts = rec.createdAt?.toDate()?.time ?: System.currentTimeMillis()
+                        ts >= cutoffMs
+                    }
                 if (cloudRecords.isEmpty()) return@launch
 
                 val existingRaw = prefs.getString("PREF_SOLVE_HISTORY", "").orEmpty()
@@ -1065,7 +1124,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 displayMode = MainActivity.MODE_STEALTH
             )
         }
-        showBannerMessage("Free Screen Reader active • Sign in anytime for extra styles")
+        showBannerMessage("Sign in with Google anytime to unlock AI solving")
     }
 
     fun requestGoogleSignInGate() {
@@ -1091,6 +1150,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 val user = if (FirebaseApp.getApps(ctx).isNotEmpty()) Firebase.auth.currentUser else null
                 if (user != null) {
+                    try {
+                        DeviceAbuseGuard.recordAccountDeletionAttempt(ctx, user.uid)
+                    } catch (_: Exception) {
+                    }
                     try {
                         SolvedQuestionRepository(ctx).deleteAllUserQuestions(user.uid)
                     } catch (_: Exception) {
@@ -1332,7 +1395,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         extractionEngine = MainActivity.ENGINE_OCR
                     )
                 }
-                showBannerMessage("Standard Pill active — tap top pill to solve")
+                showBannerMessage("Standard Pill active. Tap the top pill to solve.")
             }
             "FAST" -> {
                 editor.putString(MainActivity.PREF_KEY_HUD_STYLE, MainActivity.HUD_STYLE_ISLAND)
@@ -1359,7 +1422,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         extractionEngine = MainActivity.ENGINE_OCR
                     )
                 }
-                showBannerMessage("Quick Check active — rapid screen answers")
+                showBannerMessage("Quick Check active for fast screen answers.")
             }
             "SUBTLE" -> {
                 editor.putString(MainActivity.PREF_KEY_HUD_STYLE, MainActivity.HUD_STYLE_ISLAND)
@@ -2099,6 +2162,35 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
             try {
                 val appContext = getApplication<Application>()
+                val authCheck = F1AuthGate.verifyGoogleAccount(appContext)
+                if (!authCheck.isAuthenticated) {
+                    if (isCustom) {
+                        _uiState.update {
+                            it.copy(
+                                isPracticeScanning = false,
+                                practiceStatusNote = authCheck.errorMessage.ifBlank {
+                                    "Sign in with Google to solve custom questions with Prism F1."
+                                }
+                            )
+                        }
+                        return@launch
+                    } else {
+                        // Built-in demo sample when signed out: reveal local sample offline without hitting cloud AI quota
+                        finalLetter = sample.correctLetter
+                        finalExplanation = sample.explanation
+                        sourceBadge = "Built-In Sample (Offline)"
+                        _uiState.update { cur ->
+                            cur.copy(
+                                isPracticeScanning = false,
+                                practiceSolvedLetter = finalLetter,
+                                practiceExplanation = finalExplanation,
+                                practiceStatusNote = "Built-in sample answer • Sign in with Google for live F1 AI solving."
+                            )
+                        }
+                        return@launch
+                    }
+                }
+
                 val f1Result = F1MasterEngine.solve(
                     context = appContext,
                     request = F1SolveRequest(
@@ -2106,11 +2198,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         subjectMode = effectiveSubject,
                         solveMode = state.questionSolveMode,
                         raceMode = if (state.dualVerifyEnabled) F1RaceMode.ACCURACY_CONSENSUS else F1RaceMode.FAST,
+                        preferredMethod = state.solverMethod,
+                        autoFailover = state.autoFailoverEnabled,
                         requestedModel = state.geminiModel,
                         dualVerify = state.dualVerifyEnabled,
                         translateToEnglish = state.translateToEnglish,
                         allowGhostDomExtraction = false,
-                        requireGoogleAuth = isCustom
+                        requireGoogleAuth = true
                     ),
                     ocrEngine = sharedOcrEngine
                 )
@@ -2138,7 +2232,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 finalExplanation = buildString {
                     if (aiAnswer.shortAnswer.isNotBlank()) {
                         append(aiAnswer.shortAnswer)
-                        if (aiAnswer.explanation.isNotBlank()) append(" — ")
+                        if (aiAnswer.explanation.isNotBlank()) append(": ")
                     }
                     if (aiAnswer.explanation.isNotBlank()) {
                         append(aiAnswer.explanation)
@@ -2383,7 +2477,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 context = appContext,
                 feature = telemetryFeature,
                 backend = backend,
-                modelUsed = solvedBatch.engineLabel.ifBlank { "Cloudflare • Workers AI" },
+                modelUsed = solvedBatch.engineLabel.ifBlank { "Prism Smart Engine" },
                 latencyMs = latencyMs,
                 status = if (backend == TelemetryBackend.LOCAL_CACHE || backend == TelemetryBackend.SHARED_CACHE) {
                     TelemetryStatus.CACHE_HIT
@@ -2404,6 +2498,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
 
+        val refreshedUsage = UserUsageLimitManager.getSnapshot(appContext, _uiState.value.firebaseUserId.orEmpty())
+        val isInstantCacheHit = solvedBatch.engineLabel.contains("Class Cache", ignoreCase = true)
         _uiState.update { cur ->
             cur.copy(
                 isSolvingGoogleForm = false,
@@ -2411,10 +2507,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 googleFormError = null,
                 googleFormsNeedsWebLogin = false,
                 solvedCount = updatedCount,
+                dailyUsage = refreshedUsage,
                 isGoogleFormPinned = GoogleFormsNotificationHelper.isNotificationPinned(appContext)
             )
         }
-        showBannerMessage("Solved ${finalResult.items.size} Qs • ${finalResult.compactNotificationOutput}")
+        showBannerMessage(
+            if (isInstantCacheHit) {
+                "Instant Class Cache • ${finalResult.items.size} Qs matched (0 credits used)"
+            } else {
+                "Solved ${finalResult.items.size} Qs • ${finalResult.compactNotificationOutput}"
+            }
+        )
     }
 
     fun cancelGoogleFormSolve() {
@@ -2428,6 +2531,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
         showBannerMessage("Cancelled Google Form solve")
+    }
+
+    private suspend fun ensureSignedInForFormSolving(
+        onRequireGoogleSignIn: () -> Unit,
+        featureLabel: String
+    ): Boolean {
+        val auth = F1AuthGate.verifyGoogleAccount(getApplication())
+        if (!auth.isAuthenticated || auth.uid.isNullOrBlank()) {
+            val msg = auth.errorMessage.ifBlank { "Sign in with Google to use $featureLabel." }
+            _uiState.update { cur ->
+                cur.copy(
+                    isSolvingGoogleForm = false,
+                    reSolvingFormQuestionNumber = null,
+                    googleFormError = msg,
+                    googleFormsNeedsWebLogin = false
+                )
+            }
+            onRequireGoogleSignIn()
+            return false
+        }
+        return true
     }
 
     fun solveGoogleFormFromUrl(onRequireGoogleSignIn: () -> Unit = {}) {
@@ -2456,6 +2580,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         googleFormSolveJob?.cancel()
         googleFormSolveJob = viewModelScope.launch {
             try {
+                if (!ensureSignedInForFormSolving(onRequireGoogleSignIn, "Google Forms Solver")) {
+                    return@launch
+                }
                 withTimeout(55_000L) {
                     val extracted = GoogleFormsSolverEngine.fetchAndExtractForm(cleanedUrl.ifBlank { rawInput })
                     applyExtractedAndSolve(extracted, appendMode = state.googleFormAppendMode)
@@ -2463,7 +2590,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             } catch (_: TimeoutCancellationException) {
                 _uiState.update { cur ->
                     cur.copy(
-                        googleFormError = "Google Form solve timed out — try opening Form Browser, switching to Gemini 3.8 Flash, or pasting questions directly."
+                        googleFormError = "This form took too long to solve. Try opening Form Browser or pasting the questions directly."
                     )
                 }
             } catch (ce: CancellationException) {
@@ -2475,6 +2602,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         googleFormsNeedsWebLogin = fse.needsGeminiWebLogin
                     )
                 }
+                if (fse.requiresGoogleSignIn) onRequireGoogleSignIn()
             } catch (e: Exception) {
                 _uiState.update { cur ->
                     cur.copy(
@@ -2510,6 +2638,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         googleFormSolveJob?.cancel()
         googleFormSolveJob = viewModelScope.launch {
             try {
+                if (!ensureSignedInForFormSolving(onRequireGoogleSignIn, "Google Forms Solver")) {
+                    return@launch
+                }
                 withTimeout(55_000L) {
                     val extracted = GoogleFormsSolverEngine.parsePlainFormText(rawText)
                     applyExtractedAndSolve(extracted, appendMode = state.googleFormAppendMode)
@@ -2517,7 +2648,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             } catch (_: TimeoutCancellationException) {
                 _uiState.update { cur ->
                     cur.copy(
-                        googleFormError = "Google Form solve timed out — please retry with fewer questions or switch model."
+                        googleFormError = "Google Form solve timed out. Please retry with fewer questions or switch model."
                     )
                 }
             } catch (ce: CancellationException) {
@@ -2529,6 +2660,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         googleFormsNeedsWebLogin = fse.needsGeminiWebLogin
                     )
                 }
+                if (fse.requiresGoogleSignIn) onRequireGoogleSignIn()
             } catch (e: Exception) {
                 _uiState.update { cur ->
                     cur.copy(
@@ -2559,6 +2691,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         googleFormSolveJob = viewModelScope.launch {
             var bitmap: Bitmap? = null
             try {
+                if (!ensureSignedInForFormSolving(onRequireGoogleSignIn, "Photo Solver")) {
+                    return@launch
+                }
                 withTimeout(55_000L) {
                     val appContext = getApplication<Application>()
                     bitmap = appContext.contentResolver.openInputStream(imageUri)?.use { stream ->
@@ -2583,7 +2718,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             } catch (_: TimeoutCancellationException) {
                 _uiState.update { cur ->
                     cur.copy(
-                        googleFormError = "Quiz image solve timed out — please retry with a clearer screenshot."
+                        googleFormError = "Quiz image solve timed out. Please retry with a clearer screenshot."
                     )
                 }
             } catch (ce: CancellationException) {
@@ -2595,6 +2730,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         googleFormsNeedsWebLogin = fse.needsGeminiWebLogin
                     )
                 }
+                if (fse.requiresGoogleSignIn) onRequireGoogleSignIn()
             } catch (e: Exception) {
                 _uiState.update { cur ->
                     cur.copy(
@@ -2629,6 +2765,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         googleFormSolveJob?.cancel()
         googleFormSolveJob = viewModelScope.launch {
             try {
+                if (!ensureSignedInForFormSolving(onRequireGoogleSignIn, "PDF Solver")) {
+                    return@launch
+                }
                 withTimeout(55_000L) {
                     val appContext = getApplication<Application>()
                     val combinedPdfText = withContext(Dispatchers.IO) {
@@ -2675,7 +2814,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             } catch (_: TimeoutCancellationException) {
                 _uiState.update { cur ->
                     cur.copy(
-                        googleFormError = "PDF solve timed out — try a smaller PDF or fewer pages."
+                        googleFormError = "PDF solve timed out. Try a smaller PDF or fewer pages."
                     )
                 }
             } catch (ce: CancellationException) {
@@ -2687,6 +2826,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         googleFormsNeedsWebLogin = fse.needsGeminiWebLogin
                     )
                 }
+                if (fse.requiresGoogleSignIn) onRequireGoogleSignIn()
             } catch (e: Exception) {
                 _uiState.update { cur ->
                     cur.copy(
@@ -2711,12 +2851,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.update { it.copy(reSolvingFormQuestionNumber = questionNumber) }
         viewModelScope.launch {
             try {
+                if (!ensureSignedInForFormSolving(onRequireGoogleSignIn, "Google Forms Re-Solve")) {
+                    return@launch
+                }
                 val appContext = getApplication<Application>()
                 val refreshed = GoogleFormsSolverEngine.reSolveSingleItem(
                     context = appContext,
                     item = targetItem,
                     subjectMode = state.subjectMode,
-                    cloudModelName = state.googleFormsModel
+                    cloudModelName = state.googleFormsModel,
+                    resolvedFormUrl = currentResult.resolvedUrl,
+                    formTitle = currentResult.formTitle
                 )
                 val updatedItems = currentResult.items.map {
                     if (it.number == questionNumber) refreshed else it
@@ -2752,6 +2897,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         googleFormsNeedsWebLogin = fse.needsGeminiWebLogin
                     )
                 }
+                if (fse.requiresGoogleSignIn) onRequireGoogleSignIn()
                 showBannerMessage(fse.message ?: "Could not re-solve Q$questionNumber right now")
             } catch (_: Exception) {
                 _uiState.update { it.copy(reSolvingFormQuestionNumber = null) }
@@ -2809,7 +2955,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val exp = buildString {
                 if (item.shortAnswer.isNotBlank()) {
                     append(item.shortAnswer)
-                    if (item.explanation.isNotBlank()) append(" — ")
+                    if (item.explanation.isNotBlank()) append(": ")
                 }
                 append(item.explanation)
             }.take(160)
@@ -2874,7 +3020,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (sendWelcomeNotification) {
             val sent = PrismEngagementNotificationManager.sendWelcomeNotificationIfNew(ctx)
             if (sent) {
-                showBannerMessage("Welcome to Solve Anything • Check your notification shade")
+                showBannerMessage("Welcome to Prism • Check your notification shade")
             }
         }
         PrismEngagementNotificationManager.recordAppOpened(ctx)
@@ -2902,7 +3048,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 isPinned = _uiState.value.customPinConfig.isPinned
             )
             CustomPinnedNotifConfig.TEMPLATE_QUICK_HUD -> CustomPinnedNotifConfig(
-                title = "Red Prism • Instant Remote",
+                title = "Red Prism • Quick Remote",
                 body = "Tap Solve Now or Copy anytime while reading questions.",
                 templateId = templateId,
                 showCopy = false,
@@ -3002,7 +3148,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             it.copy(hasNotificationPermission = PrismEngagementNotificationManager.hasNotificationPermission(ctx))
         }
         showBannerMessage(
-            if (ok) "Sent 1 test check-in notification — pull down your shade!"
+            if (ok) "Sent 1 test notification. Pull down your notification shade."
             else "Enable notification permission first to receive test notification"
         )
         return ok
@@ -3153,5 +3299,358 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         onSyncService()
     }
+
+    // ─── Prism Ask Universal Gemini Studio ("Give anything, solve it") ────────
+
+    fun updateUniversalPrompt(value: String) {
+        _uiState.update { it.copy(universalPromptInput = value) }
+    }
+
+    fun setUniversalSolveStyle(style: UniversalSolveStyle) {
+        _uiState.update { it.copy(universalSolveStyle = style) }
+    }
+
+    fun clearUniversalAttachment() {
+        _uiState.update { it.copy(universalStagedAttachment = null) }
+    }
+
+    fun startNewUniversalChat() {
+        universalSolveJob?.cancel()
+        universalSolveJob = null
+        _uiState.update {
+            it.copy(
+                universalMessages = emptyList(),
+                universalPromptInput = "",
+                universalStagedAttachment = null,
+                isUniversalSolving = false
+            )
+        }
+    }
+
+    fun cancelUniversalSolve() {
+        universalSolveJob?.cancel()
+        universalSolveJob = null
+        _uiState.update { cur ->
+            val finalized = cur.universalMessages.map { msg ->
+                if (msg.isStreaming) {
+                    msg.copy(
+                        text = msg.text.ifBlank { "Stopped." },
+                        isStreaming = false
+                    )
+                } else {
+                    msg
+                }
+            }
+            cur.copy(
+                universalMessages = finalized,
+                isUniversalSolving = false
+            )
+        }
+    }
+
+    private var lastDismissedClipboardFormUrl: String? = null
+
+    fun openQuickSolveSheet() {
+        _uiState.update { it.copy(isQuickSolveSheetOpen = true) }
+    }
+
+    fun dismissQuickSolveSheet() {
+        _uiState.update { it.copy(isQuickSolveSheetOpen = false) }
+    }
+
+    fun inspectClipboardForFormLink(rawClipboardText: String?) {
+        val candidate = rawClipboardText?.trim().orEmpty()
+        if (candidate.isBlank()) return
+        val extractedUrl = GoogleFormsSolverEngine.extractGoogleFormUrl(candidate).takeIf { it.isNotBlank() } ?: return
+        val currentState = _uiState.value
+        if (extractedUrl == lastDismissedClipboardFormUrl ||
+            extractedUrl == currentState.googleFormUrlInput.trim() ||
+            extractedUrl == currentState.googleFormResult?.resolvedUrl?.trim()
+        ) {
+            return
+        }
+        _uiState.update { it.copy(copiedFormLinkSuggestion = extractedUrl) }
+    }
+
+    fun dismissCopiedFormLinkSuggestion() {
+        val current = _uiState.value.copiedFormLinkSuggestion
+        if (!current.isNullOrBlank()) {
+            lastDismissedClipboardFormUrl = current
+        }
+        _uiState.update { it.copy(copiedFormLinkSuggestion = null) }
+    }
+
+    fun pickUniversalPhoto(
+        uri: Uri,
+        autoSolveNow: Boolean = true,
+        onRequireGoogleSignIn: () -> Unit = {}
+    ) {
+        val ctx = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.IO) {
+            val inspected = PrismUniversalGeminiEngine.inspectAttachment(
+                context = ctx,
+                uri = uri,
+                type = UniversalAttachmentType.PHOTO
+            )
+            val sizeError = PrismUniversalGeminiEngine.validateAttachmentLimits(inspected)
+            if (sizeError != null) {
+                showBannerMessage(sizeError)
+                return@launch
+            }
+            _uiState.update {
+                it.copy(
+                    universalStagedAttachment = inspected,
+                    isQuickSolveSheetOpen = true
+                )
+            }
+            if (autoSolveNow) {
+                sendUniversalMessage(onRequireGoogleSignIn = onRequireGoogleSignIn)
+            }
+        }
+    }
+
+    /**
+     * Automatically removes local & cached user MCQ data older than 7 days (Room history,
+     * local answer cache, legacy preference lines, and saved Google Form sessions).
+     */
+    suspend fun purgeExpiredMcqDataEverywhere(nowMs: Long = System.currentTimeMillis()) {
+        val ctx = getApplication<Application>()
+        val cutoffMs = (nowMs - OfflineStudyHistoryRepository.MCQ_RETENTION_MS).coerceAtLeast(0L)
+        runCatching { offlineHistoryRepo.purgeExpiredMcqData(nowMs) }
+        runCatching { com.omnisolve.overlay.cache.PersistentQuizCacheManager.purgeExpiredLocalCache(ctx, nowMs) }
+        runCatching {
+            if (GoogleFormsSessionStore.purgeIfExpired(ctx, nowMs)) {
+                _uiState.update { it.copy(googleFormResult = null) }
+            }
+        }
+        runCatching {
+            val raw = prefs.getString("PREF_SOLVE_HISTORY", "").orEmpty()
+            if (raw.isNotBlank()) {
+                val kept = raw.lines().filter { line ->
+                    val ts = line.split("||").firstOrNull()?.trim()?.toLongOrNull() ?: nowMs
+                    ts >= cutoffMs
+                }
+                if (kept.size != raw.lines().size) {
+                    prefs.edit().putString("PREF_SOLVE_HISTORY", kept.joinToString("\n")).apply()
+                }
+            }
+        }
+    }
+
+    fun pickCapturedCameraPhoto(
+        file: java.io.File,
+        uri: Uri,
+        onRequireGoogleSignIn: () -> Unit = {}
+    ) {
+        val ctx = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.IO) {
+            PrismUniversalGeminiEngine.compressCameraCaptureUnderLimit(ctx, file)
+            pickUniversalPhoto(
+                uri = uri,
+                autoSolveNow = true,
+                onRequireGoogleSignIn = onRequireGoogleSignIn
+            )
+        }
+    }
+
+    fun pickUniversalPdf(
+        uri: Uri,
+        autoSolveNow: Boolean = true,
+        onRequireGoogleSignIn: () -> Unit = {}
+    ) {
+        val ctx = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.IO) {
+            val inspected = PrismUniversalGeminiEngine.inspectAttachment(
+                context = ctx,
+                uri = uri,
+                type = UniversalAttachmentType.PDF
+            )
+            val sizeError = PrismUniversalGeminiEngine.validateAttachmentLimits(inspected)
+            if (sizeError != null) {
+                showBannerMessage(sizeError)
+                return@launch
+            }
+            _uiState.update {
+                it.copy(
+                    universalStagedAttachment = inspected,
+                    isQuickSolveSheetOpen = true
+                )
+            }
+            if (autoSolveNow) {
+                sendUniversalMessage(onRequireGoogleSignIn = onRequireGoogleSignIn)
+            }
+        }
+    }
+
+    fun sendUniversalMessage(
+        promptOverride: String? = null,
+        onRequireGoogleSignIn: () -> Unit = {}
+    ) {
+        val snapshot = _uiState.value
+        val promptText = (promptOverride ?: snapshot.universalPromptInput).trim()
+        val attachment = if (promptOverride != null) null else snapshot.universalStagedAttachment
+        if (promptText.isBlank() && attachment == null) return
+        if (snapshot.isUniversalSolving) return
+
+        val now = System.currentTimeMillis()
+        val userMsgId = now
+        val aiMsgId = now + 1L
+        val displayUserText = when {
+            promptText.isNotBlank() -> promptText
+            attachment?.type == UniversalAttachmentType.PHOTO -> "Solve this photo"
+            attachment?.type == UniversalAttachmentType.PDF -> "Solve this PDF document"
+            else -> ""
+        }
+
+        val priorHistory = snapshot.universalMessages
+            .filter { !it.isError && !it.isStreaming && it.text.isNotBlank() }
+            .takeLast(8)
+            .map { UniversalTurnContext(isUser = it.isUser, text = it.text) }
+
+        val userBubble = UniversalChatMessage(
+            id = userMsgId,
+            isUser = true,
+            text = displayUserText,
+            attachmentName = attachment?.displayName,
+            attachmentType = attachment?.type,
+            attachmentUriString = attachment?.uri?.toString()
+        )
+        val streamingPlaceholder = UniversalChatMessage(
+            id = aiMsgId,
+            isUser = false,
+            text = "",
+            styleLabel = snapshot.universalSolveStyle.label,
+            isStreaming = true
+        )
+
+        _uiState.update { cur ->
+            cur.copy(
+                universalMessages = cur.universalMessages + userBubble + streamingPlaceholder,
+                universalPromptInput = if (promptOverride == null) "" else cur.universalPromptInput,
+                universalStagedAttachment = if (promptOverride == null) null else cur.universalStagedAttachment,
+                isUniversalSolving = true
+            )
+        }
+
+        universalSolveJob?.cancel()
+        universalSolveJob = viewModelScope.launch {
+            try {
+                val ctx = getApplication<Application>()
+                val outcome = PrismUniversalGeminiEngine.solveStream(
+                    context = ctx,
+                    userPrompt = promptText,
+                    attachment = attachment,
+                    style = snapshot.universalSolveStyle,
+                    recentHistory = priorHistory,
+                    onPartialUpdate = { partial ->
+                        _uiState.update { cur ->
+                            cur.copy(
+                                universalMessages = cur.universalMessages.map { msg ->
+                                    if (msg.id == aiMsgId) {
+                                        msg.copy(text = partial, isStreaming = true)
+                                    } else {
+                                        msg
+                                    }
+                                }
+                            )
+                        }
+                    }
+                )
+                _uiState.update { cur ->
+                    cur.copy(
+                        universalMessages = cur.universalMessages.map { msg ->
+                            if (msg.id == aiMsgId) {
+                                msg.copy(
+                                    text = outcome.fullText,
+                                    latencyMs = outcome.latencyMs,
+                                    isStreaming = false,
+                                    isError = false
+                                )
+                            } else {
+                                msg
+                            }
+                        }
+                    )
+                }
+            } catch (ce: CancellationException) {
+                throw ce
+            } catch (authErr: UniversalAuthRequiredException) {
+                _uiState.update { cur ->
+                    cur.copy(
+                        universalMessages = cur.universalMessages.map { msg ->
+                            if (msg.id == aiMsgId) {
+                                msg.copy(
+                                    text = authErr.message ?: "Sign in with Google to use Prism Ask.",
+                                    isStreaming = false,
+                                    isError = true,
+                                    requiresSignIn = true
+                                )
+                            } else {
+                                msg
+                            }
+                        }
+                    )
+                }
+                onRequireGoogleSignIn()
+            } catch (sizeErr: com.omnisolve.overlay.api.UniversalAttachmentTooLargeException) {
+                val msgText = sizeErr.message ?: "File is too large. Please pick a smaller file."
+                showBannerMessage(msgText)
+                _uiState.update { cur ->
+                    cur.copy(
+                        universalMessages = cur.universalMessages.map { msg ->
+                            if (msg.id == aiMsgId) {
+                                msg.copy(
+                                    text = msgText,
+                                    isStreaming = false,
+                                    isError = true,
+                                    requiresSignIn = false
+                                )
+                            } else {
+                                msg
+                            }
+                        }
+                    )
+                }
+            } catch (limitErr: UniversalDailyLimitExceededException) {
+                _uiState.update { cur ->
+                    cur.copy(
+                        universalMessages = cur.universalMessages.map { msg ->
+                            if (msg.id == aiMsgId) {
+                                msg.copy(
+                                    text = limitErr.message ?: "Daily limit reached. Resets at midnight UTC.",
+                                    isStreaming = false,
+                                    isError = true,
+                                    requiresSignIn = false
+                                )
+                            } else {
+                                msg
+                            }
+                        }
+                    )
+                }
+            } catch (e: Exception) {
+                _uiState.update { cur ->
+                    cur.copy(
+                        universalMessages = cur.universalMessages.map { msg ->
+                            if (msg.id == aiMsgId) {
+                                msg.copy(
+                                    text = e.message?.takeIf { it.isNotBlank() }
+                                        ?: "Could not complete this request. Please check your connection and retry.",
+                                    isStreaming = false,
+                                    isError = true
+                                )
+                            } else {
+                                msg
+                            }
+                        }
+                    )
+                }
+            } finally {
+                universalSolveJob = null
+                _uiState.update { it.copy(isUniversalSolving = false) }
+            }
+        }
+    }
 }
+
 

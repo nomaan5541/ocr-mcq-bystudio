@@ -1,8 +1,11 @@
 package com.omnisolve.overlay
 
+import android.Manifest
 import android.app.Activity
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Color as AndroidColor
 import android.media.projection.MediaProjectionManager
 import android.net.Uri
@@ -13,10 +16,14 @@ import android.os.Vibrator
 import android.os.VibratorManager
 import android.provider.Settings
 import android.widget.Toast
+import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
@@ -52,6 +59,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -64,12 +72,15 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.VerifiedUser
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -112,6 +123,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import com.google.firebase.FirebaseApp
 import com.omnisolve.overlay.ads.AdManager
+import com.omnisolve.overlay.data.AbuseEnforcementState
 import com.omnisolve.overlay.data.GoogleAuthManager
 import com.omnisolve.overlay.data.GoogleSignInOutcome
 import com.omnisolve.overlay.firebase.configureAppCheck
@@ -125,6 +137,8 @@ import com.omnisolve.overlay.ui.components.CompactSplitScreenSideRail
 import com.omnisolve.overlay.ui.components.LiquidMorphBottomDock
 import com.omnisolve.overlay.ui.components.NewUserFeatureGuideOverlay
 import com.omnisolve.overlay.ui.components.PrismAppEntryAnimationOverlay
+import com.omnisolve.overlay.ui.components.QuickPlusTreeOverlay
+import com.omnisolve.overlay.ui.components.QuickSolveResultSheet
 import com.omnisolve.overlay.ui.components.RedPrismLogoMark
 import com.omnisolve.overlay.ui.physics.GlassMaterialStrength
 import com.omnisolve.overlay.ui.physics.LiquidAtmosphericBackdrop
@@ -135,7 +149,6 @@ import com.omnisolve.overlay.ui.physics.livingGlassSurface
 import com.omnisolve.overlay.ui.physics.rememberSystemReducedMotion
 import com.omnisolve.overlay.ui.screens.HomeScreen
 import com.omnisolve.overlay.ui.screens.SettingsScreen
-import com.omnisolve.overlay.ui.screens.StatsScreen
 import com.omnisolve.overlay.ui.theme.LocalPrismThemeSpec
 import com.omnisolve.overlay.ui.theme.LocalWhiteGlassPalette
 import com.omnisolve.overlay.ui.theme.PrismCurves
@@ -148,6 +161,8 @@ import com.omnisolve.overlay.util.InAppUpdateController
 import com.omnisolve.overlay.util.PerformanceBenchmarkTracker
 import com.omnisolve.overlay.util.PlayUpdateUiState
 import com.omnisolve.overlay.util.PrismCrashlytics
+import com.omnisolve.overlay.util.ShareIntentRouter
+import com.omnisolve.overlay.util.SharedPayload
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -219,7 +234,7 @@ class MainActivity : AppCompatActivity() {
 
         // Legal & Privacy Consent Gate (First Launch Mandatory Checkbox)
         const val PREF_KEY_USER_CONSENT_ACCEPTED = "PREF_USER_CONSENT_ACCEPTED"
-        const val URL_PRIVACY_POLICY_WEB = "https://nomaan5541.github.io/prism-privacy-policy/"
+        const val URL_PRIVACY_POLICY_WEB = "https://virusboss.in/app/prism-ocr-solver/#privacy-policy"
         const val PREF_KEY_ENGINE_PERFORMANCE_MODE = "PREF_KEY_ENGINE_PERFORMANCE_MODE"
 
         // Dynamic Island Studio Extended Customization
@@ -248,6 +263,7 @@ class MainActivity : AppCompatActivity() {
         const val PREF_KEY_ISLAND_CUTOUT_OFFSET_X_DP = "PREF_ISLAND_CUTOUT_OFFSET_X_DP"
         const val PREF_KEY_ISLAND_CUTOUT_OFFSET_Y_DP = "PREF_ISLAND_CUTOUT_OFFSET_Y_DP"
         const val EXTRA_REQUEST_GOOGLE_SIGN_IN = "EXTRA_REQUEST_GOOGLE_SIGN_IN"
+        const val EXTRA_LAUNCH_OVERLAY_FROM_TILE = "EXTRA_LAUNCH_OVERLAY_FROM_TILE"
     }
 
     private val viewModel: MainViewModel by viewModels()
@@ -255,12 +271,13 @@ class MainActivity : AppCompatActivity() {
     private var islandEntrancePulseTick by mutableIntStateOf(0)
     private var activePrePermissionPrompt by mutableStateOf<PrePermissionPrompt?>(null)
     private var showStartConsentDialog by mutableStateOf(false)
+    private var skipEntryAnimationForShortcut by mutableStateOf(false)
 
     private val inAppUpdateLauncher = registerForActivityResult(
         ActivityResultContracts.StartIntentSenderForResult()
     ) { result ->
         if (result.resultCode != Activity.RESULT_OK) {
-            viewModel.showBannerMessage("Update paused — check Settings anytime")
+            viewModel.showBannerMessage("Update paused. Check Settings anytime.")
         }
     }
 
@@ -268,6 +285,32 @@ class MainActivity : AppCompatActivity() {
         ActivityResultContracts.StartActivityForResult()
     ) { _ ->
         viewModel.refreshSystemStatuses()
+    }
+
+    private var hasAskedNotificationPermissionThisOpen = false
+
+    private val notificationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        viewModel.refreshSystemStatuses()
+        if (granted) {
+            viewModel.showBannerMessage("Notifications enabled for pinned answers & updates")
+        }
+    }
+
+    private fun requestNotificationPermissionOnOpenIfNeeded() {
+        if (hasAskedNotificationPermissionThisOpen) return
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        val alreadyGranted = ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.POST_NOTIFICATIONS
+        ) == PackageManager.PERMISSION_GRANTED
+        if (!alreadyGranted) {
+            hasAskedNotificationPermissionThisOpen = true
+            runCatching {
+                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
     }
 
     private val mediaProjectionLauncher = registerForActivityResult(
@@ -306,7 +349,10 @@ class MainActivity : AppCompatActivity() {
         setContent {
             val uiState by viewModel.uiState.collectAsStateWithLifecycle()
             val playUpdateState by inAppUpdateController.updateState.collectAsStateWithLifecycle()
-            var showEntryAnimation by rememberSaveable { mutableStateOf(true) }
+            var showEntryAnimation by rememberSaveable { mutableStateOf(!skipEntryAnimationForShortcut) }
+            if (skipEntryAnimationForShortcut && showEntryAnimation) {
+                showEntryAnimation = false
+            }
 
             LaunchedEffect(uiState.effectiveThemeSpec.isDark) {
                 val barStyle = if (uiState.effectiveThemeSpec.isDark) {
@@ -320,8 +366,13 @@ class MainActivity : AppCompatActivity() {
                 )
             }
 
-            // Do not auto-pop blocking modals or permission prompts on first launch;
-            // Start Solving checks consent and permissions cleanly on tap.
+            // Ask for Notification permission cleanly once the app opens (Android 13+) if not yet allowed
+            LaunchedEffect(showEntryAnimation) {
+                if (!showEntryAnimation) {
+                    delay(350L)
+                    requestNotificationPermissionOnOpenIfNeeded()
+                }
+            }
 
             val springCfg = SpringPhysicsConfig(
                 dampingRatio = if (uiState.advSpringPhysicsEnabled) uiState.springDamping else 0.72f,
@@ -436,6 +487,17 @@ class MainActivity : AppCompatActivity() {
                                     showStartConsentDialog = false
                                     viewModel.acceptUserConsent()
                                     checkOverlayPermissionAndStart()
+                                }
+                            )
+                        }
+
+                        // Fair-Use Warning (Strike 1) or Device Restriction (Strike 2) Dialog
+                        uiState.pendingAbuseDialog?.let { enforcement ->
+                            FairUseEnforcementDialog(
+                                enforcement = enforcement,
+                                onDismiss = {
+                                    triggerHapticTick()
+                                    viewModel.dismissAbuseDialog()
                                 }
                             )
                         }
@@ -695,18 +757,105 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun handleIncomingDeepLink(intent: Intent?) {
-        if (intent?.getBooleanExtra(EXTRA_REQUEST_GOOGLE_SIGN_IN, false) == true) {
+        if (intent == null) return
+
+        if (intent.getBooleanExtra(EXTRA_REQUEST_GOOGLE_SIGN_IN, false)) {
             intent.removeExtra(EXTRA_REQUEST_GOOGLE_SIGN_IN)
+            skipEntryAnimationForShortcut = true
             viewModel.requestGoogleSignInGate()
             performInteractiveGoogleSignIn()
         }
-        val data = intent?.data ?: return
+
+        if (intent.getBooleanExtra(EXTRA_LAUNCH_OVERLAY_FROM_TILE, false)) {
+            intent.removeExtra(EXTRA_LAUNCH_OVERLAY_FROM_TILE)
+            skipEntryAnimationForShortcut = true
+            if (OverlayService.isServiceRunning()) {
+                OverlayService.triggerSolveFromHardware()
+            } else {
+                checkOverlayPermissionAndStart()
+            }
+            return
+        }
+
+        // Priority 1: Android Share-Sheet Direct Answer Key (WhatsApp / Telegram / Chrome / Gallery)
+        val sharedPayload = ShareIntentRouter.parseAndConsume(intent)
+        if (sharedPayload != null) {
+            skipEntryAnimationForShortcut = true
+            val onSignInRequired = {
+                viewModel.requestGoogleSignInGate()
+                performInteractiveGoogleSignIn()
+            }
+            when (sharedPayload) {
+                is SharedPayload.SharedPhoto -> {
+                    viewModel.selectTab(AppTab.Home)
+                    viewModel.openHomeSubScreen(HomeSubScreen.MAIN)
+                    if (sharedPayload.caption.isNotBlank()) {
+                        viewModel.updateUniversalPrompt(sharedPayload.caption)
+                    }
+                    viewModel.pickUniversalPhoto(
+                        uri = sharedPayload.uri,
+                        autoSolveNow = true,
+                        onRequireGoogleSignIn = onSignInRequired
+                    )
+                    viewModel.showBannerMessage("Shared photo received · Checking answer...")
+                }
+
+                is SharedPayload.SharedPdf -> {
+                    viewModel.selectTab(AppTab.Home)
+                    viewModel.openHomeSubScreen(HomeSubScreen.MAIN)
+                    if (sharedPayload.caption.isNotBlank()) {
+                        viewModel.updateUniversalPrompt(sharedPayload.caption)
+                    }
+                    viewModel.pickUniversalPdf(
+                        uri = sharedPayload.uri,
+                        autoSolveNow = true,
+                        onRequireGoogleSignIn = onSignInRequired
+                    )
+                    viewModel.showBannerMessage("Shared PDF received · Reading pages...")
+                }
+
+                is SharedPayload.SharedGoogleFormUrl -> {
+                    viewModel.selectTab(AppTab.Home)
+                    viewModel.openHomeSubScreen(HomeSubScreen.GOOGLE_FORMS_SOLVE)
+                    viewModel.updateGoogleFormUrl(sharedPayload.url)
+                    viewModel.solveGoogleFormFromUrl(onRequireGoogleSignIn = onSignInRequired)
+                    viewModel.showBannerMessage("Google Form link received · Extracting questions...")
+                }
+
+                is SharedPayload.SharedQuestionText -> {
+                    viewModel.selectTab(AppTab.Home)
+                    viewModel.openHomeSubScreen(HomeSubScreen.MAIN)
+                    viewModel.openQuickSolveSheet()
+                    viewModel.updateUniversalPrompt(sharedPayload.text)
+                    viewModel.sendUniversalMessage(
+                        promptOverride = sharedPayload.text,
+                        onRequireGoogleSignIn = onSignInRequired
+                    )
+                    viewModel.showBannerMessage("Shared question received · Solving...")
+                }
+            }
+            return
+        }
+
+        val data = intent.data ?: return
         if (data.scheme == "omnisolve" && data.host == "sync") {
             val host = data.getQueryParameter("host")
             val port = data.getQueryParameter("port")?.toIntOrNull() ?: 59124
             if (!host.isNullOrBlank()) {
                 viewModel.applyDeepLinkSync(host, port, ::notifyServiceConfigChanged)
             }
+        }
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (!hasFocus) return
+        try {
+            val cm = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return
+            if (!cm.hasPrimaryClip()) return
+            val copied = cm.primaryClip?.getItemAt(0)?.coerceToText(this)?.toString()
+            viewModel.inspectClipboardForFormLink(copied)
+        } catch (_: Exception) {
         }
     }
 
@@ -780,6 +929,59 @@ private fun MainInstantApp(
     val palette = LocalWhiteGlassPalette.current
     val homeListState = rememberLazyListState()
     val settingsListState = rememberLazyListState()
+    var isPlusTreeOpen by rememberSaveable { mutableStateOf(false) }
+
+    val onRequireSignInForQuickSolve: () -> Unit = {
+        viewModel.requestGoogleSignInGate()
+        onSignInGoogle()
+    }
+
+    val plusPhotoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        if (uri != null) {
+            viewModel.pickUniversalPhoto(
+                uri = uri,
+                autoSolveNow = true,
+                onRequireGoogleSignIn = onRequireSignInForQuickSolve
+            )
+        }
+    }
+
+    val plusContext = androidx.compose.ui.platform.LocalContext.current
+    var pendingCameraCaptureFile by remember { mutableStateOf<java.io.File?>(null) }
+    var pendingCameraCaptureUri by remember { mutableStateOf<Uri?>(null) }
+
+    val plusCameraLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicture()
+    ) { saved ->
+        val file = pendingCameraCaptureFile
+        val uri = pendingCameraCaptureUri
+        if (saved && file != null && uri != null) {
+            viewModel.pickCapturedCameraPhoto(
+                file = file,
+                uri = uri,
+                onRequireGoogleSignIn = onRequireSignInForQuickSolve
+            )
+        }
+    }
+
+    val plusPdfPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            viewModel.pickUniversalPdf(
+                uri = uri,
+                autoSolveNow = true,
+                onRequireGoogleSignIn = onRequireSignInForQuickSolve
+            )
+        }
+    }
+
+    // Close the + tree automatically whenever user switches screens
+    LaunchedEffect(state.selectedTab, state.homeSubScreen) {
+        isPlusTreeOpen = false
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         LiquidAtmosphericBackdrop(
@@ -805,23 +1007,40 @@ private fun MainInstantApp(
                         viewModel.openHomeSubScreen(HomeSubScreen.MAIN)
                     },
                     onToggleSettings = {
+                        isPlusTreeOpen = false
                         onSelectTab(
                             if (state.selectedTab == AppTab.Settings) AppTab.Home else AppTab.Settings
                         )
                     },
+                    onOpenThemes = {
+                        isPlusTreeOpen = false
+                        onSelectTab(AppTab.Home)
+                        viewModel.openHomeSubScreen(HomeSubScreen.THEME_STUDIO)
+                    },
                     onShowNotifications = {
+                        isPlusTreeOpen = false
+                        onSelectTab(AppTab.Home)
                         viewModel.openHomeSubScreen(HomeSubScreen.NOTIFICATION_STUDIO)
                     }
                 )
             },
             bottomBar = {
+                // Keep Home | + | Settings visible on BOTH Home AND Settings so returning Home is always 1 tap away
                 if (!state.advSplitScreenRailEnabled &&
-                    state.selectedTab != AppTab.Settings &&
                     state.homeSubScreen == HomeSubScreen.MAIN
                 ) {
                     LiquidMorphBottomDock(
-                        selectedTab = state.selectedTab,
-                        onSelectTab = onSelectTab
+                        selectedTab = if (state.selectedTab == AppTab.Stats) AppTab.Home else state.selectedTab,
+                        onSelectTab = { targetTab ->
+                            if (targetTab == AppTab.Stats) {
+                                isPlusTreeOpen = !isPlusTreeOpen
+                            } else {
+                                isPlusTreeOpen = false
+                                onSelectTab(targetTab)
+                            }
+                        },
+                        isPlusMenuOpen = isPlusTreeOpen,
+                        onTogglePlusMenu = { isPlusTreeOpen = !isPlusTreeOpen }
                     )
                 }
             }
@@ -833,8 +1052,15 @@ private fun MainInstantApp(
             ) {
                 if (state.advSplitScreenRailEnabled) {
                     CompactSplitScreenSideRail(
-                        selectedTab = state.selectedTab,
-                        onSelectTab = onSelectTab
+                        selectedTab = if (state.selectedTab == AppTab.Stats) AppTab.Home else state.selectedTab,
+                        onSelectTab = { targetTab ->
+                            if (targetTab == AppTab.Stats) {
+                                isPlusTreeOpen = !isPlusTreeOpen
+                            } else {
+                                isPlusTreeOpen = false
+                                onSelectTab(targetTab)
+                            }
+                        }
                     )
                 }
 
@@ -848,35 +1074,24 @@ private fun MainInstantApp(
                         .fillMaxSize()
                         .widthIn(max = 600.dp)
                     val reducedMotion = LocalReducedMotion.current
+                    val activeArchetype = LocalPrismThemeSpec.current.layoutArchetype
 
-                    // Gliding liquid horizontal & scale screen shift between Home <-> Stats <-> Settings
+                    // Zero-jank GPU-composited directional screen shift between Home <-> Settings
+                    val effectiveTab = if (state.selectedTab == AppTab.Stats) AppTab.Home else state.selectedTab
                     AnimatedContent(
-                        targetState = state.selectedTab,
+                        targetState = effectiveTab,
                         transitionSpec = {
-                            if (reducedMotion) {
-                                EnterTransition.None togetherWith ExitTransition.None
-                            } else {
-                                val movingForward = targetState.ordinal >= initialState.ordinal
-                                val dir = if (movingForward) 1 else -1
-                                (slideInHorizontally(
-                                    animationSpec = spring(dampingRatio = 0.84f, stiffness = 460f),
-                                    initialOffsetX = { width -> dir * (width / 3) }
-                                ) + fadeIn(tween(240)) + scaleIn(
-                                    initialScale = 0.96f,
-                                    animationSpec = tween(260, easing = FastOutSlowInEasing)
-                                )) togetherWith (slideOutHorizontally(
-                                    animationSpec = tween(220, easing = FastOutSlowInEasing),
-                                    targetOffsetX = { width -> -dir * (width / 4) }
-                                ) + fadeOut(tween(180)) + scaleOut(
-                                    targetScale = 0.97f,
-                                    animationSpec = tween(200)
-                                ))
-                            }
+                            val movingForward = targetState.ordinal >= initialState.ordinal
+                            com.omnisolve.overlay.ui.physics.MotionTokens.tabTransitionFor(
+                                archetype = activeArchetype,
+                                movingForward = movingForward,
+                                reducedMotion = reducedMotion
+                            )
                         },
-                        label = "liquid_tab_screen_shift"
+                        label = "theme_aware_tab_screen_shift"
                     ) { activeTab ->
                     when (activeTab) {
-                        AppTab.Home -> HomeScreen(
+                        AppTab.Home, AppTab.Stats -> HomeScreen(
                             state = state,
                             listState = homeListState,
                             onToggleOverlay = onToggleOverlay,
@@ -1005,16 +1220,22 @@ private fun MainInstantApp(
                                 }
                             },
                             onSolveGoogleFormImageUri = { uri ->
-                                viewModel.solveGoogleFormFromImageUri(uri) {
+                                viewModel.openHomeSubScreen(HomeSubScreen.MAIN)
+                                viewModel.pickUniversalPhoto(uri, autoSolveNow = true) {
                                     viewModel.requestGoogleSignInGate()
                                     onSignInGoogle()
                                 }
                             },
                             onSolveGoogleFormPdfUri = { uri ->
-                                viewModel.solveGoogleFormFromPdfUri(uri) {
+                                viewModel.openHomeSubScreen(HomeSubScreen.MAIN)
+                                viewModel.pickUniversalPdf(uri, autoSolveNow = true) {
                                     viewModel.requestGoogleSignInGate()
                                     onSignInGoogle()
                                 }
+                            },
+                            onOpenAskAiStudio = {
+                                viewModel.openHomeSubScreen(HomeSubScreen.MAIN)
+                                isPlusTreeOpen = true
                             },
                             onReSolveGoogleFormQuestion = { qNum ->
                                 viewModel.reSolveSingleGoogleFormQuestion(qNum) {
@@ -1049,20 +1270,6 @@ private fun MainInstantApp(
                             onSelectThemeAppearanceOverride = { mode ->
                                 viewModel.setThemeColorAppearanceOverride(mode, onSyncRunningService)
                             },
-                            modifier = contentMod
-                        )
-
-                        AppTab.Stats -> StatsScreen(
-                            state = state,
-                            onOpenSettings = { onSelectTab(AppTab.Settings) },
-                            onSelectEngineMode = { mode ->
-                                viewModel.setEnginePerformanceMode(mode, onSyncRunningService)
-                            },
-                            onOpenNotificationStudio = {
-                                viewModel.openHomeSubScreen(HomeSubScreen.NOTIFICATION_STUDIO)
-                            },
-                            onSignInGoogle = onSignInGoogle,
-                            onResetF1Health = { viewModel.resetF1ProviderHealth() },
                             modifier = contentMod
                         )
 
@@ -1218,6 +1425,102 @@ private fun MainInstantApp(
                     }
                     }
 
+                    // Smart Clipboard Form-Link Suggestion Pill (1-tap solve copied WhatsApp/Chrome quiz link)
+                    val copiedFormLink = state.copiedFormLinkSuggestion
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = !copiedFormLink.isNullOrBlank() && state.homeSubScreen != HomeSubScreen.GOOGLE_FORMS_SOLVE && !isPlusTreeOpen,
+                        enter = if (reducedMotion) EnterTransition.None else slideInVertically { -it } + fadeIn(tween(220)),
+                        exit = if (reducedMotion) ExitTransition.None else slideOutVertically { -it } + fadeOut(tween(170)),
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                            .widthIn(max = 560.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(Color(0xFF141519))
+                                .border(1.dp, palette.accentSky.copy(alpha = 0.65f), RoundedCornerShape(14.dp))
+                                .padding(horizontal = 12.dp, vertical = 8.dp)
+                                .testTag("banner_copied_form_link"),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Link,
+                                contentDescription = null,
+                                tint = palette.accentSky,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Quiz link copied",
+                                    style = MaterialTheme.typography.labelMedium.copy(
+                                        color = palette.inkPrimary,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.5.sp
+                                    ),
+                                    maxLines = 1
+                                )
+                                Text(
+                                    text = "Tap Solve to get answers right away",
+                                    style = MaterialTheme.typography.bodySmall.copy(
+                                        color = palette.inkSecondary,
+                                        fontSize = 11.sp
+                                    ),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .heightIn(min = 48.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(palette.accentSky)
+                                    .clickable(role = Role.Button) {
+                                        val link = copiedFormLink.orEmpty()
+                                        viewModel.dismissCopiedFormLinkSuggestion()
+                                        if (link.isNotBlank()) {
+                                            onSelectTab(AppTab.Home)
+                                            viewModel.openHomeSubScreen(HomeSubScreen.GOOGLE_FORMS_SOLVE)
+                                            viewModel.updateGoogleFormUrl(link)
+                                            viewModel.solveGoogleFormFromUrl(onRequireGoogleSignIn = onRequireSignInForQuickSolve)
+                                        }
+                                    }
+                                    .padding(horizontal = 12.dp, vertical = 8.dp)
+                                    .testTag("btn_solve_copied_form_link")
+                            ) {
+                                Text(
+                                    text = "Solve",
+                                    style = MaterialTheme.typography.labelMedium.copy(
+                                        color = palette.onAccentInk,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp
+                                    )
+                                )
+                            }
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .clip(CircleShape)
+                                    .clickable(role = Role.Button) {
+                                        viewModel.dismissCopiedFormLinkSuggestion()
+                                    }
+                                    .testTag("btn_dismiss_copied_form_link")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Close,
+                                    contentDescription = "Dismiss copied link",
+                                    tint = palette.inkSecondary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                    }
+
                     // Non-blocking Play Store In-App Update Banner
                     val showPlayUpdateBanner = playUpdateState is PlayUpdateUiState.Available ||
                         playUpdateState is PlayUpdateUiState.Downloading ||
@@ -1232,7 +1535,7 @@ private fun MainInstantApp(
                             .padding(
                                 start = 16.dp,
                                 end = 16.dp,
-                                bottom = if (state.selectedTab != AppTab.Settings && state.homeSubScreen == HomeSubScreen.MAIN) 96.dp else 18.dp
+                                bottom = if (state.homeSubScreen == HomeSubScreen.MAIN) 96.dp else 18.dp
                             )
                             .widthIn(max = 560.dp)
                     ) {
@@ -1269,9 +1572,60 @@ private fun MainInstantApp(
                             )
                         }
                     }
+
+                    // Radial Bloom Action Deck rising organically from the center `+` dock button
+                    QuickPlusTreeOverlay(
+                        visible = isPlusTreeOpen,
+                        dailyUsage = state.dailyUsage,
+                        onDismiss = { isPlusTreeOpen = false },
+                        onPickPhoto = {
+                            plusPhotoPickerLauncher.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                            )
+                        },
+                        onPickPdf = {
+                            plusPdfPickerLauncher.launch(arrayOf("application/pdf"))
+                        },
+                        onOpenFormLink = {
+                            onSelectTab(AppTab.Home)
+                            viewModel.openHomeSubScreen(HomeSubScreen.GOOGLE_FORMS_SOLVE)
+                        },
+                        onPickCamera = {
+                            runCatching {
+                                val dir = java.io.File(plusContext.cacheDir, "camera_captures").apply { mkdirs() }
+                                val outFile = java.io.File(dir, "snap_${System.currentTimeMillis()}.jpg")
+                                val outUri = FileProvider.getUriForFile(
+                                    plusContext,
+                                    "${plusContext.packageName}.fileprovider",
+                                    outFile
+                                )
+                                pendingCameraCaptureFile = outFile
+                                pendingCameraCaptureUri = outUri
+                                plusCameraLauncher.launch(outUri)
+                            }.onFailure {
+                                viewModel.showBannerMessage("Camera app could not be opened on this device")
+                            }
+                        },
+                        onToggleFloatingPill = onToggleOverlay,
+                        isOverlayRunning = state.isOverlayRunning
+                    )
                 }
             }
         }
+
+        // Slide-up Quick Solve Sheet for Photo & PDF answers (no separate Scan tab needed)
+        QuickSolveResultSheet(
+            visible = state.isQuickSolveSheetOpen,
+            state = state,
+            onDismiss = viewModel::dismissQuickSolveSheet,
+            onUpdatePrompt = viewModel::updateUniversalPrompt,
+            onSendFollowUp = {
+                viewModel.sendUniversalMessage(onRequireGoogleSignIn = onRequireSignInForQuickSolve)
+            },
+            onCancelSolve = viewModel::cancelUniversalSolve,
+            onStartFresh = viewModel::startNewUniversalChat,
+            onShowBanner = viewModel::showBannerMessage
+        )
     }
 }
 
@@ -1621,7 +1975,7 @@ private fun PrePermissionExplainerDialog(
                         text = if (isOverlay) {
                             "Needed so the answer pill can stay on top of your quiz app."
                         } else {
-                            "Android shows a 'Start recording or casting' box next — don't worry."
+                            "Android shows a 'Start recording or casting' box next. Don't worry."
                         },
                         style = MaterialTheme.typography.bodySmall.copy(
                             color = palette.inkSecondary,
@@ -1800,6 +2154,7 @@ private fun WhiteGlassTopHeader(
     homeSubScreen: HomeSubScreen = HomeSubScreen.MAIN,
     onBackFromSubScreen: () -> Unit = {},
     onToggleSettings: () -> Unit,
+    onOpenThemes: () -> Unit = {},
     onShowNotifications: () -> Unit = {}
 ) {
     val palette = LocalWhiteGlassPalette.current
@@ -1909,20 +2264,23 @@ private fun WhiteGlassTopHeader(
                         }
                     }
 
-                    // Right Settings / Action Button (preserving testTag("btn_header_account"))
+                    // Right Action Button: Settings gear on sub-screens; Theme Studio palette on Settings (never a broken Moon icon)
                     Box(
                         modifier = Modifier
                             .size(48.dp)
                             .clip(actionShape)
                             .background(palette.glassMedium)
                             .border(1.dp, palette.cardHairlineBorder, actionShape)
-                            .clickable(role = Role.Button, onClick = onToggleSettings)
+                            .clickable(
+                                role = Role.Button,
+                                onClick = if (isSubScreen) onToggleSettings else onOpenThemes
+                            )
                             .testTag("btn_header_account"),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
-                            imageVector = if (isSubScreen) Icons.Filled.Settings else Icons.Filled.DarkMode,
-                            contentDescription = "Settings",
+                            imageVector = if (isSubScreen) Icons.Filled.Settings else Icons.Filled.Palette,
+                            contentDescription = if (isSubScreen) "Settings" else "Themes",
                             tint = palette.inkPrimary,
                             modifier = Modifier.size(20.dp)
                         )
@@ -2080,8 +2438,12 @@ private fun WhiteGlassTopHeader(
                             Text(
                                 text = when {
                                     isHud -> "${themeSpec.name.uppercase()} • READY"
-                                    isAtelier -> "${themeSpec.layoutArchetype.shortBadge} • ${themeSpec.name}"
-                                    else -> "Instant screen & quiz helper"
+                                    isAtelier -> if (themeSpec.name.contains(themeSpec.layoutArchetype.shortBadge, ignoreCase = true)) {
+                                        themeSpec.name
+                                    } else {
+                                        "${themeSpec.layoutArchetype.shortBadge} • ${themeSpec.name}"
+                                    }
+                                    else -> "Screen & quiz study helper"
                                 },
                                 style = MaterialTheme.typography.bodySmall.copy(
                                     fontSize = if (isHud) 10.5.sp else 12.sp,
@@ -2155,6 +2517,118 @@ private fun WhiteGlassTopHeader(
                     palette.cardHairlineBorder
                 }
             )
+        }
+    }
+}
+
+@Composable
+private fun FairUseEnforcementDialog(
+    enforcement: AbuseEnforcementState,
+    onDismiss: () -> Unit
+) {
+    val palette = LocalWhiteGlassPalette.current
+    val isBanned = enforcement is AbuseEnforcementState.Banned
+    val title = if (isBanned) {
+        "Device Restricted"
+    } else {
+        "Fair-Use Warning (1 of 2)"
+    }
+    val reasonText = when (enforcement) {
+        is AbuseEnforcementState.Warning -> enforcement.reason
+        is AbuseEnforcementState.Banned -> enforcement.reason
+        AbuseEnforcementState.Clear -> ""
+    }
+    val body = if (isBanned) {
+        "Cloud solving has been disabled on this device due to repeated attempts to bypass daily limits ($reasonText). Saved study history and personal API keys in Settings still work."
+    } else {
+        "$reasonText. Daily limits are shared per device, so switching or recreating accounts will not add extra credits. Repeating this once more will restrict cloud solving on this device."
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.72f))
+            .clickable(enabled = false) {}
+            .padding(24.dp)
+            .testTag(if (isBanned) "dialog_device_banned" else "dialog_fair_use_warning"),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .widthIn(max = 420.dp)
+                .clip(RoundedCornerShape(22.dp))
+                .background(palette.canvasBottom)
+                .border(
+                    width = 1.4.dp,
+                    color = palette.accentSky.copy(alpha = if (isBanned) 0.9f else 0.65f),
+                    shape = RoundedCornerShape(22.dp)
+                )
+                .padding(22.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(RoundedCornerShape(13.dp))
+                        .background(palette.accentSkyContainer),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = if (isBanned) Icons.Filled.Shield else Icons.Filled.Warning,
+                        contentDescription = title,
+                        tint = palette.accentSky,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+                Column {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            color = palette.inkPrimary,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                    )
+                    Text(
+                        text = if (isBanned) "Fair-use limit enforced" else "Final warning before device ban",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            color = palette.accentSky,
+                            fontWeight = FontWeight.Bold
+                        )
+                    )
+                }
+            }
+
+            Text(
+                text = body,
+                style = MaterialTheme.typography.bodyMedium.copy(
+                    color = palette.inkSecondary,
+                    lineHeight = 20.sp
+                )
+            )
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(palette.accentSky)
+                    .clickable(role = Role.Button, onClick = onDismiss)
+                    .testTag("btn_dismiss_fair_use_dialog"),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = if (isBanned) "Understood" else "I Understand",
+                    style = MaterialTheme.typography.labelLarge.copy(
+                        color = palette.onAccentInk,
+                        fontWeight = FontWeight.Bold
+                    )
+                )
+            }
         }
     }
 }

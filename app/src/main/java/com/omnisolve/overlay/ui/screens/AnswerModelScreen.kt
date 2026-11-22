@@ -225,7 +225,7 @@ fun AnswerModelScreen(
                             .padding(end = 10.dp)
                     ) {
                         Text(
-                            text = "100% Free • Smart Fast Models Active",
+                            text = "Sign in to start solving",
                             style = MaterialTheme.typography.titleSmall.copy(
                                 color = palette.inkPrimary,
                                 fontWeight = FontWeight.Bold,
@@ -235,7 +235,7 @@ fun AnswerModelScreen(
                             overflow = TextOverflow.Ellipsis
                         )
                         Text(
-                            text = "Auto-switches fastest free models • Optional Google Sign-In adds cloud history backup",
+                            text = "Google Sign-In unlocks multi-provider AI routing and cloud history sync",
                             style = MaterialTheme.typography.bodySmall.copy(
                                 color = palette.inkSecondary,
                                 fontSize = 11.5.sp
@@ -283,9 +283,9 @@ fun AnswerModelScreen(
             RatedSolverMethodCard(
                 number = "1.",
                 title = "Smart Auto (Fast + Math)",
-                subtitle = "Instant offline cache + fastest free AI for MCQs, and automatically upgrades to Vision for ½, Σ, ∫, and Match-the-Following.",
+                subtitle = "Checks your offline cache first, solves MCQs online, and upgrades to Vision for ½, Σ, ∫, and Match-the-Following.",
                 icon = Icons.Filled.CenterFocusStrong,
-                topRecommendedTag = "RECOMMENDED • AUTO-MATH & 0MS CACHE",
+                topRecommendedTag = "RECOMMENDED • AUTO-MATH & CACHE",
                 inlineSpecText = "Smart Auto",
                 ratingScore = SolverMethod.BACKGROUND_GEMINI.ratingScore,
                 ratingStars = SolverMethod.BACKGROUND_GEMINI.ratingStars,
@@ -322,8 +322,8 @@ fun AnswerModelScreen(
         item(key = "method_direct_vision") {
             RatedSolverMethodCard(
                 number = "3.",
-                title = "Always-On Photo & Math Vision",
-                subtitle = "Always reads the raw screen image directly — ideal for handwritten equations, geometry figures, graphs, and charts.",
+                title = "Photo & Math Vision",
+                subtitle = "Reads the screen image directly for handwritten equations, geometry figures, graphs, and charts.",
                 icon = Icons.Filled.RemoveRedEye,
                 inlineSpecText = "Math & Charts",
                 ratingScore = SolverMethod.DIRECT_VISION.ratingScore,
@@ -373,7 +373,7 @@ fun AnswerModelScreen(
                             )
                         )
                         Text(
-                            text = "Cloud Helper, Web Facts, Direct Text & Your Own Keys",
+                            text = "Cloud Solver, Web Lookup & Custom Keys",
                             style = MaterialTheme.typography.bodySmall.copy(
                                 color = palette.inkSecondary,
                                 fontSize = 11.sp
@@ -397,10 +397,10 @@ fun AnswerModelScreen(
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     RatedSolverMethodCard(
                         number = "4.",
-                        title = "Server Sol (Workers AI)",
-                        subtitle = "Fast Cloudflare Workers AI (Gemma 4 / Llama 3) with automatic Firebase backup.",
+                        title = "Cloud Solver",
+                        subtitle = "Fast cloud answers with automatic backup.",
                         icon = Icons.Filled.Cloud,
-                        inlineSpecText = "Workers AI Ready",
+                        inlineSpecText = "Ready",
                         ratingScore = SolverMethod.FIREBASE_SERVER.ratingScore,
                         ratingStars = SolverMethod.FIREBASE_SERVER.ratingStars,
                         ratingLabel = SolverMethod.FIREBASE_SERVER.ratingLabel,
@@ -424,7 +424,7 @@ fun AnswerModelScreen(
                 RatedSolverMethodCard(
                     number = "5.",
                     title = "Web Facts Lookup",
-                    subtitle = "Checks live web facts alongside AI — helpful for general knowledge and trivia.",
+                    subtitle = "Checks live web facts alongside AI. Helpful for general knowledge and trivia.",
                     icon = Icons.Filled.Radar,
                     inlineSpecText = "Web + Facts",
                     ratingScore = SolverMethod.CIRCLE_TO_SEARCH.ratingScore,

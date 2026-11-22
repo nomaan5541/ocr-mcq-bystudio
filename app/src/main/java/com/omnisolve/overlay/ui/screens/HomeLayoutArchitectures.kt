@@ -132,7 +132,7 @@ private fun ArchitecturalGuestSignInBanner(
                 .padding(end = 10.dp)
         ) {
             Text(
-                text = if (useMono) "100% FREE // OFFLINE CACHE & FAST AI" else "100% Free • Offline Cache & Fast AI Ready",
+                text = if (useMono) "SIGN IN // START SOLVING" else "Sign in to start solving",
                 style = MaterialTheme.typography.labelLarge.copy(
                     color = palette.inkPrimary,
                     fontWeight = FontWeight.Bold,
@@ -143,7 +143,7 @@ private fun ArchitecturalGuestSignInBanner(
                 overflow = TextOverflow.Ellipsis
             )
             Text(
-                text = "Forms & solvers work free • Sign in optionally for cloud sync",
+                text = "Google Sign-In unlocks AI solving, offline cache, and cloud sync",
                 style = MaterialTheme.typography.bodySmall.copy(
                     color = palette.inkSecondary,
                     fontSize = 11.sp

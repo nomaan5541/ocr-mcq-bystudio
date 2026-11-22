@@ -38,6 +38,7 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:launchMode="singleTop"
             android:label="@string/app_name"
             android:theme="@style/Theme.OmniSolveOverlay"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|density"
@@ -52,6 +53,39 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="omnisolve" android:host="sync" />
+            </intent-filter>
+            <!-- Direct Link Opening from WhatsApp / Telegram / Gmail / Browser ("Open with Prism") -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="forms.gle" />
+                <data android:scheme="http" android:host="forms.gle" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="docs.google.com" android:pathPrefix="/forms" />
+                <data android:scheme="http" android:host="docs.google.com" android:pathPrefix="/forms" />
+            </intent-filter>
+            <!-- Android Share-Sheet Direct Answer Key: Photos from WhatsApp / Telegram / Gallery -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+            </intent-filter>
+            <!-- Android Share-Sheet Direct Answer Key: PDF Question Papers -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/pdf" />
+            </intent-filter>
+            <!-- Android Share-Sheet Direct Answer Key: Google Form Links & Shared MCQ Text -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
             </intent-filter>
         </activity>
 
@@ -80,7 +114,7 @@
             android:enabled="true"
             android:exported="true"
             android:icon="@drawable/ic_prism_orb"
-            android:label="@string/app_name"
+            android:label="Prism Pill"
             android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
             <intent-filter>
                 <action android:name="android.service.quicksettings.action.QS_TILE" />

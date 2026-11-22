@@ -53,7 +53,8 @@ object F1ProviderHealthManager {
         var lastSuccessMs: Long = 0L,
         var recentLatencyMs: Long = 0L,
         var persistedAvgLatencyMs: Long = 0L,
-        var cooldownUntilMs: Long = 0L
+        var cooldownUntilMs: Long = 0L,
+        var lastFailureKind: F1FailureKind? = null
     )
 
     private val states = ConcurrentHashMap<F1ProviderId, ProviderState>()
@@ -85,6 +86,7 @@ object F1ProviderHealthManager {
             st.lastSuccessMs = now
             st.recentLatencyMs = safeLatency
             st.cooldownUntilMs = 0L
+            st.lastFailureKind = null
             st.recentWindow.addLast(RollingOutcome(success = true, latencyMs = safeLatency))
             while (st.recentWindow.size > ROLLING_WINDOW_SIZE) {
                 st.recentWindow.removeFirst()
@@ -118,6 +120,9 @@ object F1ProviderHealthManager {
             }
             if (cooldownMs > 0L) {
                 st.cooldownUntilMs = maxOf(st.cooldownUntilMs, now + cooldownMs)
+                st.lastFailureKind = kind
+            } else if (st.cooldownUntilMs <= now) {
+                st.lastFailureKind = kind
             }
         }
         persistProvider(providerId)
@@ -131,6 +136,7 @@ object F1ProviderHealthManager {
                 // Cooldown expired — allow recovery probe
                 st.cooldownUntilMs = 0L
                 st.consecutiveFailures = 0
+                st.lastFailureKind = null
             }
             return st.cooldownUntilMs <= now
         }
@@ -222,6 +228,27 @@ object F1ProviderHealthManager {
             snap.averageLatencyMs in 1L..1_800L && snap.successRatePct >= 90 -> config.maxHedgeDelayMs
             else -> ((config.minHedgeDelayMs + config.maxHedgeDelayMs) / 2L)
         }.coerceIn(config.minHedgeDelayMs, config.maxHedgeDelayMs)
+    }
+
+    /**
+     * Clears transient cooldowns (network/timeout/server 5xx) when the user explicitly triggers
+     * a manual retry, while preserving hard quota, auth, and unavailable-model cooldowns.
+     */
+    fun resetTransientCooldownsForManualRetry() {
+        for (st in states.values) {
+            synchronized(st) {
+                when (st.lastFailureKind) {
+                    F1FailureKind.TRANSIENT_NETWORK,
+                    F1FailureKind.TIMEOUT,
+                    F1FailureKind.SERVER_ERROR -> {
+                        st.cooldownUntilMs = 0L
+                        st.consecutiveFailures = 0
+                        st.lastFailureKind = null
+                    }
+                    else -> Unit
+                }
+            }
+        }
     }
 
     fun resetCooldownsAndStats() {

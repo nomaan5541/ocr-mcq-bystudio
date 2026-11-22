@@ -81,7 +81,7 @@ enum class HudShapeStyle(val id: String, val title: String, val subtitle: String
     DYNAMIC_ISLAND(
         "DYNAMIC_ISLAND",
         "Dynamic Island Pill",
-        "Frosted iOS 26 capsule with 1-tap solve & expandable explanation"
+        "Compact top capsule with 1-tap solve and expandable explanation"
     ),
     SPLIT_PILL(
         "SPLIT_PILL",
@@ -106,7 +106,7 @@ enum class HudShapeStyle(val id: String, val title: String, val subtitle: String
     CORNER_BADGE(
         "CORNER_BADGE",
         "Transparent Corner Badge",
-        "Minimalist corner glass badge with instant tap-to-solve"
+        "Minimal corner badge with quick tap-to-solve"
     ),
     BUBBLE(
         "BUBBLE",

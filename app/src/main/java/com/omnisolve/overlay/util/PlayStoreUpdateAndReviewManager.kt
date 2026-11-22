@@ -108,7 +108,7 @@ class InAppUpdateController(private val appContext: Context) {
                     info.installStatus() == InstallStatus.DOWNLOADED -> {
                         _updateState.value = PlayUpdateUiState.ReadyToInstall
                         if (manualCheck) {
-                            onManualFeedback?.invoke("Update downloaded — tap Restart to install")
+                            onManualFeedback?.invoke("Update downloaded. Tap Restart to install.")
                         }
                     }
                     info.updateAvailability() == UpdateAvailability.UPDATE_AVAILABLE -> {
@@ -282,16 +282,16 @@ object AppShareHelper {
     fun shareAppWithFriends(context: Context) {
         val pkg = context.packageName
         val shareText = buildString {
-            appendLine("Try Prism Solver — tap one floating pill over any quiz app to solve:")
+            appendLine("Try Prism Solver: tap the floating pill over your quiz or study app to solve:")
             appendLine("• MCQs & True/False")
             appendLine("• Math equations & symbols (1/2, Σ, ∫, √)")
             appendLine("• Match-the-Following & Google Forms")
-            appendLine("• Instant Offline Cache — 100% Free!")
+            appendLine("• Saved answers with local offline cache")
             append("https://play.google.com/store/apps/details?id=$pkg")
         }
         val sendIntent = Intent(Intent.ACTION_SEND).apply {
             type = "text/plain"
-            putExtra(Intent.EXTRA_SUBJECT, "Prism Solver — Instant Screen Quiz & Math Helper")
+            putExtra(Intent.EXTRA_SUBJECT, "Prism Solver: Screen Quiz & Math Study Helper")
             putExtra(Intent.EXTRA_TEXT, shareText)
         }
         val chooser = Intent.createChooser(sendIntent, "Share Prism Solver with Friends").apply {

@@ -230,7 +230,7 @@ fun IosLiquidLightHomeLayout(
                                     .padding(horizontal = 10.dp, vertical = 4.dp)
                             ) {
                                 Text(
-                                    text = if (state.isOverlayRunning) "● Island Active" else "iOS White Edition",
+                                    text = if (state.isOverlayRunning) "● Island Active" else "Prism Light",
                                     style = MaterialTheme.typography.labelSmall.copy(
                                         color = if (state.isOverlayRunning) Color(0xFF1A7F37) else palette.accentSky,
                                         fontWeight = FontWeight.Bold,
@@ -343,7 +343,7 @@ fun IosLiquidLightHomeLayout(
                         IosSquircleControlTile(
                             title = "Offline Vault",
                             subtitle = "${state.offlineCacheCount} cached • ${state.offlineCacheSavedCalls} saved",
-                            badge = "0ms",
+                            badge = "LOCAL",
                             icon = Icons.Filled.FileDownload,
                             accentColor = Color(0xFF00A878),
                             highlighted = false,
@@ -486,7 +486,7 @@ fun IosLiquidLightHomeLayout(
                             icon = Icons.Filled.Palette,
                             iconBg = Color(0xFFAF52DE),
                             title = "Theme Studio",
-                            subtitle = "iOS Liquid Light active • 57+ total looks",
+                            subtitle = "Prism Light active • Browse more themes",
                             testTag = "card_open_theme_studio",
                             onClick = { onOpenHomeSubScreen(HomeSubScreen.THEME_STUDIO) }
                         )
@@ -504,7 +504,7 @@ fun IosLiquidLightHomeLayout(
                             icon = Icons.Filled.VerifiedUser,
                             iconBg = Color(0xFF30B0C7),
                             title = "Privacy & Safety Promise",
-                            subtitle = "Zero screen recording • On-device Room cache",
+                            subtitle = "Reads screen on tap • Local offline history",
                             testTag = "card_open_privacy_policy",
                             onClick = { onOpenHomeSubScreen(HomeSubScreen.PRIVACY_POLICY) }
                         )
@@ -550,10 +550,10 @@ private fun IosKineticDynamicIslandShowcase(
         listOf(
             Triple("Tap to Solve", "?", Color(0xFF007AFF)),
             Triple("Reading ½ · Σ...", "...", Color(0xFFFF9500)),
-            Triple("Verified • 0ms", "B", Color(0xFF24A148))
+            Triple("Cached Answer", "B", Color(0xFF24A148))
         )
     }
-    var lastActionHint by remember { mutableStateOf("Tap the left logo to morph text ↔ icons in-place") }
+    var lastActionHint by remember { mutableStateOf("Tap the left icon to switch between answer text and quick tools") }
 
     LaunchedEffect(showInlineIcons) {
         if (showInlineIcons) {
@@ -642,9 +642,9 @@ private fun IosKineticDynamicIslandShowcase(
                     .clickable(role = Role.Button) {
                         showInlineIcons = !showInlineIcons
                         lastActionHint = if (showInlineIcons) {
-                            "In-place icon bar active — zero awkward expansion!"
+                            "Compact tool bar active inside the pill"
                         } else {
-                            "Back to sleek status text capsule"
+                            "Showing answer preview"
                         }
                     }
                     .testTag("btn_ios_preview_logo_morph"),

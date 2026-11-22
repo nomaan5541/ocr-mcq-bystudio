@@ -473,7 +473,11 @@ fun PrismLiveThemeShowcaseStage(
                         .background(palette.accentSky)
                 )
                 Text(
-                    text = "${activeSpec.layoutArchetype.shortBadge} • ${activeSpec.surfaceEffect.label}",
+                    text = if (activeSpec.surfaceEffect.label.contains(activeSpec.layoutArchetype.shortBadge, ignoreCase = true)) {
+                        activeSpec.surfaceEffect.label
+                    } else {
+                        "${activeSpec.layoutArchetype.shortBadge} • ${activeSpec.surfaceEffect.label}"
+                    },
                     style = MaterialTheme.typography.labelSmall.copy(
                         color = palette.inkSecondary,
                         fontWeight = FontWeight.SemiBold,

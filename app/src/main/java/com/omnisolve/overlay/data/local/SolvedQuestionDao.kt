@@ -52,6 +52,9 @@ interface SolvedQuestionDao {
     @Query("DELETE FROM solved_questions WHERE id = :id")
     suspend fun deleteById(id: Long)
 
+    @Query("DELETE FROM solved_questions WHERE createdAtMs < :cutoffMs")
+    suspend fun deleteOlderThan(cutoffMs: Long): Int
+
     @Query("DELETE FROM solved_questions")
     suspend fun clearAll()
 }

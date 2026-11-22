@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -119,8 +120,10 @@ import com.omnisolve.overlay.MainActivity
 import com.omnisolve.overlay.R
 import com.omnisolve.overlay.ads.AdBannerStyle
 import com.omnisolve.overlay.ads.InAppAdMobBanner
+import com.omnisolve.overlay.data.DailyUsageSnapshot
 import com.omnisolve.overlay.model.SolverMethod
 import com.omnisolve.overlay.service.OverlayService
+import com.omnisolve.overlay.service.PrismQuickSettingsTileService
 import com.omnisolve.overlay.ui.MainUiState
 import com.omnisolve.overlay.ui.PracticeSample
 import com.omnisolve.overlay.util.BatterySurvivalHelper
@@ -250,7 +253,7 @@ fun SettingsScreen(
             },
             text = {
                 Text(
-                    text = "This permanently removes your saved cloud history and disconnects your Google account from Prism Solver. You can still use the free Screen Reader anytime.",
+                    text = "This permanently removes your saved cloud history and disconnects your Google account from Prism Solver. You can sign in again anytime.",
                     color = palette.inkSecondary,
                     fontSize = 13.sp,
                     lineHeight = 18.sp
@@ -295,7 +298,7 @@ fun SettingsScreen(
             .fillMaxSize()
             .navigationBarsPadding()
             .testTag("settings_screen_list"),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 40.dp),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 116.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         // ── 0. SIMPLE QUICK STATUS CARD ────────────────────────────────────
@@ -343,7 +346,7 @@ fun SettingsScreen(
                 } else {
                     "App account & school form login"
                 },
-                statusBadge = if (isGoogleSignedIn) "Signed In" else "Free Mode",
+                statusBadge = if (isGoogleSignedIn) "Signed In" else "Sign In Needed",
                 isExpanded = expandedAccount,
                 onToggleExpand = { expandedAccount = !expandedAccount }
             ) {
@@ -393,6 +396,8 @@ fun SettingsScreen(
                             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
                         )
                     }
+
+                    DailyAllowanceCompactCard(snapshot = state.dailyUsage)
 
                     LivingSecondaryButton(
                         text = if (state.isDeletingAccount) "Deleting Account & History..." else "Delete Account & Cloud Data",
@@ -475,6 +480,20 @@ fun SettingsScreen(
                     icon = Icons.Filled.NotificationsActive,
                     testTag = "btn_settings_open_notification_studio",
                     onClick = onOpenNotificationStudio
+                )
+
+                SettingsStatusActionRow(
+                    title = "Quick Settings Tile",
+                    subtitle = "Swipe down from any app to start or trigger Prism Pill in 1 tap",
+                    statusText = "Add Tile",
+                    isReady = false,
+                    icon = Icons.Filled.Bolt,
+                    testTag = "btn_settings_add_qs_tile",
+                    onClick = {
+                        PrismQuickSettingsTileService.requestAddTileToShade(context) { message ->
+                            onShowBannerMessage(message)
+                        }
+                    }
                 )
 
                 LivingSwitchRow(
@@ -605,7 +624,7 @@ fun SettingsScreen(
                 PlayUpdateUiState.Checking -> "Checking Google Play Store for a newer release..."
                 is PlayUpdateUiState.Available -> "A newer Prism Solver release is available on Google Play"
                 is PlayUpdateUiState.Downloading -> "Downloading update in background (${playUpdateState.progressPct}%)"
-                PlayUpdateUiState.ReadyToInstall -> "Update downloaded — tap to restart & install"
+                PlayUpdateUiState.ReadyToInstall -> "Update downloaded. Tap to restart and install."
                 PlayUpdateUiState.UpToDate -> "v${BuildConfig.VERSION_NAME} • You have the latest version"
                 is PlayUpdateUiState.Unavailable -> "v${BuildConfig.VERSION_NAME} • Tap to check on Google Play"
                 PlayUpdateUiState.Idle -> "v${BuildConfig.VERSION_NAME} • Check Google Play for improvements"
@@ -855,7 +874,7 @@ fun SettingsScreen(
                             overflow = TextOverflow.Ellipsis
                         )
                         Text(
-                            text = "Optional — leave empty to use built-in solving",
+                            text = "Optional. Leave empty to use built-in solving.",
                             style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.5.sp),
                             color = palette.inkMuted,
                             maxLines = 1,
@@ -1203,7 +1222,11 @@ private fun SettingsThemeControlCard(
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
-                        text = "${activeSpec.name} • ${activeSpec.layoutArchetype.shortBadge}",
+                        text = if (activeSpec.name.contains(activeSpec.layoutArchetype.shortBadge, ignoreCase = true)) {
+                            activeSpec.name
+                        } else {
+                            "${activeSpec.name} • ${activeSpec.layoutArchetype.shortBadge}"
+                        },
                         style = MaterialTheme.typography.bodySmall.copy(
                             fontSize = 11.5.sp,
                             color = palette.inkSecondary
@@ -1514,11 +1537,99 @@ private fun SystemReadinessHeroCard(
             )
             ReadinessChip(
                 "Account",
-                if (isGoogleSignedIn) "Signed In" else "Free Mode",
+                if (isGoogleSignedIn) "Signed In" else "Sign In Needed",
                 isGoogleSignedIn,
                 Modifier.weight(1f)
             )
         }
+    }
+}
+
+@Composable
+private fun DailyAllowanceCompactCard(
+    snapshot: DailyUsageSnapshot
+) {
+    val palette = LocalWhiteGlassPalette.current
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(palette.canvasBottom)
+            .border(1.dp, palette.cardHairlineBorder, RoundedCornerShape(12.dp))
+            .padding(12.dp)
+            .testTag("card_daily_usage_limits"),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                text = "Daily Allowance",
+                style = MaterialTheme.typography.labelLarge.copy(
+                    color = palette.inkPrimary,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.5.sp
+                )
+            )
+            Text(
+                text = "Resets 00:00 UTC",
+                style = MaterialTheme.typography.labelSmall.copy(
+                    color = palette.inkMuted,
+                    fontSize = 10.5.sp
+                )
+            )
+        }
+        snapshot.items().forEach { item ->
+            val ratio = (item.used.toFloat() / item.limit.coerceAtLeast(1).toFloat()).coerceIn(0f, 1f)
+            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = item.feature.displayName,
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            color = palette.inkSecondary,
+                            fontSize = 11.5.sp
+                        )
+                    )
+                    Text(
+                        text = "${item.used} / ${item.limit}",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            color = if (item.isExhausted) palette.accentSky else palette.inkPrimary,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp
+                        )
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(4.dp)
+                        .clip(CircleShape)
+                        .background(palette.cardHairlineBorder)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(ratio)
+                            .fillMaxHeight()
+                            .clip(CircleShape)
+                            .background(if (item.isExhausted) palette.accentSky else palette.accentEmerald)
+                    )
+                }
+            }
+        }
+        Text(
+            text = "Cached answers & your own API keys do not use daily allowance.",
+            style = MaterialTheme.typography.labelSmall.copy(
+                color = palette.inkMuted,
+                fontSize = 10.5.sp,
+                lineHeight = 14.sp
+            )
+        )
     }
 }
 

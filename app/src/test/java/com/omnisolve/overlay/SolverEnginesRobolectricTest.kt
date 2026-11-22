@@ -14,16 +14,20 @@ import com.omnisolve.overlay.api.GhostDomSolverEngine
 import com.omnisolve.overlay.api.OnlineConsensusRaceEngine
 import com.omnisolve.overlay.api.PrismAiSolverEngine
 import com.omnisolve.overlay.capture.OcrEngine
+import com.omnisolve.overlay.f1.F1AuthCheckResult
+import com.omnisolve.overlay.f1.F1AuthGate
 import com.omnisolve.overlay.model.QuestionSolveMode
 import com.omnisolve.overlay.model.SubjectMode
 import kotlinx.coroutines.runBlocking
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.ResponseBody.Companion.toResponseBody
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -34,6 +38,22 @@ class SolverEnginesRobolectricTest {
 
     private val context: Context = ApplicationProvider.getApplicationContext()
     private val geminiParser = GeminiVisionClient()
+
+    @Before
+    fun setUpAuthSessionForLegacySuite() {
+        F1AuthGate.authOverrideForTest = {
+            F1AuthCheckResult(
+                isAuthenticated = true,
+                uid = "legacy-suite-uid",
+                email = "legacy-suite@example.com"
+            )
+        }
+    }
+
+    @After
+    fun tearDownAuthSessionForLegacySuite() {
+        F1AuthGate.authOverrideForTest = null
+    }
 
     private class FakeScreenOcrEngine(
         private val rawText: String,
@@ -1121,21 +1141,28 @@ class SolverEnginesRobolectricTest {
     fun testNotificationStudio_WelcomeAndHiddenEngagementPoolAndPrismIcon() {
         val mgr = com.omnisolve.overlay.service.PrismEngagementNotificationManager
 
-        // 1. Verify Welcome to Solve Anything notification builds with rich details
+        // 1. Verify Welcome to Prism notification builds with rich details
         val welcomeNotif = mgr.buildWelcomeNotification(context)
         assertNotNull(welcomeNotif)
         val welcomeTitle = welcomeNotif.extras.getString(android.app.Notification.EXTRA_TITLE) ?: ""
         val welcomeBig = welcomeNotif.extras.getCharSequence(android.app.Notification.EXTRA_BIG_TEXT)?.toString() ?: ""
-        assertTrue("Welcome notification title must match Solve Anything", welcomeTitle.contains("Welcome to Solve Anything"))
+        assertTrue("Welcome notification title must match Prism", welcomeTitle.contains("Welcome to Prism"))
         assertTrue("Welcome notification must contain rich feature details", welcomeBig.contains("Dynamic Island") && welcomeBig.contains("Google Forms"))
 
-        // 2. Verify hidden engagement pool has >= 25 distinct notifications and never repeats immediately
+        // 2. Verify hidden engagement pool has >= 25 distinct notifications, zero guilt copy, and zero em dashes
         assertTrue("Hidden engagement pool must contain at least 25 notifications", mgr.hiddenMessageCount() >= 25)
         val seenTitles = mutableSetOf<String>()
+        val bannedPatterns = listOf("ghosting", "hard to get", "hanging", "nervous", "—")
         for (i in 0 until mgr.hiddenMessageCount()) {
             val n = mgr.buildEngagementNotification(context, i)
             val t = n.extras.getString(android.app.Notification.EXTRA_TITLE) ?: ""
+            val body = n.extras.getCharSequence(android.app.Notification.EXTRA_TEXT)?.toString() ?: ""
+            val big = n.extras.getCharSequence(android.app.Notification.EXTRA_BIG_TEXT)?.toString() ?: ""
+            val combined = "$t $body $big".lowercase()
             assertTrue("Notification #$i must have non-blank title", t.isNotBlank())
+            bannedPatterns.forEach { bad ->
+                assertFalse("Notification #$i must not contain '$bad': $combined", combined.contains(bad))
+            }
             seenTitles.add(t)
         }
         assertEquals("All hidden engagement notification titles must be unique", mgr.hiddenMessageCount(), seenTitles.size)

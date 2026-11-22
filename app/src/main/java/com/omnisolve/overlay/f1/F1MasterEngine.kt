@@ -10,7 +10,11 @@ import com.omnisolve.overlay.api.GhostDomSolverEngine
 import com.omnisolve.overlay.cache.PersistentQuizCacheManager
 import com.omnisolve.overlay.cache.SolveResultCache
 import com.omnisolve.overlay.capture.OcrEngine
+import com.omnisolve.overlay.data.UsageLimitCheckResult
+import com.omnisolve.overlay.data.UsageLimitFeature
+import com.omnisolve.overlay.data.UserUsageLimitManager
 import com.omnisolve.overlay.model.AnswerModel
+import com.omnisolve.overlay.model.SolverMethod
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
@@ -119,6 +123,8 @@ object F1MasterEngine {
 
     private const val TAG = "F1MasterEngine"
 
+    private fun monotonicNowMs(): Long = System.nanoTime() / 1_000_000L
+
     private val requestSequence = AtomicLong(0L)
     private val activeRequestId = AtomicLong(0L)
     private val activeRaceJob = AtomicReference<Job?>(null)
@@ -186,7 +192,9 @@ object F1MasterEngine {
         ocrEngine: OcrEngine? = null
     ): F1SolveResult = withContext(Dispatchers.IO) {
         F1ProviderHealthManager.initialize(context)
-        val totalStartMs = System.currentTimeMillis()
+        val totalStartWallMs = System.currentTimeMillis()
+        val totalStartMonoMs = monotonicNowMs()
+        val validationTotalNanos = AtomicLong(0L)
         val reqId = if (request.requestId > 0L) request.requestId else requestSequence.incrementAndGet()
         val boundRequest = request.copy(requestId = reqId)
 
@@ -206,14 +214,15 @@ object F1MasterEngine {
         if (boundRequest.requireGoogleAuth) {
             val auth = F1AuthGate.verifyGoogleAccount(context)
             if (!auth.isAuthenticated || auth.uid.isNullOrBlank()) {
-                val totalMs = (System.currentTimeMillis() - totalStartMs).coerceAtLeast(1L)
+                val totalMs = (monotonicNowMs() - totalStartMonoMs).coerceAtLeast(1L)
                 val report = F1RaceReport(
                     requestId = reqId,
-                    timestampMs = totalStartMs,
+                    timestampMs = totalStartWallMs,
                     questionCategory = F1QuestionCategory.SIMPLE_FACTUAL_MCQ,
                     raceMode = boundRequest.raceMode,
                     totalMs = totalMs,
                     authBlocked = true,
+                    failureCategory = F1FailureCategory.AUTH_OR_APP_CHECK,
                     failureReason = auth.errorMessage
                 )
                 F1PerformanceMonitor.recordRace(report)
@@ -227,6 +236,7 @@ object F1MasterEngine {
                     raceReport = report,
                     authRequired = true,
                     authErrorMessage = auth.errorMessage,
+                    failureCategory = F1FailureCategory.AUTH_OR_APP_CHECK,
                     errorMessage = auth.errorMessage
                 )
             }
@@ -239,9 +249,13 @@ object F1MasterEngine {
         // ---------------------------------------------------------------------
         // STAGE 2: Single Shared Question Extraction (Pre-extracted / Ghost DOM / OCR)
         // ---------------------------------------------------------------------
-        val ocrStartMs = System.currentTimeMillis()
+        val ocrStartMonoMs = monotonicNowMs()
         val (rawText, textBlocks) = extractQuestionOnce(context, boundRequest, ocrEngine)
-        val ocrMs = if (!boundRequest.preExtractedText.isNullOrBlank()) 0L else (System.currentTimeMillis() - ocrStartMs).coerceAtLeast(1L)
+        val ocrMs = if (!boundRequest.preExtractedText.isNullOrBlank()) {
+            0L
+        } else {
+            (monotonicNowMs() - ocrStartMonoMs).coerceAtLeast(1L)
+        }
 
         val (structuredText, _) = if (rawText.isNotBlank()) {
             GeminiVisionClient.analyzeAndStructureScreenQuestions(rawText, textBlocks)
@@ -253,19 +267,19 @@ object F1MasterEngine {
         // ---------------------------------------------------------------------
         // STAGE 3: Zero-Network On-Device Question Classification
         // ---------------------------------------------------------------------
-        val classStartMs = System.currentTimeMillis()
+        val classStartMonoMs = monotonicNowMs()
         val classification = F1QuestionClassifier.classify(
             extractedText = effectiveQuestionText,
             hasBitmap = boundRequest.screenBitmap != null && !boundRequest.screenBitmap.isRecycled,
             subjectMode = boundRequest.subjectMode,
             solveMode = boundRequest.solveMode
         )
-        val classificationMs = (System.currentTimeMillis() - classStartMs).coerceAtLeast(0L)
+        val classificationMs = (monotonicNowMs() - classStartMonoMs).coerceAtLeast(0L)
 
         // ---------------------------------------------------------------------
         // STAGE 4: Unified Account-Scoped Cache Lookup (bypassed on Force Resolve)
         // ---------------------------------------------------------------------
-        val cacheStartMs = System.currentTimeMillis()
+        val cacheStartMonoMs = monotonicNowMs()
         val cacheVersionKey = "f1_${accountUid.take(16)}"
         val (normQ, normOpts) = SolveResultCache.splitNormalizedQuestionAndOptions(effectiveQuestionText)
         val hasValidBitmap = boundRequest.screenBitmap != null && !boundRequest.screenBitmap.isRecycled
@@ -305,8 +319,8 @@ object F1MasterEngine {
                 classification = classification
             )
             if (cachedModel != null) {
-                val cacheLookupMs = (System.currentTimeMillis() - cacheStartMs).coerceAtLeast(1L)
-                val validated = F1AnswerValidator.validate(
+                val cacheLookupMs = (monotonicNowMs() - cacheStartMonoMs).coerceAtLeast(1L)
+                val validated = validateMeasured(
                     candidate = cachedModel.toF1Candidate(
                         requestId = reqId,
                         providerId = F1ProviderId.LOCAL_CACHE,
@@ -314,20 +328,23 @@ object F1MasterEngine {
                         modelName = "account-cache",
                         latencyMs = cacheLookupMs
                     ),
-                    activeRequestId = activeRequestId.get(),
-                    classification = classification
+                    activeReqId = activeRequestId.get(),
+                    classification = classification,
+                    validationTotalNanos = validationTotalNanos
                 )
                 if (validated.isWinningEligible && activeRequestId.get() == reqId) {
-                    val totalMs = (System.currentTimeMillis() - totalStartMs).coerceAtLeast(1L)
+                    val totalMs = (monotonicNowMs() - totalStartMonoMs).coerceAtLeast(1L)
+                    val validationMs = nanosToValidationMs(validationTotalNanos.get())
                     val report = F1RaceReport(
                         requestId = reqId,
-                        timestampMs = totalStartMs,
+                        timestampMs = totalStartWallMs,
                         questionCategory = classification.category,
                         raceMode = boundRequest.raceMode,
                         captureMs = boundRequest.captureDurationMs,
                         ocrMs = ocrMs,
                         cacheLookupMs = cacheLookupMs,
                         classificationMs = classificationMs,
+                        validationMs = validationMs,
                         totalMs = totalMs,
                         cacheHit = true,
                         winnerProviderId = F1ProviderId.LOCAL_CACHE,
@@ -356,10 +373,57 @@ object F1MasterEngine {
                 }
             }
         }
-        val cacheLookupMs = (System.currentTimeMillis() - cacheStartMs).coerceAtLeast(0L)
+        val cacheLookupMs = (monotonicNowMs() - cacheStartMonoMs).coerceAtLeast(0L)
 
         // ---------------------------------------------------------------------
-        // STAGE 5: Adaptive Staggered Provider Race under ONE Global Deadline
+        // STAGE 4B: Per-User Daily Usage Limit Gate
+        // Free & Unlimited (0 server cost): Cache Hits, On-Device OCR-Only, Local Gemini Web, & Personal Keys
+        // ---------------------------------------------------------------------
+        val bypassDailyLimitForLocalOrPersonal =
+            (boundRequest.preferredMethod == SolverMethod.API_KEYS &&
+                PersonalApiKeysF1Provider.isEligible(context, boundRequest, classification)) ||
+            boundRequest.preferredMethod == SolverMethod.OVERLAPPING_GOOGLE
+        if (boundRequest.requireGoogleAuth && !bypassDailyLimitForLocalOrPersonal) {
+            val limitCheck = UserUsageLimitManager.checkQuota(
+                context = context,
+                uid = accountUid,
+                feature = UsageLimitFeature.OVERLAY_MCQ
+            )
+            if (limitCheck is UsageLimitCheckResult.LimitReached) {
+                val totalMs = (monotonicNowMs() - totalStartMonoMs).coerceAtLeast(1L)
+                val validationMs = nanosToValidationMs(validationTotalNanos.get())
+                val report = F1RaceReport(
+                    requestId = reqId,
+                    timestampMs = totalStartWallMs,
+                    questionCategory = classification.category,
+                    raceMode = boundRequest.raceMode,
+                    captureMs = boundRequest.captureDurationMs,
+                    ocrMs = ocrMs,
+                    cacheLookupMs = cacheLookupMs,
+                    classificationMs = classificationMs,
+                    validationMs = validationMs,
+                    totalMs = totalMs,
+                    failureCategory = F1FailureCategory.QUOTA_LIMITED,
+                    failureReason = limitCheck.userMessage
+                )
+                F1PerformanceMonitor.recordRace(report)
+                return@withContext F1SolveResult(
+                    requestId = reqId,
+                    winner = null,
+                    answerModel = null,
+                    extractedQuestionPreview = effectiveQuestionText,
+                    textBlocks = textBlocks,
+                    questionCategory = classification.category,
+                    raceReport = report,
+                    websiteFallbackReady = true,
+                    failureCategory = F1FailureCategory.QUOTA_LIMITED,
+                    errorMessage = limitCheck.userMessage
+                )
+            }
+        }
+
+        // ---------------------------------------------------------------------
+        // STAGE 5: Adaptive Staggered Provider Race under ONE Monotonic Post-Preflight Deadline
         // ---------------------------------------------------------------------
         val promptInput = if (boundRequest.forceFreshResolve && !boundRequest.previousWrongAnswer.isNullOrBlank()) {
             com.omnisolve.overlay.service.OverlaySolveOrchestrator.buildCriticalRecheckPrompt(
@@ -373,11 +437,16 @@ object F1MasterEngine {
         val allProviders = providersOverrideForTest ?: defaultProviders()
         val providerMap = allProviders.associateBy { it.id }
         val metrics = CopyOnWriteArrayList<F1ProviderMetricLine>()
-        val raceDeadlineMs = totalStartMs + boundRequest.timeoutConfig.onlineRaceDeadlineMs
+        // Anchor monotonic provider race deadline AFTER preflight (auth, OCR, classification, cache)
+        // so slow OCR or cache lookup never starves the AI provider race.
+        val raceDeadlineMs = monotonicNowMs() + boundRequest.timeoutConfig.onlineRaceDeadlineMs
 
-        // Launch Search Evidence in parallel ONLY if question looks like current-event / factual GK
+        val wantWebEvidence = (classification.needsWebEvidence || boundRequest.preferredMethod == SolverMethod.CIRCLE_TO_SEARCH) &&
+            effectiveQuestionText.isNotBlank()
+
+        // Launch Search Evidence in parallel ONLY if question needs live web evidence or user selected Web Search
         var fetchedEvidence: F1SearchEvidence? = null
-        val preSearchScope = if (classification.needsWebEvidence && effectiveQuestionText.isNotBlank()) {
+        val preSearchScope = if (wantWebEvidence) {
             CoroutineScope(Dispatchers.IO + SupervisorJob(currentJob))
         } else {
             null
@@ -389,8 +458,11 @@ object F1MasterEngine {
             )
         }
 
+        val preferredProviderId = mapPreferredMethodToProvider(boundRequest.preferredMethod)
         val primaryPoolIds = buildList {
-            if (classification.needsVisionEscalation && providerMap[F1ProviderId.DIRECT_VISION]?.isEligible(context, boundRequest, classification) == true) {
+            if ((classification.needsVisionEscalation || preferredProviderId == F1ProviderId.DIRECT_VISION) &&
+                providerMap[F1ProviderId.DIRECT_VISION]?.isEligible(context, boundRequest, classification) == true
+            ) {
                 add(F1ProviderId.DIRECT_VISION)
             }
             if (providerMap[F1ProviderId.FIREBASE_GEMINI]?.isEligible(context, boundRequest, classification) == true) {
@@ -407,9 +479,19 @@ object F1MasterEngine {
             }
         }
 
-        val rankedPrimaryIds = F1ProviderHealthManager.rankEligibleProviders(primaryPoolIds, classification.category)
+        val baseRankedIds = F1ProviderHealthManager.rankEligibleProviders(primaryPoolIds, classification.category)
             .ifEmpty { primaryPoolIds }
-        val rankedProviders = rankedPrimaryIds.mapNotNull { providerMap[it] }
+        val prioritizedIds = if (preferredProviderId != null && preferredProviderId in baseRankedIds) {
+            listOf(preferredProviderId) + baseRankedIds.filterNot { it == preferredProviderId }
+        } else {
+            baseRankedIds
+        }
+        val finalPrimaryIds = if (!boundRequest.autoFailover && prioritizedIds.isNotEmpty()) {
+            listOf(prioritizedIds.first())
+        } else {
+            prioritizedIds
+        }
+        val rankedProviders = finalPrimaryIds.mapNotNull { providerMap[it] }
 
         var winningCandidate: AnswerCandidate? = null
         val attemptedIds = rankedProviders.map { it.id }.toMutableSet()
@@ -439,16 +521,21 @@ object F1MasterEngine {
                 evidence = fetchedEvidence,
                 ocrEngine = ocrEngine,
                 deadlineAtMs = raceDeadlineMs,
-                metrics = metrics
+                metrics = metrics,
+                validationTotalNanos = validationTotalNanos
             )
 
             // ---------------------------------------------------------------------
             // STAGE 6: Bounded Escalation Ladder (Evidence -> Vision -> WebView -> Manual)
             // ---------------------------------------------------------------------
 
-            // 6A: DuckDuckGo / Wikipedia Evidence + Reasoning Escalation (Scenario D)
-            if (winningCandidate == null && effectiveQuestionText.isNotBlank() && activeRequestId.get() == reqId) {
-                val remainingMs = raceDeadlineMs - System.currentTimeMillis()
+            // 6A: DuckDuckGo / Wikipedia Evidence + Reasoning Escalation (strictly gated on web-evidence questions)
+            if (winningCandidate == null &&
+                wantWebEvidence &&
+                (boundRequest.autoFailover || boundRequest.preferredMethod == SolverMethod.CIRCLE_TO_SEARCH) &&
+                activeRequestId.get() == reqId
+            ) {
+                val remainingMs = raceDeadlineMs - monotonicNowMs()
                 if (remainingMs > 600L) {
                     val evidence = fetchedEvidence ?: (preSearchJob?.let {
                         withTimeoutOrNull(minOf(remainingMs / 2L, boundRequest.timeoutConfig.searchEvidenceTimeoutMs)) { it.await() }
@@ -469,12 +556,12 @@ object F1MasterEngine {
                         )
                     }
                     if (evidence.snippets.isNotBlank()) {
-                        val budgetForRetry = (raceDeadlineMs - System.currentTimeMillis()).coerceAtLeast(600L)
+                        val budgetForRetry = raceDeadlineMs - monotonicNowMs()
                         val retryProvider = rankedProviders.firstOrNull { !it.supportsVision || it.id == F1ProviderId.FIREBASE_GEMINI }
                             ?: rankedProviders.firstOrNull()
-                        if (retryProvider != null) {
+                        if (retryProvider != null && budgetForRetry >= 600L) {
                             val raw = retryProvider.solve(context, boundRequest, promptInput, classification, evidence, budgetForRetry, ocrEngine)
-                            val validated = F1AnswerValidator.validate(raw, activeRequestId.get(), classification)
+                            val validated = validateMeasured(raw, activeRequestId.get(), classification, validationTotalNanos)
                             metrics.add(validated.toMetricLine("Evidence Pass"))
                             if (validated.isWinningEligible) {
                                 F1ProviderHealthManager.recordSuccess(validated.providerId, validated.latencyMs)
@@ -489,26 +576,25 @@ object F1MasterEngine {
             preSearchScope?.cancel()
         }
 
-        // 6B: Vision Escalation if bitmap exists and Direct Vision wasn't already attempted (Scenario E/F)
+        // 6B: Vision Escalation strictly within remaining global monotonic budget (no post-deadline extension)
         val visionProvider = providerMap[F1ProviderId.DIRECT_VISION]
         if (winningCandidate == null &&
+            (boundRequest.autoFailover || boundRequest.preferredMethod == SolverMethod.DIRECT_VISION) &&
             activeRequestId.get() == reqId &&
             visionProvider != null &&
             F1ProviderId.DIRECT_VISION !in attemptedIds &&
             visionProvider.isEligible(context, boundRequest, classification)
         ) {
-            val remaining = (raceDeadlineMs - System.currentTimeMillis()).coerceAtLeast(0L)
+            val remaining = (raceDeadlineMs - monotonicNowMs()).coerceAtLeast(0L)
             val visionBudget = if (remaining >= 800L) {
                 minOf(remaining, boundRequest.timeoutConfig.visionEscalationBudgetMs)
-            } else if (classification.ocrConfidenceLow || classification.needsVisionEscalation) {
-                minOf(boundRequest.timeoutConfig.visionEscalationBudgetMs, 2_500L)
             } else {
                 0L
             }
             if (visionBudget >= 800L) {
                 attemptedIds.add(F1ProviderId.DIRECT_VISION)
                 val raw = visionProvider.solve(context, boundRequest, promptInput, classification, fetchedEvidence, visionBudget, ocrEngine)
-                val validated = F1AnswerValidator.validate(raw, activeRequestId.get(), classification)
+                val validated = validateMeasured(raw, activeRequestId.get(), classification, validationTotalNanos)
                 metrics.add(validated.toMetricLine("Vision Escalation"))
                 if (validated.isWinningEligible) {
                     F1ProviderHealthManager.recordSuccess(validated.providerId, validated.latencyMs)
@@ -517,48 +603,55 @@ object F1MasterEngine {
             }
         }
 
-        // 6C: Bounded Automated Gemini WebView Fallback (Scenario G — max 15s)
+        // 6C: Bounded Automated Gemini WebView Fallback strictly capped by remaining deadline
         var webSessionExpired = false
         val webProvider = providerMap[F1ProviderId.GEMINI_WEBVIEW]
         if (winningCandidate == null &&
+            (boundRequest.autoFailover || finalPrimaryIds.isEmpty()) &&
             activeRequestId.get() == reqId &&
             webProvider != null &&
             webProvider.isEligible(context, boundRequest, classification)
         ) {
-            val raw = webProvider.solve(
-                context = context,
-                request = boundRequest,
-                promptText = promptInput,
-                classification = classification,
-                evidence = fetchedEvidence,
-                timeoutMs = boundRequest.timeoutConfig.webAutomatedTimeoutMs,
-                ocrEngine = ocrEngine
-            )
-            val validated = F1AnswerValidator.validate(raw, activeRequestId.get(), classification)
-            metrics.add(validated.toMetricLine("Web Fallback"))
-            if (validated.responseStatus == F1ResponseStatus.AUTH_REQUIRED) {
-                webSessionExpired = true
-            }
-            if (validated.isWinningEligible) {
-                F1ProviderHealthManager.recordSuccess(validated.providerId, validated.latencyMs)
-                winningCandidate = validated
+            val remainingForWeb = (raceDeadlineMs - monotonicNowMs()).coerceAtLeast(0L)
+            val webBudget = minOf(remainingForWeb, boundRequest.timeoutConfig.webAutomatedTimeoutMs)
+            if (webBudget >= 800L) {
+                val raw = webProvider.solve(
+                    context = context,
+                    request = boundRequest,
+                    promptText = promptInput,
+                    classification = classification,
+                    evidence = fetchedEvidence,
+                    timeoutMs = webBudget,
+                    ocrEngine = ocrEngine
+                )
+                val validated = validateMeasured(raw, activeRequestId.get(), classification, validationTotalNanos)
+                metrics.add(validated.toMetricLine("Web Fallback"))
+                if (validated.responseStatus == F1ResponseStatus.AUTH_REQUIRED) {
+                    webSessionExpired = true
+                }
+                if (validated.isWinningEligible) {
+                    F1ProviderHealthManager.recordSuccess(validated.providerId, validated.latencyMs)
+                    winningCandidate = validated
+                }
             }
         }
 
         // ---------------------------------------------------------------------
-        // STAGE 7: Stale-Request Guard, Cache Write & Measured F1 Race Report
+        // STAGE 7: Stale-Request Guard, Fast Local Cache Write & Measured F1 Race Report
         // ---------------------------------------------------------------------
-        val totalMs = (System.currentTimeMillis() - totalStartMs).coerceAtLeast(1L)
+        val totalMs = (monotonicNowMs() - totalStartMonoMs).coerceAtLeast(1L)
+        val validationMs = nanosToValidationMs(validationTotalNanos.get())
         if (activeRequestId.get() != reqId) {
             val cancelledReport = F1RaceReport(
                 requestId = reqId,
-                timestampMs = totalStartMs,
+                timestampMs = totalStartWallMs,
                 questionCategory = classification.category,
                 raceMode = boundRequest.raceMode,
                 captureMs = boundRequest.captureDurationMs,
                 ocrMs = ocrMs,
                 cacheLookupMs = cacheLookupMs,
                 classificationMs = classificationMs,
+                validationMs = validationMs,
                 totalMs = totalMs,
                 providerMetrics = metrics.toList(),
                 failureReason = "Superseded by newer question"
@@ -577,6 +670,19 @@ object F1MasterEngine {
 
         val finalAnswerModel = winningCandidate?.let { winner ->
             val model = buildFinalAnswerModel(winner, winner.rawAnswerModel)
+            if (boundRequest.requireGoogleAuth &&
+                winner.providerId != F1ProviderId.PERSONAL_API_KEYS &&
+                winner.providerId != F1ProviderId.GEMINI_WEBVIEW &&
+                winner.providerId != F1ProviderId.LOCAL_CACHE
+            ) {
+                runCatching {
+                    UserUsageLimitManager.recordUsage(
+                        context = context,
+                        uid = accountUid,
+                        feature = UsageLimitFeature.OVERLAY_MCQ
+                    )
+                }
+            }
             if (effectiveQuestionText.isNotBlank() || visualFingerprint.isNotBlank()) {
                 storeAccountScopedCache(
                     context = context,
@@ -594,27 +700,35 @@ object F1MasterEngine {
         }
 
         val websiteFallbackReady = winningCandidate == null
-        val failureMsg = when {
-            winningCandidate != null -> ""
-            webSessionExpired -> "WebView session expired. Open External Browser fallback to continue."
-            else -> "No server returned a valid answer within the deadline. Website fallback is ready."
+        val (failureCategory, failureMsg) = if (winningCandidate != null) {
+            F1FailureCategory.NONE to ""
+        } else {
+            classifyFinalFailure(
+                effectiveQuestionText = effectiveQuestionText,
+                hasValidBitmap = hasValidBitmap,
+                classification = classification,
+                webSessionExpired = webSessionExpired,
+                metrics = metrics
+            )
         }
 
         val report = F1RaceReport(
             requestId = reqId,
-            timestampMs = totalStartMs,
+            timestampMs = totalStartWallMs,
             questionCategory = classification.category,
             raceMode = boundRequest.raceMode,
             captureMs = boundRequest.captureDurationMs,
             ocrMs = ocrMs,
             cacheLookupMs = cacheLookupMs,
             classificationMs = classificationMs,
+            validationMs = validationMs,
             totalMs = totalMs,
             cacheHit = false,
             winnerProviderId = winningCandidate?.providerId,
             winnerProviderName = winningCandidate?.providerName ?: "None",
             winnerBadge = winningCandidate?.selectedOption.orEmpty(),
             providerMetrics = metrics.toList(),
+            failureCategory = failureCategory,
             failureReason = failureMsg
         )
         F1PerformanceMonitor.recordRace(report)
@@ -628,6 +742,7 @@ object F1MasterEngine {
             questionCategory = classification.category,
             raceReport = report,
             websiteFallbackReady = websiteFallbackReady,
+            failureCategory = failureCategory,
             errorMessage = failureMsg
         )
     }
@@ -641,10 +756,11 @@ object F1MasterEngine {
         evidence: F1SearchEvidence?,
         ocrEngine: OcrEngine?,
         deadlineAtMs: Long,
-        metrics: CopyOnWriteArrayList<F1ProviderMetricLine>
+        metrics: CopyOnWriteArrayList<F1ProviderMetricLine>,
+        validationTotalNanos: AtomicLong
     ): AnswerCandidate? {
         if (providers.isEmpty()) return null
-        val remainingInit = (deadlineAtMs - System.currentTimeMillis()).coerceAtLeast(0L)
+        val remainingInit = (deadlineAtMs - monotonicNowMs()).coerceAtLeast(0L)
         if (remainingInit <= 200L) return null
 
         val primaryId = providers.first().id
@@ -673,7 +789,7 @@ object F1MasterEngine {
                             withTimeoutOrNull(hedgeDelayMs * idx) { secondFailedEarly.await() }
                         }
                     }
-                    val remaining = deadlineAtMs - System.currentTimeMillis()
+                    val remaining = deadlineAtMs - monotonicNowMs()
                     if (remaining <= 200L || activeRequestId.get() != request.requestId) {
                         resultChannel.trySend(
                             buildErrorCandidate(request.requestId, provider.id, provider.displayName, "", 1L, F1ResponseStatus.CANCELLED)
@@ -694,7 +810,7 @@ object F1MasterEngine {
                         timeoutMs = perProviderCap,
                         ocrEngine = ocrEngine
                     )
-                    val validated = F1AnswerValidator.validate(raw, activeRequestId.get(), classification)
+                    val validated = validateMeasured(raw, activeRequestId.get(), classification, validationTotalNanos)
                     if (validated.isWinningEligible) {
                         F1ProviderHealthManager.recordSuccess(provider.id, validated.latencyMs)
                     } else {
@@ -722,7 +838,7 @@ object F1MasterEngine {
         try {
             var received = 0
             while (received < providers.size) {
-                val remaining = deadlineAtMs - System.currentTimeMillis()
+                val remaining = deadlineAtMs - monotonicNowMs()
                 if (remaining <= 0L) break
                 val candidate = withTimeoutOrNull(remaining) { resultChannel.receive() } ?: break
                 received++
@@ -763,7 +879,7 @@ object F1MasterEngine {
         }
 
         // Disagreement -> run ONE bounded verification tie-breaker within remaining global deadline
-        val remainingForTieBreak = deadlineAtMs - System.currentTimeMillis()
+        val remainingForTieBreak = deadlineAtMs - monotonicNowMs()
         if (remainingForTieBreak > 600L) {
             val usedIds = validCandidates.map { it.providerId }.toSet()
             val tieBreaker = providers.firstOrNull { it.id !in usedIds } ?: providers.first()
@@ -781,7 +897,7 @@ object F1MasterEngine {
                 timeoutMs = remainingForTieBreak,
                 ocrEngine = ocrEngine
             )
-            val validatedTie = F1AnswerValidator.validate(rawTie, activeRequestId.get(), classification)
+            val validatedTie = validateMeasured(rawTie, activeRequestId.get(), classification, validationTotalNanos)
             metrics.add(validatedTie.toMetricLine("Tie-Breaker"))
             if (validatedTie.isWinningEligible) {
                 F1ProviderHealthManager.recordSuccess(validatedTie.providerId, validatedTie.latencyMs)
@@ -812,7 +928,11 @@ object F1MasterEngine {
         }
         val ocrPair = try {
             if (ocrEngine.javaClass == OcrEngine::class.java) {
-                val diag = ocrEngine.extractTextWithDiagnostics(bmp, sessionId = request.requestId)
+                val diag = ocrEngine.extractTextWithDiagnostics(
+                    bitmap = bmp,
+                    sessionId = request.requestId,
+                    totalBudgetMs = request.timeoutConfig.ocrBudgetMs
+                )
                 diag.text to diag.blocks
             } else {
                 ocrEngine.extractTextWithBounds(bmp)
@@ -941,8 +1061,62 @@ object F1MasterEngine {
                 confidence = answer.confidence,
                 sourceLabel = answer.engineLabel,
                 visualHash = visualHash,
-                allowOverwriteRejected = request.forceFreshResolve
+                allowOverwriteRejected = request.forceFreshResolve,
+                awaitRemoteSync = false
             )
+        }
+    }
+
+    private fun validateMeasured(
+        candidate: AnswerCandidate,
+        activeReqId: Long,
+        classification: F1QuestionClassification,
+        validationTotalNanos: AtomicLong
+    ): AnswerCandidate {
+        val startNs = System.nanoTime()
+        val validated = F1AnswerValidator.validate(candidate, activeReqId, classification)
+        validationTotalNanos.addAndGet((System.nanoTime() - startNs).coerceAtLeast(1L))
+        return validated
+    }
+
+    private fun nanosToValidationMs(nanos: Long): Long {
+        if (nanos <= 0L) return 0L
+        return ((nanos + 999_999L) / 1_000_000L).coerceAtLeast(1L)
+    }
+
+    private fun mapPreferredMethodToProvider(method: SolverMethod?): F1ProviderId? = when (method) {
+        SolverMethod.DIRECT_VISION -> F1ProviderId.DIRECT_VISION
+        SolverMethod.API_KEYS -> F1ProviderId.PERSONAL_API_KEYS
+        SolverMethod.FIREBASE_SERVER -> F1ProviderId.FIREBASE_GEMINI
+        else -> null
+    }
+
+    private fun classifyFinalFailure(
+        effectiveQuestionText: String,
+        hasValidBitmap: Boolean,
+        classification: F1QuestionClassification,
+        webSessionExpired: Boolean,
+        metrics: List<F1ProviderMetricLine>
+    ): Pair<F1FailureCategory, String> {
+        val meaningfulChars = effectiveQuestionText.count { it.isLetterOrDigit() }
+        val anyAuth = webSessionExpired || metrics.any { it.status == F1ResponseStatus.AUTH_REQUIRED }
+        val anyQuota = metrics.any { it.status == F1ResponseStatus.QUOTA_EXCEEDED }
+        val anyTimeout = metrics.any { it.status == F1ResponseStatus.TIMEOUT }
+
+        return when {
+            webSessionExpired -> F1FailureCategory.AUTH_OR_APP_CHECK to
+                "WebView session expired. Open External Browser fallback to continue."
+            anyAuth -> F1FailureCategory.AUTH_OR_APP_CHECK to
+                "Authentication or App Check rejected the request. Sign in again or open Website fallback."
+            meaningfulChars < 6 && (!hasValidBitmap || classification.ocrConfidenceLow) && !anyQuota && !anyTimeout ->
+                F1FailureCategory.UNREADABLE_SCREEN to
+                    "Could not read the question clearly. Zoom in or drag a crop box around the question."
+            anyQuota -> F1FailureCategory.QUOTA_LIMITED to
+                "AI servers are busy or rate-limited right now. Wait a few seconds, retry, or open Website fallback."
+            anyTimeout -> F1FailureCategory.NETWORK_TIMEOUT to
+                "Request timed out before a server replied. Check your connection and tap Retry."
+            else -> F1FailureCategory.ALL_PROVIDERS_FAILED to
+                "No server returned a valid answer within the deadline. Website fallback is ready."
         }
     }
 

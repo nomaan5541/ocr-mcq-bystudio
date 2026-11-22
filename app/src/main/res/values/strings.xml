@@ -3,9 +3,9 @@
     <string name="app_name">Prism Solver</string>
 
     <!-- Header & Navigation -->
-    <string name="header_subtitle">Instant Screen &amp; Quiz Helper</string>
+    <string name="header_subtitle">Screen &amp; Quiz Study Helper</string>
     <string name="nav_home">Home</string>
-    <string name="nav_stats">Stats</string>
+    <string name="nav_stats">Add</string>
     <string name="nav_settings">Settings</string>
 
     <!-- Home Screen -->
@@ -19,8 +19,8 @@
     <string name="btn_open_settings">Open Settings</string>
 
     <!-- Settings Screen -->
-    <string name="settings_keys_title">Personal AI Keys (Optional — Saved on Phone Only)</string>
-    <string name="settings_keys_subtitle">Only needed if you want to plug in your own paid or free developer keys.</string>
+    <string name="settings_keys_title">Personal AI Keys (Optional, Saved on Phone Only)</string>
+    <string name="settings_keys_subtitle">Optional. Connect your own developer API keys if you want unlimited quota.</string>
     <string name="settings_format_title">Answer Look (A, B, C, D vs Charging %)</string>
     <string name="settings_format_subtitle" formatted="false">Show answer letters (A, B, C, D) or disguise them quietly as battery percentage (91%–94%).</string>
     <string name="format_abcd_title">Option Letters (A, B, C, D)</string>
@@ -67,6 +67,6 @@
     <string name="feature_guide_title">How Prism Solver Works</string>
     <string name="feature_guide_subtitle">Simple 4-step walkthrough.</string>
     <string name="privacy_legal_title">Privacy &amp; Safety</string>
-    <string name="privacy_legal_subtitle">We only read your screen when you tap the pill—nothing is recorded or stored.</string>
+    <string name="privacy_legal_subtitle">Screen reading runs only when you tap Solve. Review how AI, cloud sync, and ads work.</string>
     <string name="btn_open_website_policy">View Full Privacy Policy</string>
 </resources>

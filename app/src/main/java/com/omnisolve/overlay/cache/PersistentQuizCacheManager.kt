@@ -17,7 +17,9 @@ import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.cancellation.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.channels.Channel
@@ -62,7 +64,10 @@ object PersistentQuizCacheManager {
     private const val TAG = "PersistentQuizCache"
     const val PREF_KEY_EXTERNAL_CACHE_URL = "PREF_EXTERNAL_CACHE_URL"
     private const val REMOTE_LOOKUP_TIMEOUT_MS = 450L
+    private const val REMOTE_WRITE_TIMEOUT_MS = 3_000L
     private const val MIN_VALID_CONFIDENCE = 75
+
+    private val remoteSyncScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     @Volatile
     internal var disableNetworkForTest: Boolean = false
@@ -268,11 +273,11 @@ object PersistentQuizCacheManager {
                 val fsJob = launch { ch.trySend(lookupFirestoreCache(context, hash)) }
                 val extJob = launch { ch.trySend(lookupExternalEdgeCache(context, hash)) }
                 var found: CachedQuizAnswer? = null
-                repeat(2) {
+                for (i in 0 until 2) {
                     val cand = ch.receive()
                     if (cand != null) {
                         found = cand
-                        return@repeat
+                        break
                     }
                 }
                 fsJob.cancel()
@@ -374,27 +379,26 @@ object PersistentQuizCacheManager {
         confidence: Int = 92,
         sourceLabel: String = "Prism AI",
         visualHash: String = "",
-        allowOverwriteRejected: Boolean = false
+        allowOverwriteRejected: Boolean = false,
+        awaitRemoteSync: Boolean = false
     ) = withContext(Dispatchers.IO) {
         val cleanBadge = normalizeValidBadge(answerBadge)
         if (cleanBadge.isBlank() || (questionText.isBlank() && visualHash.isBlank())) return@withContext
         val safeConf = confidence.coerceIn(0, 100)
         if (safeConf < MIN_VALID_CONFIDENCE && !allowOverwriteRejected) return@withContext
 
+        val appContext = context.applicationContext
         val effectiveText = questionText.ifBlank { "visual:$visualHash" }
         val hash = computeCanonicalQuestionHash(effectiveText, options, subject)
         val cleanShort = shortAnswer.trim().take(300)
         val cleanExpl = explanation.trim().take(500)
         val cleanVisualHash = visualHash.trim().take(64)
 
-        // Tier 1: Store/Overwrite in Local Room SQLite cache (self-healing when user re-solved!)
+        // Tier 1: Store/Overwrite in Local Room SQLite cache atomically (<2ms, self-healing)
         runCatching {
-            val dao = PrismStudyDatabase.getInstance(context).sharedAnswerCacheDao()
-            if (allowOverwriteRejected && cleanVisualHash.isNotBlank()) {
-                dao.deleteByVisualHash(cleanVisualHash)
-            }
-            dao.upsert(
-                SharedAnswerCacheEntity(
+            val dao = PrismStudyDatabase.getInstance(appContext).sharedAnswerCacheDao()
+            dao.upsertAtomic(
+                entity = SharedAnswerCacheEntity(
                     questionHash = hash,
                     questionPreview = questionText.trim().ifBlank { "Visual Math / Diagram Question" }.take(200),
                     answerBadge = cleanBadge,
@@ -406,7 +410,8 @@ object PersistentQuizCacheManager {
                     hitCount = 1,
                     updatedAtMs = System.currentTimeMillis(),
                     visualHash = cleanVisualHash
-                )
+                ),
+                replaceOtherVisualMatches = allowOverwriteRejected
             )
             dao.pruneOldEntries(500)
             // Once a freshly verified answer overwrites the old entry, lift the session block so it serves cleanly offline
@@ -418,40 +423,50 @@ object PersistentQuizCacheManager {
 
         if (disableNetworkForTest) return@withContext
 
-        // Tier 2: Best-effort write to Firestore Shared Crowd Cache (create-only, immutable)
-        resolveFirestoreOrNull(context)?.let { (db, uid) ->
-            runCatching {
-                val payload = hashMapOf<String, Any>(
-                    "questionHash" to hash,
-                    "createdByUid" to uid,
-                    "answerBadge" to cleanBadge,
-                    "shortAnswer" to cleanShort,
-                    "explanation" to cleanExpl,
-                    "subject" to subject.id.uppercase(),
-                    "confidence" to safeConf.coerceIn(70, 100),
-                    "createdAt" to FieldValue.serverTimestamp()
-                )
-                db.collection("sharedQuizCache").document(hash).set(payload).await()
+        // Tier 2 & 3: Write to Firestore Shared Crowd Cache & External Edge Cache asynchronously
+        // so user-facing answer delivery is never stalled by remote network writes.
+        val performRemoteSync: suspend () -> Unit = {
+            withTimeoutOrNull(REMOTE_WRITE_TIMEOUT_MS) {
+                resolveFirestoreOrNull(appContext)?.let { (db, uid) ->
+                    runCatching {
+                        val payload = hashMapOf<String, Any>(
+                            "questionHash" to hash,
+                            "createdByUid" to uid,
+                            "answerBadge" to cleanBadge,
+                            "shortAnswer" to cleanShort,
+                            "explanation" to cleanExpl,
+                            "subject" to subject.id.uppercase(),
+                            "confidence" to safeConf.coerceIn(70, 100),
+                            "createdAt" to FieldValue.serverTimestamp()
+                        )
+                        db.collection("sharedQuizCache").document(hash).set(payload).await()
+                    }
+                }
+
+                readExternalCacheEndpoint(appContext)?.let { baseUrl ->
+                    runCatching {
+                        val json = JSONObject().apply {
+                            put("questionHash", hash)
+                            put("answerBadge", cleanBadge)
+                            put("shortAnswer", cleanShort)
+                            put("explanation", cleanExpl)
+                            put("subject", subject.id.uppercase())
+                            put("confidence", safeConf.coerceIn(70, 100))
+                        }.toString()
+                        val req = Request.Builder()
+                            .url(baseUrl)
+                            .post(json.toRequestBody("application/json; charset=utf-8".toMediaType()))
+                            .build()
+                        externalHttpClient.newCall(req).execute().close()
+                    }
+                }
             }
         }
 
-        // Tier 3: Optional external edge cache write-back
-        readExternalCacheEndpoint(context)?.let { baseUrl ->
-            runCatching {
-                val json = JSONObject().apply {
-                    put("questionHash", hash)
-                    put("answerBadge", cleanBadge)
-                    put("shortAnswer", cleanShort)
-                    put("explanation", cleanExpl)
-                    put("subject", subject.id.uppercase())
-                    put("confidence", safeConf.coerceIn(70, 100))
-                }.toString()
-                val req = Request.Builder()
-                    .url(baseUrl)
-                    .post(json.toRequestBody("application/json; charset=utf-8".toMediaType()))
-                    .build()
-                externalHttpClient.newCall(req).execute().close()
-            }
+        if (awaitRemoteSync) {
+            performRemoteSync()
+        } else {
+            remoteSyncScope.launch { performRemoteSync() }
         }
     }
 
@@ -480,5 +495,20 @@ object PersistentQuizCacheManager {
             }
         }
         results
+    }
+
+    /**
+     * Automatically clears local cached MCQ entries older than 7 days.
+     */
+    suspend fun purgeExpiredLocalCache(
+        context: Context,
+        nowMs: Long = System.currentTimeMillis()
+    ): Int = withContext(Dispatchers.IO) {
+        val cutoffMs = (nowMs - 7L * 24L * 60L * 60L * 1000L).coerceAtLeast(0L)
+        runCatching {
+            PrismStudyDatabase.getInstance(context.applicationContext)
+                .sharedAnswerCacheDao()
+                .deleteOlderThan(cutoffMs)
+        }.getOrDefault(0)
     }
 }

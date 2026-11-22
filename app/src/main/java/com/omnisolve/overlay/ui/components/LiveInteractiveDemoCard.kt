@@ -74,19 +74,19 @@ private val DEMO_CASES = listOf(
         options = listOf("A) 3", "B) 6", "C) 9", "D) 12"),
         correctIndex = 1,
         answerLetter = "B",
-        explanation = "(1/2)·2k = k, so Σ(k=1..3) k = 1 + 2 + 3 = 6. Vision reads ½ & Σ directly from pixels.",
-        latencyLabel = "Math Vision • Instant"
+        explanation = "(1/2)·2k = k, so Σ(k=1..3) k = 1 + 2 + 3 = 6. Vision reads ½ & Σ directly from the image.",
+        latencyLabel = "Math Vision • Sample"
     ),
     InteractiveDemoCase(
         id = "mcq_fast",
         tabLabel = "MCQ",
-        modeBadge = "Offline Room Cache",
+        modeBadge = "Offline Cache",
         question = "Which organelle produces most ATP inside a cell?",
         options = listOf("A) Ribosome", "B) Mitochondria", "C) Golgi Body", "D) Lysosome"),
         correctIndex = 1,
         answerLetter = "B",
-        explanation = "Mitochondria generate ATP via oxidative phosphorylation — cached offline for 0ms repeat hits.",
-        latencyLabel = "Cached Offline • 0ms"
+        explanation = "Mitochondria generate ATP via oxidative phosphorylation. Saved locally for quick repeat lookups.",
+        latencyLabel = "Cached Offline"
     ),
     InteractiveDemoCase(
         id = "match_cols",
@@ -161,7 +161,7 @@ fun LiveInteractiveDemoCard(
                     maxLines = 1
                 )
                 Text(
-                    text = "Tap the mock pill to see how Prism solves",
+                    text = "Tap the pill below to try a sample solve",
                     style = MaterialTheme.typography.bodySmall.copy(
                         color = palette.inkSecondary,
                         fontSize = 11.5.sp
@@ -207,7 +207,7 @@ fun LiveInteractiveDemoCard(
             }
         }
 
-        // Mock Quiz Question Surface
+        // Sample Quiz Question Surface
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -242,7 +242,7 @@ fun LiveInteractiveDemoCard(
                     )
                 }
 
-                // Interactive Mock Floating Pill CTA
+                // Interactive Sample Floating Pill CTA
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -269,7 +269,7 @@ fun LiveInteractiveDemoCard(
                         DemoRunState.IDLE -> {
                             Icon(
                                 imageVector = Icons.Filled.AutoAwesome,
-                                contentDescription = "Tap mock pill to solve",
+                                contentDescription = "Try sample solve",
                                 tint = palette.onAccentInk,
                                 modifier = Modifier.size(14.dp)
                             )

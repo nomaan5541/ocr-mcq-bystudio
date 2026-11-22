@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -33,8 +34,22 @@ interface SharedAnswerCacheDao {
     @Query("DELETE FROM shared_answer_cache WHERE visualHash = :visualHash AND visualHash != ''")
     suspend fun deleteByVisualHash(visualHash: String)
 
+    @Query("DELETE FROM shared_answer_cache WHERE visualHash = :visualHash AND visualHash != '' AND questionHash != :keepHash")
+    suspend fun deleteOtherVisualHashEntries(visualHash: String, keepHash: String)
+
+    @Transaction
+    suspend fun upsertAtomic(entity: SharedAnswerCacheEntity, replaceOtherVisualMatches: Boolean) {
+        if (replaceOtherVisualMatches && entity.visualHash.isNotBlank()) {
+            deleteOtherVisualHashEntries(entity.visualHash, entity.questionHash)
+        }
+        upsert(entity)
+    }
+
     @Query("DELETE FROM shared_answer_cache WHERE questionHash NOT IN (SELECT questionHash FROM shared_answer_cache ORDER BY updatedAtMs DESC LIMIT :keepLimit)")
     suspend fun pruneOldEntries(keepLimit: Int = 500)
+
+    @Query("DELETE FROM shared_answer_cache WHERE updatedAtMs < :cutoffMs")
+    suspend fun deleteOlderThan(cutoffMs: Long): Int
 
     @Query("DELETE FROM shared_answer_cache")
     suspend fun clearAll()

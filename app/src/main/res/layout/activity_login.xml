@@ -4,16 +4,15 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:fitsSystemWindows="true"
-    android:background="#F4F8FD">
+    android:background="#0A0A0C">
 
-    <!-- Daylight White Glass Top Action Bar (Constrained max width 600dp on tablets/TVs) -->
+    <!-- Dark Editorial Top Action Bar -->
     <androidx.constraintlayout.widget.ConstraintLayout
         android:id="@+id/login_header_surface"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:minHeight="60dp"
-        android:background="#F5FFFFFF"
-        android:elevation="4dp"
+        android:background="#121316"
         android:paddingStart="16dp"
         android:paddingEnd="16dp"
         android:paddingTop="10dp"
@@ -23,71 +22,71 @@
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintWidth_max="600dp">
 
-            <TextView
-                android:id="@+id/tv_login_header_title"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_marginEnd="12dp"
-                android:gravity="center_vertical|start"
-                android:text="@string/login_header_title"
-                android:textColor="#020617"
-                android:textSize="16sp"
-                android:textStyle="bold"
-                android:maxLines="1"
-                android:ellipsize="end"
-                app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintEnd_toStartOf="@id/btn_login_done"
-                app:layout_constraintTop_toTopOf="parent"
-                app:layout_constraintBottom_toTopOf="@id/tv_login_header_subtitle"
-                app:layout_constraintVertical_chainStyle="packed" />
+        <TextView
+            android:id="@+id/tv_login_header_title"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="12dp"
+            android:gravity="center_vertical|start"
+            android:text="@string/login_header_title"
+            android:textColor="#EEEEEE"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:maxLines="1"
+            android:ellipsize="end"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toStartOf="@id/btn_login_done"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintBottom_toTopOf="@id/tv_login_header_subtitle"
+            app:layout_constraintVertical_chainStyle="packed" />
 
-            <TextView
-                android:id="@+id/tv_login_header_subtitle"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_marginEnd="12dp"
-                android:layout_marginTop="2dp"
-                android:gravity="center_vertical|start"
-                android:text="Sign in once, then tap Done in the corner"
-                android:textColor="#0F172A"
-                android:textSize="11.5sp"
-                android:maxLines="2"
-                android:ellipsize="end"
-                app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintEnd_toStartOf="@id/btn_login_done"
-                app:layout_constraintTop_toBottomOf="@id/tv_login_header_title"
-                app:layout_constraintBottom_toBottomOf="parent" />
+        <TextView
+            android:id="@+id/tv_login_header_subtitle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="12dp"
+            android:layout_marginTop="2dp"
+            android:gravity="center_vertical|start"
+            android:text="Sign in once, then tap Done"
+            android:textColor="#9A9AA2"
+            android:textSize="12sp"
+            android:maxLines="2"
+            android:ellipsize="end"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toStartOf="@id/btn_login_done"
+            app:layout_constraintTop_toBottomOf="@id/tv_login_header_title"
+            app:layout_constraintBottom_toBottomOf="parent" />
 
-            <Button
-                android:id="@+id/btn_login_done"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:minWidth="88dp"
-                android:minHeight="48dp"
-                android:paddingStart="16dp"
-                android:paddingEnd="16dp"
-                android:paddingTop="8dp"
-                android:paddingBottom="8dp"
-                android:gravity="center"
-                android:maxLines="1"
-                android:ellipsize="end"
-                android:backgroundTint="#D71921"
-                android:text="@string/login_done_button"
-                android:textAllCaps="false"
-                android:textColor="#FFFFFF"
-                android:textSize="13sp"
-                android:textStyle="bold"
-                app:layout_constraintEnd_toEndOf="parent"
-                app:layout_constraintTop_toTopOf="parent"
-                app:layout_constraintBottom_toBottomOf="parent" />
+        <Button
+            android:id="@+id/btn_login_done"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:minWidth="88dp"
+            android:minHeight="48dp"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:paddingTop="8dp"
+            android:paddingBottom="8dp"
+            android:gravity="center"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:backgroundTint="#D71921"
+            android:text="@string/login_done_button"
+            android:textAllCaps="false"
+            android:textColor="#EEEEEE"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintBottom_toBottomOf="parent" />
 
-        </androidx.constraintlayout.widget.ConstraintLayout>
+    </androidx.constraintlayout.widget.ConstraintLayout>
 
     <View
         android:id="@+id/login_header_divider"
         android:layout_width="0dp"
         android:layout_height="1dp"
-        android:background="#22D71921"
+        android:background="#262830"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintTop_toBottomOf="@id/login_header_surface" />
@@ -100,17 +99,17 @@
         android:indeterminate="false"
         android:max="100"
         android:progressTint="#D71921"
-        android:progressBackgroundTint="#E2E8F0"
+        android:progressBackgroundTint="#1E2026"
         android:visibility="gone"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintTop_toBottomOf="@id/login_header_divider" />
 
-    <!-- Google Gemini WebView constrained cleanly to remaining viewport -->
     <WebView
         android:id="@+id/login_webview"
         android:layout_width="0dp"
         android:layout_height="0dp"
+        android:background="#0A0A0C"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintTop_toBottomOf="@id/login_progress_bar"

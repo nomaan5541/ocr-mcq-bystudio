@@ -22,7 +22,7 @@ import java.util.Calendar
 import kotlin.random.Random
 
 data class CustomPinnedNotifConfig(
-    val title: String = "Solve Anything • Study Pin",
+    val title: String = "Prism Solver • Study Pin",
     val body: String = "(1-A|2-B|3-D|4-A)",
     val templateId: String = TEMPLATE_FORMS_KEY,
     val showCopy: Boolean = true,
@@ -41,9 +41,10 @@ data class CustomPinnedNotifConfig(
 
 /**
  * Manages:
- * 1. Detailed "Welcome to Solve Anything" first notification for new users
- * 2. Hidden pool of 28 engaging, playful/witty/flirty re-engagement check-ins (>= 2/week when inactive)
- * 3. Fully customizable ongoing Pinned Notification Bar controller with Copy/Solve/Stealth/Unpin actions
+ * 1. Curated Welcome notifications for new Prism Solver users
+ * 2. Hidden pool of 26 optional Hinglish study reminders, comeback nudges, and Prism tips (>= 2/week when inactive)
+ * 3. Dedicated milestone, exam countdown, and solve-completion notification templates
+ * 4. Customizable ongoing Pinned Notification Bar controller with Copy/Solve/Stealth/Unpin actions
  */
 object PrismEngagementNotificationManager {
 
@@ -82,147 +83,227 @@ object PrismEngagementNotificationManager {
         val expandedBody: String
     )
 
-    // Strictly internal curated pool of 28 playful, friendly notifications (not shown in app UI)
+    data class CuratedNotificationCopy(
+        val title: String,
+        val body: String,
+        val expandedBody: String = body
+    )
+
+    // Curated Welcome variants (1-3)
+    val WELCOME_TEMPLATES: List<CuratedNotificationCopy> = listOf(
+        CuratedNotificationCopy(
+            title = "Welcome to Prism ✨",
+            body = "MCQ ho ya tricky sawaal, Prism saath hai. Aaj ek question crack karke dekhein? 😉"
+        ),
+        CuratedNotificationCopy(
+            title = "Ab padhai ka scene set",
+            body = "Question aap lao, Prism help karega. Hero wali entry toh aapki hi hai 😉"
+        ),
+        CuratedNotificationCopy(
+            title = "Prism mein aapka welcome hai",
+            body = "Ek question se shuru karein? Dekhte hain aaj kitni jaldi solve hota hai."
+        )
+    )
+
+    // Curated Progress & Streak milestone templates (16-21), used only when the milestone is earned
+    val PROGRESS_AND_STREAK_TEMPLATES: List<CuratedNotificationCopy> = listOf(
+        CuratedNotificationCopy(
+            title = "3 din ka streak 🔥",
+            body = "Wah! Routine ban raha hai. Kal bhi ek quick round?"
+        ),
+        CuratedNotificationCopy(
+            title = "7 din, solid scene!",
+            body = "Aapki consistency full hero mode mein hai 😉"
+        ),
+        CuratedNotificationCopy(
+            title = "10 questions done ✅",
+            body = "Dheere-dheere progress ban rahi hai. Aaj ka round bhi complete!"
+        ),
+        CuratedNotificationCopy(
+            title = "Personal best! 🏆",
+            body = "Aapne apna best score beat kiya. Kya baat hai, topper ji."
+        ),
+        CuratedNotificationCopy(
+            title = "Aaj ka goal complete",
+            body = "Shabaash! Ab bina guilt ke break banta hai ☕"
+        ),
+        CuratedNotificationCopy(
+            title = "Accuracy mein improvement 📈",
+            body = "Aapki practice rang la rahi hai. Aise hi chalte rahiye!"
+        )
+    )
+
+    // Curated Solve Completion templates (39-40)
+    val SOLVE_COMPLETION_TEMPLATES: List<CuratedNotificationCopy> = listOf(
+        CuratedNotificationCopy(
+            title = "Aapka answer ready hai ✅",
+            body = "Prism ne solve complete kar diya. App kholkar dekh lijiye."
+        ),
+        CuratedNotificationCopy(
+            title = "Solve ho gaya",
+            body = "Aapka question ready hai. Prism mein result check kar lijiye."
+        )
+    )
+
+    fun formatExamCountdownCopy(daysLeft: Int): CuratedNotificationCopy {
+        val safeDays = daysLeft.coerceAtLeast(1)
+        return if (safeDays <= 3) {
+            CuratedNotificationCopy(
+                title = "Bas thoda sa aur 💪",
+                body = "$safeDays din baaki hain. Aaj ka ek round bhi count karta hai."
+            )
+        } else {
+            CuratedNotificationCopy(
+                title = "Exam tak $safeDays din baaki",
+                body = "Aaj ka chhota round, kal ka confidence. 5 questions kar lein?"
+            )
+        }
+    }
+
+    fun formatDailyGoalReminderCopy(targetQuestions: Int): CuratedNotificationCopy {
+        val safeTarget = targetQuestions.coerceAtLeast(1)
+        return CuratedNotificationCopy(
+            title = "Aaj ka target yaad hai?",
+            body = "Aapne $safeTarget questions ka goal set kiya tha. Jab ready hon, Prism khol lena."
+        )
+    }
+
+    // Curated internal pool of 26 optional Hinglish study reminders, comeback nudges, tips, and light prompts
     private val HIDDEN_ENGAGEMENT_POOL: List<NudgeMessage> = listOf(
+        // Study reminders (4-9)
         NudgeMessage(
-            title = "Okay, quick question — did you forget about me?",
-            body = "Your floating pill is waiting whenever you're studying.",
-            expandedBody = "Your screen has been way too quiet lately. Summon the floating Dynamic Island anytime and get answers in seconds."
+            title = "Chai se pehle ek MCQ? ☕",
+            body = "Bas ek quick round, chai bhi garam, dimaag bhi warm-up.",
+            expandedBody = "Bas ek quick round, chai bhi garam, dimaag bhi warm-up. Jab ready hon, Prism kholkar ek sawaal check kar lein."
         ),
         NudgeMessage(
-            title = "Someone's looking extra sharp today...",
-            body = "Bring your favorite quiz helper along for backup.",
-            expandedBody = "Confidence feels better when Best Accuracy mode double-checks tough questions for you. Tap in whenever you're ready."
+            title = "Aaj ka ek sawaal ho jaaye?",
+            body = "2 minute nikaal lo, topper ji. Prism ready hai 😉",
+            expandedBody = "2 minute nikaal lo, topper ji. Prism ready hai 😉 Ek quick MCQ se aaj ka revision shuru karein."
         ),
         NudgeMessage(
-            title = "I saved your favorite spot at the top",
-            body = "Prism Solver is ready whenever you are.",
-            expandedBody = "Whether it's a late-night study sheet or a sudden quiz link, your floating pill snaps right into place in one tap."
+            title = "Break mila?",
+            body = "Ek quick question kar lein? Phir araam se break continue.",
+            expandedBody = "Ek quick question kar lein? Phir araam se break continue. Bas floating pill tap karke check kar sakte hain."
         ),
         NudgeMessage(
-            title = "Don't leave your study helper hanging",
-            body = "Fast, clear answers are one tap away.",
-            expandedBody = "Paste a Google Form link or open your quiz and tap the top pill whenever you need a quick check."
+            title = "Padhai ka chhota sa date? 😉",
+            body = "Aap, Prism aur ek MCQ. Aaj ka plan bura nahi hai.",
+            expandedBody = "Aap, Prism aur ek MCQ. Aaj ka plan bura nahi hai. Jab free hon tab ek quick round kar lein."
         ),
         NudgeMessage(
-            title = "One tap wakes up your floating pill",
-            body = "Right where you left it at the top of your screen.",
-            expandedBody = "Subtle when you want privacy, fast when you want answers. Open Prism Solver anytime."
+            title = "Ek question pending hai",
+            body = "Jab free hon, Prism kholkar ek quick round kar lena.",
+            expandedBody = "Jab free hon, Prism kholkar ek quick round kar lena. Aapke saved notes aur settings wahin ready hain."
         ),
         NudgeMessage(
-            title = "Still thinking about how fast we solved that last one",
-            body = "Want to knock out another study session today?",
-            expandedBody = "Fast Answer and Best Accuracy are ready whenever you need help on a tricky question."
+            title = "Thoda practice, thoda confidence",
+            body = "Aaj bas ek MCQ. Baaki kal ka scene kal dekhenge.",
+            expandedBody = "Aaj bas ek MCQ. Baaki kal ka scene kal dekhenge. Chhota step bhi kaafi hota hai."
+        ),
+        // Comeback notifications (10-15)
+        NudgeMessage(
+            title = "Arre, comeback karein?",
+            body = "Koi pressure nahi. Ek easy question se phir shuru kar sakte hain.",
+            expandedBody = "Koi pressure nahi. Ek easy question se phir shuru kar sakte hain. Apne pace par aage badhein."
         ),
         NudgeMessage(
-            title = "You + Floating Pill = Stress-Free Study",
-            body = "Your shortcut to quick answers is one tap away.",
-            expandedBody = "Pin answers cleanly to your notification bar, disguise them as battery percentage, or expand explanations anytime."
+            title = "Prism yahin hai ✨",
+            body = "Jab mann ho, ek quick MCQ se restart kar lena.",
+            expandedBody = "Jab mann ho, ek quick MCQ se restart kar lena. Floating pill aur Google Forms helper ready hain."
         ),
         NudgeMessage(
-            title = "Are you ghosting your smartest study partner?",
-            body = "Even Charging 92% Disguise noticed you went quiet.",
-            expandedBody = "Come say hi — we kept your pill look, transparency, and preferences saved just how you like them."
+            title = "Kaafi din hue!",
+            body = "Perfect streak ki zaroorat nahi. Aaj bas ek sawaal kar lein?",
+            expandedBody = "Perfect streak ki zaroorat nahi. Aaj bas ek sawaal kar lein? Simple start sabse best hota hai."
         ),
         NudgeMessage(
-            title = "Wait... have you tried Google Forms Auto-Fill yet?",
-            body = "Paste one quiz link to get every answer neatly pinned.",
-            expandedBody = "Paste a Google Form link to get clean keys like (1-A|2-B|3-D|4-A) pinned in your status bar or auto-filled inside the form."
+            title = "Ek chhoti si comeback entry? 🎬",
+            body = "Prism kholo, ek question try karo. Dheere-dheere rhythm aa jayegi.",
+            expandedBody = "Prism kholo, ek question try karo. Dheere-dheere rhythm aa jayegi."
         ),
         NudgeMessage(
-            title = "Playing hard to get, huh?",
-            body = "I respect it — your study streak is ready when you are.",
-            expandedBody = "One quick session keeps everything fresh. Open Prism Solver and start your floating helper."
+            title = "Aaj se phir shuru?",
+            body = "Kal ka hisaab chhodo. Aaj ka ek MCQ kaafi hai.",
+            expandedBody = "Kal ka hisaab chhodo. Aaj ka ek MCQ kaafi hai. Bas app kholkar ek question try kar lein."
         ),
         NudgeMessage(
-            title = "Study smarter, finish earlier",
-            body = "Switch to Best Accuracy whenever a question gets tricky.",
-            expandedBody = "Why guess on tough questions when Best Accuracy can double-check the answer and explain why?"
+            title = "No tension, boss",
+            body = "Gap aa gaya toh kya hua? Ek question se wapas aate hain.",
+            expandedBody = "Gap aa gaya toh kya hua? Ek question se wapas aate hain. Aaj bas ek quick check."
+        ),
+        // Exam revision reminders (23-25)
+        NudgeMessage(
+            title = "Aaj ka revision scene?",
+            body = "Exam paas aa raha hai, ek quick MCQ round helpful rahega.",
+            expandedBody = "Exam paas aa raha hai, ek quick MCQ round helpful rahega. Saved questions aur explanations bhi review kar sakte hain."
         ),
         NudgeMessage(
-            title = "Smooth move alert: Disguise Mode is ready",
-            body = "Show 91%–94% charging instead of A, B, C, or D.",
-            expandedBody = "Keep your screen looking clean and simple while still getting the exact option you need."
+            title = "Revision ka mini-round",
+            body = "5 minute ka practice session? Chhota step, badi tasalli 😉",
+            expandedBody = "5 minute ka practice session? Chhota step, badi tasalli 😉"
         ),
         NudgeMessage(
-            title = "Just checking in on today's study goals",
-            body = "Got a tough quiz or worksheet tonight? Let's clear it faster.",
-            expandedBody = "Use Photo & Diagrams mode whenever a question has math equations, graphs, or charts."
+            title = "Exam week aa gaya",
+            body = "Aaj ek focused round kar lo, phir araam se next topic.",
+            expandedBody = "Aaj ek focused round kar lo, phir araam se next topic. Math ya diagrams ke liye Photo & Diagrams mode ready hai."
+        ),
+        // Prism tips (28-32)
+        NudgeMessage(
+            title = "Screenshot tip 💡",
+            body = "Question aur saare options frame mein hon, toh Prism ko solve karna aasaan hota hai.",
+            expandedBody = "Question aur saare options frame mein hon, toh Prism ko solve karna aasaan hota hai."
         ),
         NudgeMessage(
-            title = "Your floating pill looks even better in action",
-            body = "Drag it to any corner of your screen while you work.",
-            expandedBody = "Pick Small, Normal, or Large pill size and adjust transparency in Floating Pill Look anytime."
+            title = "Photo thodi blur hai?",
+            body = "Ek clear screenshot try karein, answer dhoondhna phir zyada smooth hoga.",
+            expandedBody = "Ek clear screenshot try karein, answer dhoondhna phir zyada smooth hoga."
         ),
         NudgeMessage(
-            title = "Honest confession: I love tough questions",
-            body = "Put a real challenge on your screen and watch.",
-            expandedBody = "Math equations, science MCQs, history, or matching lists — Prism Solver handles them all."
+            title = "Options bhi zaroor dikhayein",
+            body = "Question ke saath A, B, C, D frame mein rakhein. Prism ko full scene samajh aayega.",
+            expandedBody = "Question ke saath A, B, C, D frame mein rakhein. Prism ko full scene samajh aayega."
         ),
         NudgeMessage(
-            title = "Two words: Effortless answers.",
-            body = "Stop typing long questions into search bars. Tap the pill once.",
-            expandedBody = "Reads the question directly off your screen so you can stay focused on your quiz."
+            title = "NOT ya EXCEPT dikha?",
+            body = "Aise words par ek baar extra nazar daal lena. Chhoti detail, bada difference 😉",
+            expandedBody = "Aise words par ek baar extra nazar daal lena. Chhoti detail, bada difference 😉"
         ),
         NudgeMessage(
-            title = "Miss that quiet helper at the top of your screen?",
-            body = "Always ready to turn confusion into a clear A, B, C, or D.",
-            expandedBody = "Open Prism Solver now — your saved notes and study cards are right where you left them."
+            title = "Ek option atak gaya?",
+            body = "Question dobara padhkar options compare karein, kabhi clue wahi chhupa hota hai.",
+            expandedBody = "Question dobara padhkar options compare karein, kabhi clue wahi chhupa hota hai."
+        ),
+        // Light and playful notifications (33-38)
+        NudgeMessage(
+            title = "MCQ ne attitude dikhaya? 😏",
+            body = "Prism kholo, milkar uska scene set karte hain.",
+            expandedBody = "Prism kholo, milkar uska scene set karte hain. Floating pill se ek tap mein answer aur explanation dekhein."
         ),
         NudgeMessage(
-            title = "Let's make studying quick and simple",
-            body = "Zero clutter, instant answers, and gentle pocket buzzes.",
-            expandedBody = "Turn on pocket vibration buzzes (1 to 4 pulses) or pin quick notes right in your notification bar."
+            title = "Question tough, aap tougher",
+            body = "Ek aur try karein? Is baar answer pakka paas hoga.",
+            expandedBody = "Ek aur try karein? Is baar answer pakka paas hoga. Tricky sawaal ke liye Best Accuracy mode use kar sakte hain."
         ),
         NudgeMessage(
-            title = "Careful — skipping practice makes your streak nervous",
-            body = "Come test one quick question in 10 seconds.",
-            expandedBody = "Keep your edge sharp with saved notes and easy export whenever you want to review."
+            title = "Aaj dimaag ki hero entry",
+            body = "Ek quick question se shuru karein. Baaki story baad mein 😉",
+            expandedBody = "Ek quick question se shuru karein. Baaki story baad mein 😉"
         ),
         NudgeMessage(
-            title = "You know where to find me when questions get hard",
-            body = "Ready to explain any answer in plain steps.",
-            expandedBody = "Fast Answer, Best Accuracy, and Photo & Diagrams are waiting whenever you need a hand."
+            title = "Padhai ka plot twist? 🎬",
+            body = "Naya MCQ try karein, dekhte hain ending kya hoti hai.",
+            expandedBody = "Naya MCQ try karein, dekhte hain ending kya hoti hai."
         ),
         NudgeMessage(
-            title = "Quick reminder: smart looks good on you",
-            body = "Especially when you finish ahead of schedule.",
-            expandedBody = "Tap to start your floating helper or pin your Google Form answer key to your status bar."
+            title = "Aap aur MCQ, interesting jodi 😉",
+            body = "Ek quick round karke dekhein? Prism side mein ready hai.",
+            expandedBody = "Ek quick round karke dekhein? Prism side mein ready hai."
         ),
         NudgeMessage(
-            title = "Got another quiz link today?",
-            body = "Don't stress over it alone — open Prism Solver first.",
-            expandedBody = "Solve whole Google Forms in seconds or get help right over your browser."
-        ),
-        NudgeMessage(
-            title = "Patiently waiting while you take a break...",
-            body = "Come back anytime — your helper is ready in one tap.",
-            expandedBody = "Fast start, clean dark interface, and a customizable floating pill waiting for you."
-        ),
-        NudgeMessage(
-            title = "Screenshots stay private on your phone",
-            body = "Nothing recorded, nothing saved after showing your answer.",
-            expandedBody = "We only read the question on your screen when you tap the pill."
-        ),
-        NudgeMessage(
-            title = "Ready for tonight's study session?",
-            body = "Pin your answer bar or tap the floating pill anytime.",
-            expandedBody = "Open Notifications in Prism Solver to pin custom study notes or quick actions to your status bar."
-        ),
-        NudgeMessage(
-            title = "A little help goes a long way",
-            body = "Honestly, we make a pretty great study team.",
-            expandedBody = "Switch anytime between Fast Answer, Best Accuracy, or Photo & Diagrams."
-        ),
-        NudgeMessage(
-            title = "Too handy to ignore, too fast to replace",
-            body = "Give your floating pill one quick spin today.",
-            expandedBody = "Adjust battery & memory settings in Stats anytime to match your phone."
-        ),
-        NudgeMessage(
-            title = "Before today wraps up — one small win?",
-            body = "Open Prism Solver for 30 seconds and review your notes.",
-            expandedBody = "Check your saved questions, pin a Google Form key, or start the floating pill."
+            title = "Chalo, ek sawaal nipta dein",
+            body = "Phir aapki marzi: break, chai, ya ek aur round.",
+            expandedBody = "Phir aapki marzi: break, chai, ya ek aur round."
         )
     )
 
@@ -281,24 +362,25 @@ object PrismEngagementNotificationManager {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        val welcome = WELCOME_TEMPLATES.first()
         val detailText = buildString {
-            appendLine("Welcome to Prism Solver — your instant quiz and study helper is ready.")
+            appendLine(welcome.body)
             appendLine()
-            appendLine("What you can do right away:")
-            appendLine("• Floating Dynamic Island: Tap once to read any question on your screen in seconds, or drag it anywhere you like.")
-            appendLine("• Choose Your Style: Use Fast Answer for quick checks, Best Accuracy to double-check, or Photo & Diagrams for math and charts.")
-            appendLine("• Google Forms Helper: Paste a form link to get answers like (1-A|2-B|3-D|4-A) pinned in your notification bar or auto-filled.")
-            appendLine("• Disguise Mode: Show answers quietly as Charging 92% or gentle pocket vibration buzzes.")
+            appendLine("Quick ways to use Prism:")
+            appendLine("• Floating Dynamic Island: Tap once to read a question on your screen, or drag it where you like.")
+            appendLine("• Solving Styles: Pick Fast Answer, Best Accuracy, or Photo & Diagrams for math and charts.")
+            appendLine("• Google Forms Helper: Paste a form link to solve questions together or pin your answer key.")
+            appendLine("• Quiet Display: Show answers as Charging 92% or gentle pocket vibration pulses.")
         }.trimEnd()
 
         return NotificationCompat.Builder(context, CHANNEL_WELCOME_ENGAGEMENT)
             .setSmallIcon(R.drawable.ic_prism_orb)
             .setColor(AndroidColor.parseColor("#D71921"))
-            .setContentTitle("Welcome to Solve Anything")
-            .setContentText("Your floating pill, solving styles & Google Forms helper are ready.")
+            .setContentTitle(welcome.title)
+            .setContentText(welcome.body)
             .setStyle(
                 NotificationCompat.BigTextStyle()
-                    .setBigContentTitle("Welcome to Solve Anything • Ready to Help")
+                    .setBigContentTitle("Welcome to Prism")
                     .bigText(detailText)
             )
             .setAutoCancel(true)
@@ -519,8 +601,8 @@ object PrismEngagementNotificationManager {
     fun loadCustomPinConfig(context: Context): CustomPinnedNotifConfig {
         val prefs = context.getSharedPreferences(PREF_FILE, Context.MODE_PRIVATE)
         return CustomPinnedNotifConfig(
-            title = prefs.getString(PREF_PIN_TITLE, "Solve Anything • Study Pin")
-                ?: "Solve Anything • Study Pin",
+            title = prefs.getString(PREF_PIN_TITLE, "Prism Solver • Study Pin")
+                ?: "Prism Solver • Study Pin",
             body = prefs.getString(PREF_PIN_BODY, "(1-A|2-B|3-D|4-A)")
                 ?: "(1-A|2-B|3-D|4-A)",
             templateId = prefs.getString(PREF_PIN_TEMPLATE, CustomPinnedNotifConfig.TEMPLATE_FORMS_KEY)
@@ -565,7 +647,7 @@ object PrismEngagementNotificationManager {
         val cleanTitle = if (config.stealthDisguise) {
             "System Power • Balanced (92%)"
         } else {
-            config.title.trim().ifBlank { "Solve Anything • Pinned Key" }.take(56)
+            config.title.trim().ifBlank { "Prism Solver • Pinned Key" }.take(56)
         }
         val cleanBody = config.body.trim().ifBlank { "(1-A|2-B|3-D|4-A)" }
 

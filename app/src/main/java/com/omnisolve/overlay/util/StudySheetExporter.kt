@@ -22,7 +22,7 @@ object StudySheetExporter {
     fun buildMarkdownContent(entries: List<SolvedHistoryEntry>): String {
         val dateStr = SimpleDateFormat("MMM d, yyyy • h:mm a", Locale.getDefault()).format(Date())
         return buildString {
-            appendLine("# Prism AI — Study Sheet & Flashcards")
+            appendLine("# Prism Solver: Study Sheet & Flashcards")
             appendLine("_Generated: ${dateStr}_")
             appendLine()
             if (entries.isEmpty()) {
@@ -108,7 +108,7 @@ object StudySheetExporter {
             var y = margin + 16f
 
             val dateStr = SimpleDateFormat("MMM d, yyyy • h:mm a", Locale.getDefault()).format(Date())
-            canvas.drawText("Prism AI — Study Sheet & Flashcards", margin, y, titlePaint)
+            canvas.drawText("Prism Solver: Study Sheet & Flashcards", margin, y, titlePaint)
             y += 18f
             canvas.drawText("Exported $dateStr  •  ${entries.size} item(s)", margin, y, subPaint)
             y += 26f

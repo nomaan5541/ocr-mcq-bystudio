@@ -161,6 +161,77 @@ object GoogleFormsNotificationHelper {
         }
     }
 
+    /**
+     * Pins a solved Photo / PDF / Paper Scan answer key to Android's notification shade
+     * so students can glance at answers while viewing another app without switching screens.
+     */
+    fun pinFreeformAnswerNotification(
+        context: Context,
+        title: String,
+        answerText: String
+    ): Boolean {
+        val cleaned = answerText.replace("**", "").trim()
+        if (cleaned.isBlank()) return false
+        return try {
+            ensureChannel(context)
+            val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+                ?: return false
+            val openAppIntent = PendingIntent.getActivity(
+                context,
+                404,
+                Intent(context, MainActivity::class.java).apply {
+                    flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                },
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            val copyPendingIntent = PendingIntent.getBroadcast(
+                context,
+                405,
+                Intent(context, FormsNotificationActionReceiver::class.java).apply {
+                    action = ACTION_COPY_PINNED_ANSWERS
+                    putExtra(EXTRA_COMPACT_ANSWERS, cleaned.take(1200))
+                },
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            val unpinPendingIntent = PendingIntent.getBroadcast(
+                context,
+                406,
+                Intent(context, FormsNotificationActionReceiver::class.java).apply {
+                    action = ACTION_UNPIN_FORMS_NOTIFICATION
+                },
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            val firstLine = cleaned.lineSequence().firstOrNull { it.isNotBlank() }?.take(90) ?: cleaned.take(90)
+            val cleanTitle = title.ifBlank { "Prism Pinned Answer Key" }.take(46)
+            val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_prism_orb)
+                .setColor(AndroidColor.parseColor("#D71921"))
+                .setContentTitle(cleanTitle)
+                .setContentText(firstLine)
+                .setStyle(
+                    NotificationCompat.BigTextStyle()
+                        .setBigContentTitle("$cleanTitle • Pinned")
+                        .bigText(cleaned.take(1800))
+                )
+                .setOngoing(true)
+                .setOnlyAlertOnce(true)
+                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+                .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+                .setContentIntent(openAppIntent)
+                .addAction(0, "Copy", copyPendingIntent)
+                .addAction(0, "Unpin", unpinPendingIntent)
+                .build()
+            nm.notify(NOTIFICATION_ID, notification)
+            context.getSharedPreferences("OmniSolvePrefs", Context.MODE_PRIVATE)
+                .edit()
+                .putBoolean(PREF_IS_PINNED, true)
+                .apply()
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     fun unpinAnswersNotification(context: Context) {
         try {
             val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager

@@ -42,7 +42,7 @@ object TelemetryBackend {
         val raw = sourceLabel.orEmpty().lowercase()
         return when {
             raw.contains("local") || raw.contains("offline") || raw.contains("room") -> LOCAL_CACHE
-            raw.contains("shared") || raw.contains("crowd") || raw.contains("cloud cache") -> SHARED_CACHE
+            raw.contains("shared") || raw.contains("crowd") || raw.contains("cloud cache") || raw.contains("class cache") || raw.contains("instant cache") -> SHARED_CACHE
             raw.contains("cloudflare") || raw.contains("workers") || raw.contains("llama") || raw.contains("qwen") -> CLOUDFLARE_EDGE
             raw.contains("firebase") || raw.contains("gemini") || raw.contains("vision") || raw.contains("prism") -> FIREBASE_AI
             raw.isBlank() -> FAILED
@@ -138,11 +138,8 @@ object FirebaseTelemetryRepository {
     private fun getDatabase(context: Context): FirebaseFirestore {
         cachedDb?.let { return it }
         val dbId = context.getString(R.string.firestore_database_id).trim()
-        val db = if (dbId.isNotBlank()) {
-            FirebaseFirestore.getInstance(dbId)
-        } else {
-            FirebaseFirestore.getInstance()
-        }
+        require(dbId.isNotBlank()) { "Missing firestore_database_id" }
+        val db = FirebaseFirestore.getInstance(dbId)
         cachedDb = db
         return db
     }

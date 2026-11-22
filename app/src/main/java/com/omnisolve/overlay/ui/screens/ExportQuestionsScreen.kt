@@ -203,7 +203,7 @@ fun ExportQuestionsScreen(
                             overflow = TextOverflow.Ellipsis
                         )
                         Text(
-                            text = "${maxOf(offlineCacheCount, entries.size)} saved offline • $offlineCacheSavedCalls AI calls saved (0ms repeat hits)",
+                            text = "${maxOf(offlineCacheCount, entries.size)} saved offline • $offlineCacheSavedCalls repeat AI calls saved",
                             style = MaterialTheme.typography.bodySmall.copy(
                                 color = palette.inkSecondary,
                                 fontSize = 11.5.sp
@@ -1144,7 +1144,7 @@ private fun ExportQuestionCard(
                             .padding(horizontal = 6.dp, vertical = 2.dp)
                     ) {
                         Text(
-                            text = "Cached · 0ms",
+                            text = "Cached",
                             style = MaterialTheme.typography.labelSmall.copy(
                                 color = palette.accentEmerald,
                                 fontWeight = FontWeight.Bold,
@@ -1281,16 +1281,16 @@ fun buildExportDocumentPayload(
 ): String {
     if (entries.isEmpty()) {
         return when (format) {
-            ExportDocumentFormat.TXT -> "# Prism Solver — Question & Answer Export\n(No solved questions selected)"
+            ExportDocumentFormat.TXT -> "# Prism Solver: Question & Answer Export\n(No solved questions selected)"
             ExportDocumentFormat.CSV -> "No,Subject,Question,Answer,Explanation,Timestamp"
             ExportDocumentFormat.JSON -> "[]"
-            ExportDocumentFormat.MD -> "# Prism Solver — Study Export\n_No solved questions selected._"
+            ExportDocumentFormat.MD -> "# Prism Solver: Study Export\n_No solved questions selected._"
         }
     }
 
     return when (format) {
         ExportDocumentFormat.TXT -> buildString {
-            appendLine("=== PRISM SOLVER — QUESTIONS & ANSWERS EXPORT (${entries.size} ITEMS) ===")
+            appendLine("=== PRISM SOLVER: QUESTIONS & ANSWERS EXPORT (${entries.size} ITEMS) ===")
             appendLine()
             entries.forEachIndexed { idx, item ->
                 appendLine("Q${idx + 1} [${item.subject}]: ${item.questionPreview}")
@@ -1338,7 +1338,7 @@ fun buildExportDocumentPayload(
         }
 
         ExportDocumentFormat.MD -> buildString {
-            appendLine("# Prism Solver — Study Sheet (${entries.size} Q&A)")
+            appendLine("# Prism Solver: Study Sheet (${entries.size} Q&A)")
             appendLine()
             entries.forEachIndexed { idx, item ->
                 appendLine("### Q${idx + 1}. ${item.questionPreview}")
@@ -1477,7 +1477,7 @@ private fun shareBackupZipArchive(
         )
         val shareIntent = Intent(Intent.ACTION_SEND).apply {
             type = "application/zip"
-            putExtra(Intent.EXTRA_SUBJECT, "Prism Solver — Full Backup (.ZIP)")
+            putExtra(Intent.EXTRA_SUBJECT, "Prism Solver: Full Backup (.ZIP)")
             putExtra(Intent.EXTRA_STREAM, uri)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
         }
@@ -1501,7 +1501,7 @@ private fun shareExportPayload(context: Context, content: String, format: Export
             type = "text/plain"
             putExtra(
                 Intent.EXTRA_SUBJECT,
-                "Prism Solver — Questions & Answers (${format.extension.uppercase()})"
+                "Prism Solver: Questions & Answers (${format.extension.uppercase()})"
             )
             putExtra(Intent.EXTRA_TEXT, content)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)

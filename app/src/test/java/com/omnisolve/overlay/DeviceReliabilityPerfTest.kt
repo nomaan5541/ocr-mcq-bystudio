@@ -497,6 +497,12 @@ class DeviceReliabilityPerfTest {
             }
         }
         composeTestRule.onNodeWithTag("stats_screen_list").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("btn_ask_plus_toggle").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("btn_ask_plus_toggle").performClick()
+        composeTestRule.mainClock.advanceTimeBy(300L)
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("btn_ask_upload_photo").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("btn_ask_upload_pdf").assertIsDisplayed()
     }
 
     @Test
@@ -1103,4 +1109,46 @@ class DeviceReliabilityPerfTest {
             selectedSpec?.layoutArchetype
         )
     }
+
+    @Test
+    fun testQuickPlusTreeOverlay_RendersThreeBranchesWithSizeLimitsAndActions() {
+        var photoTapped = false
+        var pdfTapped = false
+        var linkTapped = false
+        var cameraTapped = false
+        var floatingPillTapped = false
+        composeTestRule.setContent {
+            WhiteGlassTheme(themeSpec = NORMAL_DEFAULT_THEME) {
+                CompositionLocalProvider(
+                    com.omnisolve.overlay.ui.physics.LocalReducedMotion provides true
+                ) {
+                    Box(modifier = Modifier.width(340.dp)) {
+                        com.omnisolve.overlay.ui.components.QuickPlusTreeOverlay(
+                            visible = true,
+                            dailyUsage = com.omnisolve.overlay.data.DailyUsageSnapshot(),
+                            onDismiss = {},
+                            onPickPhoto = { photoTapped = true },
+                            onPickPdf = { pdfTapped = true },
+                            onOpenFormLink = { linkTapped = true },
+                            onPickCamera = { cameraTapped = true },
+                            onToggleFloatingPill = { floatingPillTapped = true },
+                            isOverlayRunning = false
+                        )
+                    }
+                }
+            }
+        }
+        composeTestRule.onNodeWithTag("btn_plus_tree_link").assertIsDisplayed().performClick()
+        composeTestRule.onNodeWithTag("btn_plus_tree_camera").assertIsDisplayed().performClick()
+        composeTestRule.onNodeWithTag("btn_plus_tree_photo").assertIsDisplayed().performClick()
+        composeTestRule.onNodeWithTag("btn_plus_tree_pdf").assertIsDisplayed().performClick()
+        composeTestRule.onNodeWithTag("btn_plus_tree_floating_pill").assertIsDisplayed().performClick()
+        assertTrue("Form Link tile must trigger onOpenFormLink", linkTapped)
+        assertTrue("Camera tile must trigger onPickCamera", cameraTapped)
+        assertTrue("Photo tile must trigger onPickPhoto", photoTapped)
+        assertTrue("PDF tile must trigger onPickPdf", pdfTapped)
+        assertTrue("Floating Pill strip must trigger onToggleFloatingPill", floatingPillTapped)
+    }
 }
+
+

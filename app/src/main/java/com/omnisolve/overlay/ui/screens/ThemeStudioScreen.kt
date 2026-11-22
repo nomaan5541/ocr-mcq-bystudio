@@ -94,7 +94,7 @@ private fun friendlyAnimLabel(intensity: ThemeAnimationIntensity): String = when
 
 private fun friendlyAppearanceLabel(mode: ThemeColorAppearance): String = when (mode) {
     ThemeColorAppearance.AUTO -> "Default"
-    ThemeColorAppearance.DARK_ONLY -> "Always Dark"
+    ThemeColorAppearance.DARK_ONLY -> "Dark Only"
     ThemeColorAppearance.DARK_SIGNATURE_RED -> "Dark + Red"
     ThemeColorAppearance.ADAPTIVE_LIGHT_DARK -> "Light & Dark"
 }
@@ -320,7 +320,7 @@ fun ThemeStudioScreen(
                             }
                             Column {
                                 Text(
-                                    text = "iOS Liquid Glass Light",
+                                    text = "Prism Light",
                                     style = MaterialTheme.typography.titleMedium.copy(
                                         color = Color(0xFF1C1C1E),
                                         fontWeight = FontWeight.ExtraBold
@@ -329,7 +329,7 @@ fun ThemeStudioScreen(
                                     overflow = TextOverflow.Ellipsis
                                 )
                                 Text(
-                                    text = "NEW WHITE EDITION • iOS Motion, Control Center & Light Island",
+                                    text = "Light appearance with clean cards and a bright floating pill",
                                     style = MaterialTheme.typography.labelSmall.copy(
                                         color = Color(0xFF007AFF),
                                         fontWeight = FontWeight.Bold,
@@ -359,7 +359,7 @@ fun ThemeStudioScreen(
                     }
 
                     Text(
-                        text = "Completely rearranges the entire app into Apple-inspired white spatial glass: collapsing large title, spring widgets, kinetic rolling text, and a frosted white Dynamic Island.",
+                        text = "Switches the app to a bright white appearance with clean cards, quick-action tiles, and a matching light floating pill.",
                         style = MaterialTheme.typography.bodySmall.copy(
                             color = Color(0xFF48484A),
                             fontSize = 12.sp,

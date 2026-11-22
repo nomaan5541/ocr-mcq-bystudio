@@ -65,7 +65,9 @@ import com.omnisolve.overlay.data.TelemetryBackend
 import com.omnisolve.overlay.data.TelemetryFeature
 import com.omnisolve.overlay.data.TelemetrySessionSource
 import com.omnisolve.overlay.data.TelemetryStatus
+import com.omnisolve.overlay.f1.F1FailureCategory
 import com.omnisolve.overlay.f1.F1MasterEngine
+import com.omnisolve.overlay.f1.F1ProviderHealthManager
 import com.omnisolve.overlay.f1.F1RaceMode
 import com.omnisolve.overlay.f1.F1SolveRequest
 import com.omnisolve.overlay.f1.F1WebsiteFallbackAdapter
@@ -771,6 +773,7 @@ class OverlayService : Service() {
         overlaySessionRequestsCount = 0L
         createNotificationChannel()
         registerVolumeButtonReceiver()
+        PrismQuickSettingsTileService.requestTileRefresh(this)
     }
 
     @SuppressLint("WakelockTimeout")
@@ -1393,6 +1396,7 @@ class OverlayService : Service() {
         releaseHighPerformanceWakeLock()
         cpuWakeLock = null
         instance = null
+        PrismQuickSettingsTileService.requestTileRefresh(this)
         try { solveOrchestrator.invalidateCachesOnCaptureStop() } catch (_: Exception) {}
         try { screenCaptureManager?.stopCapture() } catch (_: Exception) {}
         try { ocrEngine.close() } catch (_: Exception) {}
@@ -1893,13 +1897,14 @@ class OverlayService : Service() {
             }
         }
 
-        // Bind Dynamic Flow Helper Chips (Play, Eye, Bot & Opacity% Removed)
-        btnDfPart1 = bubbleView!!.findViewById(R.id.btn_df_part1)
-        btnDfPart2 = bubbleView!!.findViewById(R.id.btn_df_part2)
-        btnDfScroll2s = bubbleView!!.findViewById(R.id.btn_df_scroll_2s)
-        btnDfQuestionMode = bubbleView!!.findViewById(R.id.btn_df_question_mode)
-        btnDfDiagram = bubbleView!!.findViewById(R.id.btn_df_diagram)
-        btnDfCrop = bubbleView!!.findViewById(R.id.btn_df_crop)
+        // Bind Dynamic Flow Helper Chips
+        val activeBubble = bubbleView ?: return
+        btnDfPart1 = activeBubble.findViewById(R.id.btn_df_part1)
+        btnDfPart2 = activeBubble.findViewById(R.id.btn_df_part2)
+        btnDfScroll2s = activeBubble.findViewById(R.id.btn_df_scroll_2s)
+        btnDfQuestionMode = activeBubble.findViewById(R.id.btn_df_question_mode)
+        btnDfDiagram = activeBubble.findViewById(R.id.btn_df_diagram)
+        btnDfCrop = activeBubble.findViewById(R.id.btn_df_crop)
 
         val savedPct = getSharedPreferences("OmniSolvePrefs", Context.MODE_PRIVATE)
             .getInt(MainActivity.PREF_KEY_CUSTOM_OPACITY_PCT, customOpacityPct)
@@ -2233,7 +2238,7 @@ class OverlayService : Service() {
         if (isHapticFeedbackEnabled) triggerHapticFeedback("A")
         Toast.makeText(
             this,
-            "Active Method: ${chosen.title} — Tap Island to solve continuously",
+            "Active Method: ${chosen.title}. Tap Island to solve continuously.",
             Toast.LENGTH_SHORT
         ).show()
     }
@@ -2368,8 +2373,9 @@ class OverlayService : Service() {
                 stitchBitmapsVertically(part1Bmp, captured2.third)
             }
             try {
-                if (captured2.third != null && captured2.third !== stitched && !captured2.third!!.isRecycled) {
-                    captured2.third!!.recycle()
+                val cap2Bmp = captured2.third
+                if (cap2Bmp != null && cap2Bmp !== stitched && !cap2Bmp.isRecycled) {
+                    cap2Bmp.recycle()
                 }
             } catch (_: Exception) {}
             clearPendingPartOne()
@@ -2491,16 +2497,17 @@ class OverlayService : Service() {
         }
 
         // Header controls
-        val headerDragArea = geminiWindowView!!.findViewById<View>(R.id.header_drag_area)
-        val btnWindowScan = geminiWindowView!!.findViewById<TextView>(R.id.btn_window_scan)
-        val btnSize = geminiWindowView!!.findViewById<TextView>(R.id.btn_window_size)
-        val btnOpacity = geminiWindowView!!.findViewById<TextView>(R.id.btn_window_opacity)
-        val btnMinimize = geminiWindowView!!.findViewById<View>(R.id.btn_window_minimize)
-        val btnClose = geminiWindowView!!.findViewById<View>(R.id.btn_window_close)
-        val btnResizeGrip = geminiWindowView!!.findViewById<View>(R.id.btn_resize_grip)
-        tvWindowAnswerBadge = geminiWindowView!!.findViewById(R.id.tv_window_answer_badge)
-        progressBar = geminiWindowView!!.findViewById(R.id.web_progress_bar)
-        geminiWebView = geminiWindowView!!.findViewById(R.id.gemini_webview)
+        val winRoot = geminiWindowView ?: return
+        val headerDragArea = winRoot.findViewById<View>(R.id.header_drag_area)
+        val btnWindowScan = winRoot.findViewById<TextView>(R.id.btn_window_scan)
+        val btnSize = winRoot.findViewById<TextView>(R.id.btn_window_size)
+        val btnOpacity = winRoot.findViewById<TextView>(R.id.btn_window_opacity)
+        val btnMinimize = winRoot.findViewById<View>(R.id.btn_window_minimize)
+        val btnClose = winRoot.findViewById<View>(R.id.btn_window_close)
+        val btnResizeGrip = winRoot.findViewById<View>(R.id.btn_resize_grip)
+        tvWindowAnswerBadge = winRoot.findViewById(R.id.tv_window_answer_badge)
+        progressBar = winRoot.findViewById(R.id.web_progress_bar)
+        geminiWebView = winRoot.findViewById(R.id.gemini_webview)
 
         if (isValidAnswerBadge(latestCachedAnswer)) {
             tvWindowAnswerBadge?.text = latestCachedAnswer
@@ -2523,12 +2530,12 @@ class OverlayService : Service() {
             }
         }
 
-        val btnNewChat = geminiWindowView!!.findViewById<View?>(R.id.btn_window_new_chat)
+        val btnNewChat = winRoot.findViewById<View?>(R.id.btn_window_new_chat)
         btnNewChat?.setOnClickListener {
             serviceScope.launch(Dispatchers.Main) {
                 lastSyncedDomTurnSignature = ""
                 forceResetGeminiWebChat()
-                Toast.makeText(this@OverlayService, "Opened fresh Gemini chat", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this@OverlayService, "Opened fresh chat", Toast.LENGTH_SHORT).show()
             }
         }
 
@@ -2555,8 +2562,10 @@ class OverlayService : Service() {
             showGeminiWindow(false)
         }
 
-        configureWebView(geminiWebView!!)
-        geminiWebView!!.loadUrl(GEMINI_WEB_URL)
+        geminiWebView?.let { wv ->
+            configureWebView(wv)
+            wv.loadUrl(GEMINI_WEB_URL)
+        }
 
         try {
             windowManager.addView(geminiWindowView, windowParams)
@@ -3079,11 +3088,17 @@ class OverlayService : Service() {
         }
         wakeAndScheduleIdleFade()
         if (isScanning) {
-            Log.d(TAG, "User tapped pill while scanning — cancelling in-flight solve and starting a fresh attempt immediately")
-            currentSolveFlowJob?.cancel()
-            activeSolvePollJob?.cancel()
-            F1MasterEngine.cancelActiveSolve("USER_RESTARTED_SOLVE")
-            isScanning = false
+            Log.d(TAG, "Ignoring duplicate tap while solve is already in flight (use Stop tool to cancel)")
+            val isDisguised = isCamouflageEnabled || isAdvEnabled(MainActivity.PREF_KEY_ADV_NET_SPEED_DISGUISE)
+            if (!isDisguised) {
+                mainHandler.post {
+                    val currentLabel = tvIslandTitle?.text?.toString().orEmpty()
+                    if (!currentLabel.contains("Solving", ignoreCase = true) && !currentLabel.contains("Reading", ignoreCase = true)) {
+                        tvIslandTitle?.text = "Solving..."
+                    }
+                }
+            }
+            return
         }
         if (isAdvEnabled(MainActivity.PREF_KEY_ADV_CROP_TO_SCAN) && screenCaptureManager != null) {
             showCropRegionSelector()
@@ -3146,6 +3161,7 @@ class OverlayService : Service() {
         val solveFlowStartMs = PrismPerfLogger.nowMs()
         // Never let a prior transient timeout silently lock out Cloudflare or Firebase on manual Solve/Retry
         PrismAiSolverEngine.resetTransientCooldownsForManualRetry()
+        F1ProviderHealthManager.resetTransientCooldownsForManualRetry()
         currentSolveFlowJob?.cancel()
         activeSolvePollJob?.cancel()
         isScanning = true
@@ -3230,8 +3246,8 @@ class OverlayService : Service() {
                     val captureStartMs = PrismPerfLogger.nowMs()
                     val freshBitmap: Bitmap? = when {
                         preCapturedData?.third != null -> preCapturedData.third
-                        hasCropSelection && screenCaptureManager != null -> {
-                            val croppedData = captureAndOcrCropped(cropScreenRect!!)
+                        hasCropSelection && cropScreenRect != null && screenCaptureManager != null -> {
+                            val croppedData = captureAndOcrCropped(cropScreenRect)
                             textBlocks = croppedData?.second.orEmpty()
                             croppedData?.third
                         }
@@ -3287,41 +3303,67 @@ class OverlayService : Service() {
                         F1RaceMode.FAST
                     }
 
-                    val f1Result = F1MasterEngine.solve(
-                        context = this@OverlayService,
-                        request = F1SolveRequest(
-                            requestId = currentSolveId,
-                            preExtractedText = preRaceText,
-                            preExtractedBlocks = preRaceBlocks,
-                            screenBitmap = freshBitmap,
-                            cropRect = cropScreenRect,
-                            captureDurationMs = captureDurationMs,
-                            subjectMode = subjectMode,
-                            solveMode = solveMode,
-                            raceMode = activeRaceMode,
-                            requestedModel = selectedModel,
-                            dualVerify = dualVerify,
-                            translateToEnglish = translateToEnglish,
-                            forceFreshResolve = effectiveForceFresh,
-                            previousWrongAnswer = effectivePrevWrong,
-                            allowGhostDomExtraction = true,
-                            requireGoogleAuth = true,
-                            geminiWebSolverCallback = warmWebCallback,
-                            onProgressUpdate = { stageName, candidate ->
-                                if (candidate != null && activeSolveId == currentSolveId && deliveredSolveId != currentSolveId) {
-                                    withContext(Dispatchers.Main) {
-                                        if (activeSolveId != currentSolveId || deliveredSolveId == currentSolveId) return@withContext
-                                        val isDisguised = isCamouflageEnabled || isAdvEnabled(MainActivity.PREF_KEY_ADV_NET_SPEED_DISGUISE)
-                                        if (!isDisguised) {
-                                            tvIslandTitle?.text = "F1 • $stageName"
-                                        }
-                                        btnWindowScan?.text = candidate.selectedOption
+                    val elapsedTickerJob = launch {
+                        val tickerStartNs = System.nanoTime()
+                        while (isActive && activeSolveId == currentSolveId && deliveredSolveId != currentSolveId) {
+                            delay(500L)
+                            val elapsedTenths = ((System.nanoTime() - tickerStartNs) / 100_000_000L).coerceAtLeast(1L)
+                            val secText = "${elapsedTenths / 10}.${elapsedTenths % 10}s"
+                            withContext(Dispatchers.Main) {
+                                if (activeSolveId != currentSolveId || deliveredSolveId == currentSolveId) return@withContext
+                                val isDisguised = isCamouflageEnabled || isAdvEnabled(MainActivity.PREF_KEY_ADV_NET_SPEED_DISGUISE)
+                                if (!isDisguised) {
+                                    tvIslandTitle?.text = if (effectiveForceFresh) {
+                                        "Re-checking $secText"
+                                    } else {
+                                        "Solving $secText"
                                     }
                                 }
                             }
-                        ),
-                        ocrEngine = ocrEngine
-                    )
+                        }
+                    }
+
+                    val f1Result = try {
+                        F1MasterEngine.solve(
+                            context = this@OverlayService,
+                            request = F1SolveRequest(
+                                requestId = currentSolveId,
+                                preExtractedText = preRaceText,
+                                preExtractedBlocks = preRaceBlocks,
+                                screenBitmap = freshBitmap,
+                                cropRect = cropScreenRect,
+                                captureDurationMs = captureDurationMs,
+                                subjectMode = subjectMode,
+                                solveMode = solveMode,
+                                raceMode = activeRaceMode,
+                                preferredMethod = method,
+                                autoFailover = autoFailover,
+                                requestedModel = selectedModel,
+                                dualVerify = dualVerify,
+                                translateToEnglish = translateToEnglish,
+                                forceFreshResolve = effectiveForceFresh,
+                                previousWrongAnswer = effectivePrevWrong,
+                                allowGhostDomExtraction = true,
+                                requireGoogleAuth = true,
+                                geminiWebSolverCallback = warmWebCallback,
+                                onProgressUpdate = { stageName, candidate ->
+                                    if (candidate != null && activeSolveId == currentSolveId && deliveredSolveId != currentSolveId) {
+                                        withContext(Dispatchers.Main) {
+                                            if (activeSolveId != currentSolveId || deliveredSolveId == currentSolveId) return@withContext
+                                            val isDisguised = isCamouflageEnabled || isAdvEnabled(MainActivity.PREF_KEY_ADV_NET_SPEED_DISGUISE)
+                                            if (!isDisguised) {
+                                                tvIslandTitle?.text = "F1 • $stageName"
+                                            }
+                                            btnWindowScan?.text = candidate.selectedOption
+                                        }
+                                    }
+                                }
+                            ),
+                            ocrEngine = ocrEngine
+                        )
+                    } finally {
+                        elapsedTickerJob.cancel()
+                    }
 
                     if (f1Result.authRequired) {
                         pendingAuthSignInRequired = true
@@ -3396,21 +3438,47 @@ class OverlayService : Service() {
                                 )
                             } catch (_: Exception) {}
                         }
+                        val (failBadge, failMeta) = when (f1Result.failureCategory) {
+                            F1FailureCategory.UNREADABLE_SCREEN -> "TXT" to "Screen Unreadable"
+                            F1FailureCategory.QUOTA_LIMITED -> "BUSY" to "Servers Rate-Limited"
+                            F1FailureCategory.AUTH_OR_APP_CHECK -> "LOGIN" to "Sign-In / App Check"
+                            F1FailureCategory.NETWORK_TIMEOUT -> "RETRY" to "Network Timeout"
+                            else -> "RETRY" to "F1 Fallback Ready"
+                        }
+                        if (f1Result.failureCategory == F1FailureCategory.AUTH_OR_APP_CHECK && !f1Result.websiteFallbackReady) {
+                            pendingAuthSignInRequired = true
+                        }
                         withContext(Dispatchers.Main) {
-                            setAnswerUI("RETRY", "#D71921", loading = false, triggerFeedback = false)
-                            tvIslandMeta?.text = "F1 Fallback Ready"
+                            setAnswerUI(failBadge, "#D71921", loading = false, triggerFeedback = false)
+                            tvIslandMeta?.text = failMeta
                             tvIslandExplanation?.text = f1Result.errorMessage.ifBlank {
                                 "No server replied in time. Tap RETRY to re-race or Open Web for browser fallback."
                             }
                             btnWindowScan?.text = if (f1Result.websiteFallbackReady) "Open Web" else "Retry"
                             isScanning = false
                         }
+                        val r = f1Result.raceReport
+                        val sanitizedDiag = "diag:cat=${f1Result.failureCategory.name},cap=${r.captureMs}ms,ocr=${r.ocrMs}ms,cache=${r.cacheLookupMs}ms,val=${r.validationMs}ms,tot=${r.totalMs}ms"
+                        serviceScope.launch(Dispatchers.IO) {
+                            runCatching {
+                                FirebaseTelemetryRepository.recordSolveRequest(
+                                    context = applicationContext,
+                                    feature = TelemetryFeature.DYNAMIC_ISLAND,
+                                    backend = TelemetryBackend.FAILED,
+                                    modelUsed = "F1 • ${f1Result.failureCategory.name}",
+                                    latencyMs = r.totalMs,
+                                    status = TelemetryStatus.FAILED,
+                                    questionPreview = sanitizedDiag,
+                                    answerBadge = failBadge
+                                )
+                            }
+                        }
                         PrismPerfLogger.logStage(
                             currentSolveId,
                             "SOLVE_TOTAL",
                             f1Result.raceReport.totalMs,
                             status = "FAILED",
-                            detail = "engine=F1 reason=${f1Result.errorMessage}"
+                            detail = "engine=F1 cat=${f1Result.failureCategory.name} reason=${f1Result.errorMessage}"
                         )
                         return@launch
                     }
@@ -3651,7 +3719,7 @@ class OverlayService : Service() {
                 val expSummary = listOfNotNull(
                     answerModel?.shortAnswer?.trim()?.takeIf { it.isNotBlank() },
                     answerModel?.explanation?.trim()?.takeIf { it.isNotBlank() }
-                ).joinToString(" — ").replace("\n", " ").replace("||", " ").take(120)
+                ).joinToString(": ").replace("\n", " ").replace("||", " ").take(120)
                 val subjId = prefs.getString(MainActivity.PREF_KEY_SUBJECT_MODE, SubjectMode.GENERAL.id)
                     ?: SubjectMode.GENERAL.id
                 val existing = prefs.getString("PREF_SOLVE_HISTORY", "") ?: ""
@@ -3738,7 +3806,7 @@ class OverlayService : Service() {
                 tvIslandMeta?.text = "${verifiedPrefix}${confPct}% Sure • tap card to hide"
                 tvIslandSourceTag?.text = when {
                     wasFreshRescan -> "Re-Verified • Cache Updated"
-                    answerModel?.isCachedResult == true -> "Offline Cache • 0ms"
+                    answerModel?.isCachedResult == true -> "Offline Cache"
                     else -> answerModel?.engineLabel?.takeIf { it.isNotBlank() } ?: "AI Verified"
                 }
                 tvIslandSourceTag?.setTextColor(
@@ -3755,7 +3823,7 @@ class OverlayService : Service() {
                     val explTxt = answerModel?.explanation?.trim().orEmpty()
                     if (shortTxt.isNotBlank() && !shortTxt.equals(formattedBadge, ignoreCase = true)) {
                         append(shortTxt)
-                        if (explTxt.isNotBlank()) append(" — ")
+                        if (explTxt.isNotBlank()) append(": ")
                     }
                     append(explTxt)
                     val transTxt = answerModel?.translatedQuestion?.trim().orEmpty()
@@ -4515,8 +4583,9 @@ class OverlayService : Service() {
                                 pendingCleanText = cleanText
                             }
                             // Wait up to 5 ticks (~325ms) for the short 1-line "| reason" to finish streaming
-                            if (tick - pendingAnswerFirstTick >= 5) {
-                                return@withContext deliverParsedNow(pendingAnswerModel!!, pendingTurnCount, pendingCleanText, tick)
+                            val readyPending = pendingAnswerModel
+                            if (tick - pendingAnswerFirstTick >= 5 && readyPending != null) {
+                                return@withContext deliverParsedNow(readyPending, pendingTurnCount, pendingCleanText, tick)
                             }
                         }
                     }

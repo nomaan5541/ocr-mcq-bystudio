@@ -1,16 +1,22 @@
 package com.omnisolve.overlay.ui.physics
 
 import android.provider.Settings
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.ContentTransform
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.SpringSpec
-import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Canvas
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.interaction.InteractionSource
@@ -26,7 +32,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
-import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -43,6 +48,7 @@ import com.omnisolve.overlay.ui.theme.LocalWhiteGlassPalette
 import com.omnisolve.overlay.ui.theme.PrismCurves
 import com.omnisolve.overlay.ui.theme.SurfaceEffectStyle
 import com.omnisolve.overlay.ui.theme.ThemeAnimationIntensity
+import com.omnisolve.overlay.ui.theme.ThemeLayoutArchetype
 import kotlin.math.cos
 import kotlin.math.sin
 
@@ -50,8 +56,8 @@ val LocalReducedMotion = compositionLocalOf { false }
 
 data class SpringPhysicsConfig(
     val enabled: Boolean = true,
-    val dampingRatio: Float = 0.78f,
-    val stiffness: Float = 520f
+    val dampingRatio: Float = 0.80f,
+    val stiffness: Float = 560f
 )
 
 val LocalSpringPhysics = compositionLocalOf { SpringPhysicsConfig() }
@@ -79,14 +85,20 @@ object MotionTokens {
         config: SpringPhysicsConfig = SpringPhysicsConfig()
     ): SpringSpec<T> =
         if (!config.enabled || reducedMotion) spring(dampingRatio = 1f, stiffness = 2400f)
-        else spring(dampingRatio = config.dampingRatio.coerceIn(0.45f, 1f), stiffness = config.stiffness.coerceIn(200f, 1800f))
+        else spring(
+            dampingRatio = config.dampingRatio.coerceIn(0.55f, 1f),
+            stiffness = config.stiffness.coerceIn(260f, 1800f)
+        )
 
     fun <T> liquidMorph(
         reducedMotion: Boolean = false,
         config: SpringPhysicsConfig = SpringPhysicsConfig()
     ): SpringSpec<T> =
         if (!config.enabled || reducedMotion) spring(dampingRatio = 1f, stiffness = 2400f)
-        else spring(dampingRatio = (config.dampingRatio * 0.96f).coerceIn(0.58f, 0.9f), stiffness = (config.stiffness * 0.78f).coerceIn(260f, 950f))
+        else spring(
+            dampingRatio = (config.dampingRatio * 0.98f).coerceIn(0.68f, 0.92f),
+            stiffness = (config.stiffness * 0.84f).coerceIn(320f, 960f)
+        )
 
     fun <T> gentleSettle(
         reducedMotion: Boolean = false,
@@ -97,6 +109,152 @@ object MotionTokens {
         reducedMotion: Boolean = false,
         config: SpringPhysicsConfig = SpringPhysicsConfig()
     ): SpringSpec<T> = tactilePress(reducedMotion, config)
+
+    /**
+     * Distinct per-theme dock indicator spring choreography so every theme archetype
+     * feels physically different while staying locked at 60/120fps.
+     */
+    fun <T> dockSpringFor(
+        archetype: ThemeLayoutArchetype,
+        reducedMotion: Boolean = false,
+        config: SpringPhysicsConfig = SpringPhysicsConfig()
+    ): SpringSpec<T> {
+        if (!config.enabled || reducedMotion) return spring(dampingRatio = 1f, stiffness = 2400f)
+        return when (archetype) {
+            ThemeLayoutArchetype.TELEMETRY_HUD -> spring(dampingRatio = 0.95f, stiffness = 980f)
+            ThemeLayoutArchetype.ATELIER_BENTO -> spring(dampingRatio = 0.88f, stiffness = 680f)
+            ThemeLayoutArchetype.EDITORIAL_MONOGRAPH -> spring(dampingRatio = 0.92f, stiffness = 460f)
+            ThemeLayoutArchetype.KINETIC_DECK -> spring(dampingRatio = 0.76f, stiffness = 740f)
+            ThemeLayoutArchetype.IOS_LIQUID_LIGHT -> spring(dampingRatio = 0.82f, stiffness = 500f)
+            ThemeLayoutArchetype.CLASSIC_PRISM -> spring(dampingRatio = 0.84f, stiffness = 580f)
+        }
+    }
+
+    fun cardPressScaleFor(archetype: ThemeLayoutArchetype): Float = when (archetype) {
+        ThemeLayoutArchetype.TELEMETRY_HUD -> 0.985f
+        ThemeLayoutArchetype.ATELIER_BENTO -> 0.975f
+        ThemeLayoutArchetype.EDITORIAL_MONOGRAPH -> 0.982f
+        ThemeLayoutArchetype.KINETIC_DECK -> 0.955f
+        ThemeLayoutArchetype.IOS_LIQUID_LIGHT -> 0.968f
+        ThemeLayoutArchetype.CLASSIC_PRISM -> 0.965f
+    }
+
+    /**
+     * Zero-jank GPU-composited directional screen transition between Home <-> Settings.
+     * Forward (Home -> Settings): enters smoothly from right while Home shifts gently left.
+     * Back (Settings -> Home): outgoing screen slides cleanly out to the right while Home glides back in from left.
+     */
+    fun tabTransitionFor(
+        archetype: ThemeLayoutArchetype,
+        movingForward: Boolean,
+        reducedMotion: Boolean
+    ): ContentTransform {
+        if (reducedMotion) {
+            return EnterTransition.None togetherWith ExitTransition.None
+        }
+        val dir = if (movingForward) 1 else -1
+        return when (archetype) {
+            ThemeLayoutArchetype.TELEMETRY_HUD -> {
+                (slideInHorizontally(
+                    animationSpec = tween(180, easing = LinearOutSlowInEasing),
+                    initialOffsetX = { w -> dir * (w / 5) }
+                ) + fadeIn(tween(150))) togetherWith
+                    (slideOutHorizontally(
+                        animationSpec = tween(160, easing = FastOutSlowInEasing),
+                        targetOffsetX = { w -> -dir * (w / 6) }
+                    ) + fadeOut(tween(120)))
+            }
+            ThemeLayoutArchetype.ATELIER_BENTO -> {
+                (slideInHorizontally(
+                    animationSpec = tween(230, easing = FastOutSlowInEasing),
+                    initialOffsetX = { w -> dir * (w / 4) }
+                ) + fadeIn(tween(190))) togetherWith
+                    (slideOutHorizontally(
+                        animationSpec = tween(200, easing = FastOutSlowInEasing),
+                        targetOffsetX = { w -> -dir * (w / 6) }
+                    ) + fadeOut(tween(150)))
+            }
+            ThemeLayoutArchetype.EDITORIAL_MONOGRAPH -> {
+                (fadeIn(tween(230, easing = FastOutSlowInEasing)) +
+                    slideInHorizontally(
+                        animationSpec = tween(240, easing = FastOutSlowInEasing),
+                        initialOffsetX = { w -> dir * (w / 5) }
+                    )) togetherWith
+                    (slideOutHorizontally(
+                        animationSpec = tween(200, easing = FastOutSlowInEasing),
+                        targetOffsetX = { w -> -dir * (w / 6) }
+                    ) + fadeOut(tween(160)))
+            }
+            ThemeLayoutArchetype.KINETIC_DECK -> {
+                (slideInHorizontally(
+                    animationSpec = spring(dampingRatio = 0.88f, stiffness = 540f),
+                    initialOffsetX = { w -> dir * (w / 3) }
+                ) + fadeIn(tween(175))) togetherWith
+                    (slideOutHorizontally(
+                        animationSpec = tween(185, easing = FastOutSlowInEasing),
+                        targetOffsetX = { w -> -dir * (w / 5) }
+                    ) + fadeOut(tween(145)))
+            }
+            ThemeLayoutArchetype.IOS_LIQUID_LIGHT,
+            ThemeLayoutArchetype.CLASSIC_PRISM -> {
+                if (movingForward) {
+                    // Forward push: new screen glides in from right, previous shifts gently left
+                    (slideInHorizontally(
+                        animationSpec = tween(250, easing = FastOutSlowInEasing),
+                        initialOffsetX = { w -> (w * 0.28f).toInt() }
+                    ) + fadeIn(tween(200, easing = FastOutSlowInEasing))) togetherWith
+                        (slideOutHorizontally(
+                            animationSpec = tween(220, easing = FastOutSlowInEasing),
+                            targetOffsetX = { w -> -(w * 0.14f).toInt() }
+                        ) + fadeOut(tween(170)))
+                } else {
+                    // Reverse Back glide: outgoing screen exits smoothly to right, Home returns from left
+                    (slideInHorizontally(
+                        animationSpec = tween(250, easing = FastOutSlowInEasing),
+                        initialOffsetX = { w -> -(w * 0.18f).toInt() }
+                    ) + fadeIn(tween(210, easing = FastOutSlowInEasing))) togetherWith
+                        (slideOutHorizontally(
+                            animationSpec = tween(230, easing = FastOutSlowInEasing),
+                            targetOffsetX = { w -> (w * 0.30f).toInt() }
+                        ) + fadeOut(tween(175)))
+                }
+            }
+        }
+    }
+
+    /**
+     * Context-aware forward push / reverse Back-navigation animation for sub-screens
+     * (Google Forms, Dynamic Island, Themes, Privacy, Export, Notifications).
+     */
+    fun subScreenTransition(
+        goingBack: Boolean,
+        reducedMotion: Boolean
+    ): ContentTransform {
+        if (reducedMotion) {
+            return EnterTransition.None togetherWith ExitTransition.None
+        }
+        return if (!goingBack) {
+            // Entering a sub-screen: crisp slide-in from right + fade
+            (slideInHorizontally(
+                animationSpec = tween(245, easing = FastOutSlowInEasing),
+                initialOffsetX = { w -> (w * 0.28f).toInt() }
+            ) + fadeIn(tween(195, easing = FastOutSlowInEasing))) togetherWith
+                (slideOutHorizontally(
+                    animationSpec = tween(210, easing = FastOutSlowInEasing),
+                    targetOffsetX = { w -> -(w * 0.12f).toInt() }
+                ) + fadeOut(tween(160)))
+        } else {
+            // Pressing Back / returning to Home: outgoing sub-screen slides away right, Home glides back in from left
+            (slideInHorizontally(
+                animationSpec = tween(245, easing = FastOutSlowInEasing),
+                initialOffsetX = { w -> -(w * 0.16f).toInt() }
+            ) + fadeIn(tween(205, easing = FastOutSlowInEasing))) togetherWith
+                (slideOutHorizontally(
+                    animationSpec = tween(230, easing = FastOutSlowInEasing),
+                    targetOffsetX = { w -> (w * 0.32f).toInt() }
+                ) + fadeOut(tween(175)))
+        }
+    }
 }
 
 enum class GlassMaterialStrength {
@@ -108,25 +266,29 @@ enum class GlassMaterialStrength {
 }
 
 /**
- * Elastic spring compression feedback on tap when fluid animations are enabled.
+ * Elastic spring compression feedback on tap calibrated per active theme archetype.
+ * Reads animation state strictly in GPU graphicsLayer (zero recomposition/relayout).
  */
 fun Modifier.liquidPressScale(
     interactionSource: InteractionSource,
-    pressedScale: Float = 0.965f
+    pressedScale: Float = -1f
 ): Modifier = composed {
     val reducedMotion = LocalReducedMotion.current
     val springCfg = LocalSpringPhysics.current
+    val archetype = LocalPrismThemeSpec.current.layoutArchetype
     if (reducedMotion) return@composed this
 
+    val resolvedPressed = if (pressedScale > 0f) pressedScale else MotionTokens.cardPressScaleFor(archetype)
     val isPressed by interactionSource.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        targetValue = if (isPressed) pressedScale else 1f,
+    val scaleState = animateFloatAsState(
+        targetValue = if (isPressed) resolvedPressed else 1f,
         animationSpec = MotionTokens.tactilePress(reducedMotion = false, config = springCfg),
         label = "liquid_press_scale"
     )
     this.graphicsLayer {
-        scaleX = scale
-        scaleY = scale
+        val s = scaleState.value
+        scaleX = s
+        scaleY = s
     }
 }
 
@@ -162,29 +324,37 @@ fun Modifier.liquidSheenSweep(
 }
 
 /**
- * Subtle curved top glass highlight rim that accentuates sleek superellipse-like card contours.
+ * Subtle curved top glass highlight rim cached via [drawWithCache] so LazyColumn scroll
+ * performs zero per-frame Brush or Stroke allocations.
  */
 fun Modifier.topGlassSpecularHighlight(
     cornerRadius: Dp,
     alpha: Float = 0.14f
-): Modifier = this.drawWithContent {
-    drawContent()
-    if (size.width > 4f && size.height > 4f) {
-        val radiusPx = cornerRadius.toPx().coerceAtMost(size.minDimension / 2f)
-        drawRoundRect(
-            brush = Brush.verticalGradient(
-                0f to Color.White.copy(alpha = alpha),
-                0.28f to Color.White.copy(alpha = alpha * 0.22f),
-                0.55f to Color.Transparent
-            ),
-            cornerRadius = CornerRadius(radiusPx, radiusPx),
-            style = Stroke(width = 1.1.dp.toPx())
-        )
+): Modifier = this.drawWithCache {
+    val radiusPx = cornerRadius.toPx().coerceAtMost(size.minDimension / 2f)
+    val corner = CornerRadius(radiusPx, radiusPx)
+    val stroke = Stroke(width = 1.1.dp.toPx())
+    val brush = Brush.verticalGradient(
+        0f to Color.White.copy(alpha = alpha),
+        0.28f to Color.White.copy(alpha = alpha * 0.22f),
+        0.55f to Color.Transparent
+    )
+    onDrawWithContent {
+        drawContent()
+        if (size.width > 4f && size.height > 4f) {
+            drawRoundRect(
+                brush = brush,
+                cornerRadius = corner,
+                style = stroke
+            )
+        }
     }
 }
 
 /**
- * Dynamic /unslop card surface modifier reading active [LocalWhiteGlassPalette] & [LocalPrismThemeSpec].
+ * High-FPS /unslop card surface modifier reading active [LocalWhiteGlassPalette] & [LocalPrismThemeSpec].
+ * Caches gradient brushes via [drawWithCache] and reserves expensive hardware elevation shadows
+ * strictly for Hero & FloatingDock containers so LazyColumn scrolling stays silky smooth.
  */
 fun Modifier.livingGlassSurface(
     strength: GlassMaterialStrength = GlassMaterialStrength.Card,
@@ -196,19 +366,22 @@ fun Modifier.livingGlassSurface(
     val spec = LocalPrismThemeSpec.current
     val resolvedRadius = if (cornerRadius == 20.dp) PrismCurves.cardCorner(spec) else cornerRadius
     val shape: Shape = RoundedCornerShape(resolvedRadius)
-    val borderWidth = (spec.borderWidthTenths / 10f).coerceIn(0.6f, 2.5f).dp
+    val borderWidth = (spec.borderWidthTenths / 10f).coerceIn(0.6f, 2.2f).dp
 
     val depthMultiplier = when (spec.animationIntensity) {
-        ThemeAnimationIntensity.EXTREME_3D -> 1.4f
+        ThemeAnimationIntensity.EXTREME_3D -> 1.25f
         ThemeAnimationIntensity.INTERACTIVE, ThemeAnimationIntensity.AUTO -> 1.0f
         ThemeAnimationIntensity.SUBTLE -> 0.7f
     }
 
     val shadowElevation = when (strength) {
-        GlassMaterialStrength.FloatingDock -> (12f * depthMultiplier).dp
-        GlassMaterialStrength.Hero -> (9f * depthMultiplier).dp
-        GlassMaterialStrength.Card -> (4f * depthMultiplier).dp
-        GlassMaterialStrength.AccentMint, GlassMaterialStrength.AccentSky -> (6f * depthMultiplier).dp
+        GlassMaterialStrength.FloatingDock -> (10f * depthMultiplier).dp
+        GlassMaterialStrength.Hero -> (7f * depthMultiplier).dp
+        // Ordinary scrolling cards rely on crisp borders + cached specular rim instead of
+        // per-item hardware shadow render passes, eliminating LazyColumn scroll jank.
+        GlassMaterialStrength.Card,
+        GlassMaterialStrength.AccentMint,
+        GlassMaterialStrength.AccentSky -> 0.dp
     }
 
     val topFill: Color
@@ -242,26 +415,32 @@ fun Modifier.livingGlassSurface(
         }
     }
 
-    val ambientShadow = if (palette.isDarkObsidian) Color(0x99000000) else Color(0x1E0F172A)
-    val spotShadow = when {
-        strength == GlassMaterialStrength.AccentSky || strength == GlassMaterialStrength.Hero ->
-            palette.accentSky.copy(alpha = if (palette.isDarkObsidian) 0.30f else 0.16f)
-        palette.isDarkObsidian -> Color(0xAA000000)
-        else -> Color(0x220F172A)
-    }
-
-    this
-        .shadow(
+    val baseMod = if (shadowElevation > 0.dp) {
+        val ambientShadow = if (palette.isDarkObsidian) Color(0x88000000) else Color(0x1A0F172A)
+        val spotShadow = when {
+            strength == GlassMaterialStrength.Hero ->
+                palette.accentSky.copy(alpha = if (palette.isDarkObsidian) 0.28f else 0.14f)
+            palette.isDarkObsidian -> Color(0x99000000)
+            else -> Color(0x200F172A)
+        }
+        this.shadow(
             elevation = shadowElevation,
             shape = shape,
             ambientColor = ambientShadow,
             spotColor = spotShadow
         )
+    } else {
+        this
+    }
+
+    baseMod
         .clip(shape)
-        .background(
-            brush = Brush.verticalGradient(colors = listOf(topFill, bottomFill)),
-            shape = shape
-        )
+        .drawWithCache {
+            val fillBrush = Brush.verticalGradient(colors = listOf(topFill, bottomFill))
+            onDrawBehind {
+                drawRect(brush = fillBrush)
+            }
+        }
         .border(
             width = borderWidth,
             color = borderColor,
@@ -269,7 +448,7 @@ fun Modifier.livingGlassSurface(
         )
         .topGlassSpecularHighlight(
             cornerRadius = resolvedRadius,
-            alpha = if (palette.isDarkObsidian) 0.12f else 0.32f
+            alpha = if (palette.isDarkObsidian) 0.11f else 0.28f
         )
 }
 
@@ -313,9 +492,12 @@ fun Modifier.kineticAccentRim(
 }
 
 /**
- * Restrained /unslop atmospheric canvas rendered from [LocalWhiteGlassPalette] and [LocalPrismThemeSpec.surfaceEffect].
- * Reads scroll position only in the draw phase via [scrollOffsetProvider] and avoids continuous
- * 60fps infinite redraws so scrolling stays locked at native display refresh rate.
+ * High-FPS /unslop atmospheric canvas rendered from [LocalWhiteGlassPalette] and [LocalPrismThemeSpec.surfaceEffect].
+ *
+ * Performance architecture:
+ * - Static brushes, arcs, grids, and dot matrices are pre-computed ONCE per layout size inside [drawWithCache].
+ * - Scroll parallax runs 100% on the GPU render thread via [graphicsLayer] (`translationY`) with zero
+ *   per-frame allocations or Canvas re-loops during LazyColumn scroll!
  */
 @Composable
 fun LiquidAtmosphericBackdrop(
@@ -325,309 +507,250 @@ fun LiquidAtmosphericBackdrop(
 ) {
     val palette = LocalWhiteGlassPalette.current
     val spec = LocalPrismThemeSpec.current
+    val reducedMotion = LocalReducedMotion.current
     val phase = 0.35f
 
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(
-                Brush.verticalGradient(
-                    colors = listOf(palette.canvasTop, palette.canvasBottom)
-                )
+                remember(palette.canvasTop, palette.canvasBottom) {
+                    Brush.verticalGradient(colors = listOf(palette.canvasTop, palette.canvasBottom))
+                }
             )
     ) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val accent = palette.accentSky
-            val accentBright = palette.accentSkyBright
-            val subtleInk = palette.inkMuted
-            val glowAlpha = if (palette.isDarkObsidian) 0.20f else 0.10f
-            val liveScroll = scrollOffsetProvider?.invoke() ?: scrollOffsetPx
-            val parallaxShift = (liveScroll * 0.045f).coerceIn(-72f, 72f)
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    if (!reducedMotion) {
+                        val liveScroll = scrollOffsetProvider?.invoke() ?: scrollOffsetPx
+                        translationY = -(liveScroll * 0.04f).coerceIn(-64f, 64f)
+                    }
+                }
+                .drawWithCache {
+                    val accent = palette.accentSky
+                    val accentBright = palette.accentSkyBright
+                    val subtleInk = palette.inkMuted
+                    val glowAlpha = if (palette.isDarkObsidian) 0.20f else 0.10f
+                    val baseCenter = Offset(size.width * (0.10f + phase * 0.05f), size.height * 0.06f)
+                    val baseRadius = (size.width * 0.72f).coerceAtLeast(1f)
+                    val baseBrush = Brush.radialGradient(
+                        colors = listOf(
+                            accent.copy(alpha = glowAlpha),
+                            accentBright.copy(alpha = glowAlpha * 0.34f),
+                            Color.Transparent
+                        ),
+                        center = baseCenter,
+                        radius = baseRadius
+                    )
 
-            // Base controlled primary optical focal glow (never rainbow slop)
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(
-                        accent.copy(alpha = glowAlpha),
-                        accentBright.copy(alpha = glowAlpha * 0.34f),
-                        Color.Transparent
-                    ),
-                    center = Offset(size.width * (0.10f + phase * 0.05f), size.height * 0.06f - parallaxShift),
-                    radius = size.width * 0.72f
-                ),
-                center = Offset(size.width * (0.10f + phase * 0.05f), size.height * 0.06f - parallaxShift),
-                radius = size.width * 0.72f
-            )
-
-            when (spec.surfaceEffect) {
-                SurfaceEffectStyle.PRISM_HORIZON -> {
-                    // Architectural horizon arc + precision watchmaker calibration marks
-                    val arcCenter = Offset(size.width * 0.5f, size.height * 0.92f - parallaxShift * 0.6f)
-                    val mainR = size.width * 0.92f
-                    drawCircle(
-                        brush = Brush.radialGradient(
-                            colors = listOf(
-                                accent.copy(alpha = glowAlpha * 0.9f),
-                                accentBright.copy(alpha = glowAlpha * 0.25f),
-                                Color.Transparent
-                            ),
-                            center = Offset(size.width * (0.5f + (phase - 0.5f) * 0.18f), size.height * 0.04f - parallaxShift),
-                            radius = size.width * 0.76f
+                    val horizonCenter = Offset(size.width * (0.5f + (phase - 0.5f) * 0.18f), size.height * 0.04f)
+                    val horizonRadius = (size.width * 0.76f).coerceAtLeast(1f)
+                    val horizonBrush = Brush.radialGradient(
+                        colors = listOf(
+                            accent.copy(alpha = glowAlpha * 0.9f),
+                            accentBright.copy(alpha = glowAlpha * 0.25f),
+                            Color.Transparent
                         ),
-                        center = Offset(size.width * (0.5f + (phase - 0.5f) * 0.18f), size.height * 0.04f - parallaxShift),
-                        radius = size.width * 0.76f
+                        center = horizonCenter,
+                        radius = horizonRadius
                     )
-                    // Twin delicate curved horizon arcs
-                    drawCircle(
-                        color = accent.copy(alpha = 0.16f),
-                        radius = mainR,
-                        center = arcCenter,
-                        style = Stroke(width = 1.dp.toPx())
+                    val ambientCenter = Offset(size.width * 0.92f, size.height * 0.94f)
+                    val ambientRadius = (size.width * 0.62f).coerceAtLeast(1f)
+                    val ambientBrush = Brush.radialGradient(
+                        colors = listOf(accent.copy(alpha = glowAlpha * 0.65f), Color.Transparent),
+                        center = ambientCenter,
+                        radius = ambientRadius
                     )
-                    drawCircle(
-                        color = Color.White.copy(alpha = if (palette.isDarkObsidian) 0.05f else 0.14f),
-                        radius = mainR * 0.88f,
-                        center = arcCenter,
-                        style = Stroke(width = 0.75.dp.toPx())
+                    val auroraCenter = Offset(size.width * (0.25f + phase * 0.5f), size.height * 0.18f)
+                    val auroraRadius = (size.width * 0.82f).coerceAtLeast(1f)
+                    val auroraBrush = Brush.radialGradient(
+                        colors = listOf(accentBright.copy(alpha = glowAlpha * 0.90f), Color.Transparent),
+                        center = auroraCenter,
+                        radius = auroraRadius
                     )
-                    // Subtle zenith precision dot-rule
-                    val step = 30.dp.toPx()
-                    var x = step * 0.5f
-                    while (x < size.width) {
-                        val edgeFade = 1f - kotlin.math.abs((x / size.width) - 0.5f) * 1.7f
-                        if (edgeFade > 0.05f) {
-                            drawCircle(
-                                color = accentBright.copy(alpha = 0.14f * edgeFade),
-                                radius = 1.1.dp.toPx(),
-                                center = Offset(x, size.height * 0.11f - parallaxShift * 0.5f)
-                            )
-                        }
-                        x += step
-                    }
-                }
-                SurfaceEffectStyle.AMBIENT_GLOW -> {
-                    drawCircle(
-                        brush = Brush.radialGradient(
-                            colors = listOf(accent.copy(alpha = glowAlpha * 0.65f), Color.Transparent),
-                            center = Offset(size.width * 0.92f, size.height * 0.94f),
-                            radius = size.width * 0.62f
-                        ),
-                        center = Offset(size.width * 0.92f, size.height * 0.94f),
-                        radius = size.width * 0.62f
-                    )
-                }
-                SurfaceEffectStyle.HUD_RINGS -> {
-                    val hudCenter = Offset(size.width * 0.88f, size.height * 0.14f - parallaxShift)
-                    val ringStroke = Stroke(width = 1.dp.toPx())
-                    listOf(0.18f, 0.28f, 0.40f).forEachIndexed { idx, factor ->
-                        val r = size.width * factor + phase * (idx + 1) * 4.dp.toPx()
-                        drawCircle(
-                            color = accent.copy(alpha = 0.15f - idx * 0.03f),
-                            radius = r,
-                            center = hudCenter,
-                            style = ringStroke
-                        )
-                    }
-                    // Precision watchmaker dial ticks around middle ring
-                    val tickR = size.width * 0.28f + phase * 8.dp.toPx()
-                    for (i in 0 until 24) {
-                        val a = i * (2f * Math.PI.toFloat() / 24f) + phase * 0.35f
-                        val c = cos(a)
-                        val s = sin(a)
-                        val inner = tickR - 4.dp.toPx()
-                        drawLine(
-                            color = accentBright.copy(alpha = if (i % 3 == 0) 0.22f else 0.09f),
-                            start = Offset(hudCenter.x + c * inner, hudCenter.y + s * inner),
-                            end = Offset(hudCenter.x + c * tickR, hudCenter.y + s * tickR),
-                            strokeWidth = 1.dp.toPx()
-                        )
-                    }
-                }
-                SurfaceEffectStyle.CYBER_GRID, SurfaceEffectStyle.BRUTALIST_GRID -> {
-                    val step = if (spec.surfaceEffect == SurfaceEffectStyle.BRUTALIST_GRID) 64.dp.toPx() else 40.dp.toPx()
-                    val lineAlpha = if (spec.surfaceEffect == SurfaceEffectStyle.BRUTALIST_GRID) 0.12f else 0.07f
-                    val gridColor = if (spec.surfaceEffect == SurfaceEffectStyle.BRUTALIST_GRID) subtleInk else accent
-                    var x = 0f
-                    while (x <= size.width) {
-                        drawLine(
-                            color = gridColor.copy(alpha = lineAlpha),
-                            start = Offset(x, 0f),
-                            end = Offset(x, size.height),
-                            strokeWidth = 0.75.dp.toPx()
-                        )
-                        x += step
-                    }
-                    var y = 0f
-                    while (y <= size.height) {
-                        drawLine(
-                            color = gridColor.copy(alpha = lineAlpha),
-                            start = Offset(0f, y),
-                            end = Offset(size.width, y),
-                            strokeWidth = 0.75.dp.toPx()
-                        )
-                        y += step
-                    }
-                }
-                SurfaceEffectStyle.DOT_MATRIX -> {
-                    val step = 28.dp.toPx()
-                    val dotRadius = 1.1.dp.toPx()
-                    var x = step * 0.5f
-                    while (x < size.width) {
-                        var y = step * 0.5f
-                        while (y < size.height * 0.50f) {
-                            val fade = 1f - (y / (size.height * 0.50f))
-                            val shimmer = 0.7f + 0.3f * sin((x + y) * 0.015f + phase * 6.28f)
-                            drawCircle(
-                                color = accentBright.copy(alpha = 0.13f * fade * shimmer),
-                                radius = dotRadius,
-                                center = Offset(x, y - parallaxShift * 0.3f)
-                            )
-                            y += step
-                        }
-                        x += step
-                    }
-                }
-                SurfaceEffectStyle.NEURAL_NODES -> {
-                    val anchors = listOf(
-                        Offset(size.width * 0.16f, size.height * 0.12f - parallaxShift * 0.4f),
-                        Offset(size.width * 0.48f, size.height * (0.07f + phase * 0.025f) - parallaxShift * 0.5f),
-                        Offset(size.width * 0.84f, size.height * 0.16f - parallaxShift * 0.3f),
-                        Offset(size.width * 0.72f, size.height * (0.30f - phase * 0.015f) - parallaxShift * 0.4f),
-                        Offset(size.width * 0.30f, size.height * 0.24f - parallaxShift * 0.35f)
-                    )
-                    for (i in 0 until anchors.lastIndex) {
-                        drawLine(
-                            color = accent.copy(alpha = 0.15f),
-                            start = anchors[i],
-                            end = anchors[i + 1],
-                            strokeWidth = 1.dp.toPx()
-                        )
-                    }
-                    drawLine(
-                        color = accent.copy(alpha = 0.11f),
-                        start = anchors[0],
-                        end = anchors[4],
-                        strokeWidth = 1.dp.toPx()
-                    )
-                    // Travelling synaptic pulse along first spine
-                    val pulsePt = Offset(
-                        anchors[0].x + (anchors[1].x - anchors[0].x) * phase,
-                        anchors[0].y + (anchors[1].y - anchors[0].y) * phase
-                    )
-                    drawCircle(
-                        color = accentBright.copy(alpha = 0.48f),
-                        radius = 3.5.dp.toPx(),
-                        center = pulsePt
-                    )
-                    anchors.forEach { pt ->
-                        drawCircle(
-                            color = accentBright.copy(alpha = 0.28f),
-                            radius = 3.dp.toPx(),
-                            center = pt
-                        )
-                    }
-                }
-                SurfaceEffectStyle.AURORA_VEIL -> {
-                    val waveX = size.width * (0.25f + phase * 0.5f)
-                    drawCircle(
-                        brush = Brush.radialGradient(
-                            colors = listOf(accentBright.copy(alpha = glowAlpha * 0.90f), Color.Transparent),
-                            center = Offset(waveX, size.height * 0.18f - parallaxShift * 0.5f),
-                            radius = size.width * 0.82f
-                        ),
-                        center = Offset(waveX, size.height * 0.18f - parallaxShift * 0.5f),
-                        radius = size.width * 0.82f
-                    )
-                }
-                SurfaceEffectStyle.CARBON_WEAVE -> {
-                    val spacing = 22.dp.toPx()
-                    var offset = -size.height
-                    while (offset < size.width) {
-                        drawLine(
-                            color = subtleInk.copy(alpha = 0.06f),
-                            start = Offset(offset, 0f),
-                            end = Offset(offset + size.height * 0.4f, size.height * 0.4f),
-                            strokeWidth = 1.dp.toPx()
-                        )
-                        offset += spacing
-                    }
-                }
-                SurfaceEffectStyle.LIQUID_SPECULAR -> {
-                    val shineCenter = Offset(size.width * (0.78f - phase * 0.14f), size.height * 0.15f - parallaxShift * 0.4f)
-                    drawCircle(
-                        brush = Brush.radialGradient(
-                            colors = listOf(Color.White.copy(alpha = if (palette.isDarkObsidian) 0.09f else 0.35f), Color.Transparent),
-                            center = shineCenter,
-                            radius = size.width * 0.55f
-                        ),
+                    val shineCenter = Offset(size.width * (0.78f - phase * 0.14f), size.height * 0.15f)
+                    val shineRadius = (size.width * 0.55f).coerceAtLeast(1f)
+                    val shineBrush = Brush.radialGradient(
+                        colors = listOf(Color.White.copy(alpha = if (palette.isDarkObsidian) 0.09f else 0.35f), Color.Transparent),
                         center = shineCenter,
-                        radius = size.width * 0.55f
+                        radius = shineRadius
                     )
+                    val iosOrb1Center = Offset(size.width * (0.22f + phase * 0.16f), size.height * 0.12f)
+                    val iosOrb1Radius = (size.width * 0.62f).coerceAtLeast(1f)
+                    val iosOrb1Brush = Brush.radialGradient(
+                        colors = listOf(accent.copy(alpha = 0.11f), Color.Transparent),
+                        center = iosOrb1Center,
+                        radius = iosOrb1Radius
+                    )
+                    val iosOrb2Center = Offset(size.width * (0.86f - phase * 0.12f), size.height * 0.44f)
+                    val iosOrb2Radius = (size.width * 0.56f).coerceAtLeast(1f)
+                    val iosOrb2Brush = Brush.radialGradient(
+                        colors = listOf(Color(0xFF5AC8FA).copy(alpha = 0.10f), Color.Transparent),
+                        center = iosOrb2Center,
+                        radius = iosOrb2Radius
+                    )
+                    val stroke1 = Stroke(width = 1.dp.toPx())
+                    val strokeThin = Stroke(width = 0.75.dp.toPx())
+
+                    onDrawBehind {
+                        drawCircle(brush = baseBrush, center = baseCenter, radius = baseRadius)
+
+                        when (spec.surfaceEffect) {
+                            SurfaceEffectStyle.PRISM_HORIZON -> {
+                                val arcCenter = Offset(size.width * 0.5f, size.height * 0.92f)
+                                val mainR = size.width * 0.92f
+                                drawCircle(brush = horizonBrush, center = horizonCenter, radius = horizonRadius)
+                                drawCircle(color = accent.copy(alpha = 0.16f), radius = mainR, center = arcCenter, style = stroke1)
+                                drawCircle(
+                                    color = Color.White.copy(alpha = if (palette.isDarkObsidian) 0.05f else 0.14f),
+                                    radius = mainR * 0.88f,
+                                    center = arcCenter,
+                                    style = strokeThin
+                                )
+                                val step = 30.dp.toPx()
+                                var x = step * 0.5f
+                                while (x < size.width) {
+                                    val edgeFade = 1f - kotlin.math.abs((x / size.width) - 0.5f) * 1.7f
+                                    if (edgeFade > 0.05f) {
+                                        drawCircle(
+                                            color = accentBright.copy(alpha = 0.14f * edgeFade),
+                                            radius = 1.1.dp.toPx(),
+                                            center = Offset(x, size.height * 0.11f)
+                                        )
+                                    }
+                                    x += step
+                                }
+                            }
+                            SurfaceEffectStyle.AMBIENT_GLOW -> {
+                                drawCircle(brush = ambientBrush, center = ambientCenter, radius = ambientRadius)
+                            }
+                            SurfaceEffectStyle.HUD_RINGS -> {
+                                val hudCenter = Offset(size.width * 0.88f, size.height * 0.14f)
+                                listOf(0.18f, 0.28f, 0.40f).forEachIndexed { idx, factor ->
+                                    val r = size.width * factor + phase * (idx + 1) * 4.dp.toPx()
+                                    drawCircle(
+                                        color = accent.copy(alpha = 0.15f - idx * 0.03f),
+                                        radius = r,
+                                        center = hudCenter,
+                                        style = stroke1
+                                    )
+                                }
+                                val tickR = size.width * 0.28f + phase * 8.dp.toPx()
+                                val inner = tickR - 4.dp.toPx()
+                                for (i in 0 until 24) {
+                                    val a = i * (2f * Math.PI.toFloat() / 24f) + phase * 0.35f
+                                    val c = cos(a)
+                                    val s = sin(a)
+                                    drawLine(
+                                        color = accentBright.copy(alpha = if (i % 3 == 0) 0.22f else 0.09f),
+                                        start = Offset(hudCenter.x + c * inner, hudCenter.y + s * inner),
+                                        end = Offset(hudCenter.x + c * tickR, hudCenter.y + s * tickR),
+                                        strokeWidth = 1.dp.toPx()
+                                    )
+                                }
+                            }
+                            SurfaceEffectStyle.CYBER_GRID, SurfaceEffectStyle.BRUTALIST_GRID -> {
+                                val step = if (spec.surfaceEffect == SurfaceEffectStyle.BRUTALIST_GRID) 64.dp.toPx() else 40.dp.toPx()
+                                val lineAlpha = if (spec.surfaceEffect == SurfaceEffectStyle.BRUTALIST_GRID) 0.12f else 0.07f
+                                val gridColor = if (spec.surfaceEffect == SurfaceEffectStyle.BRUTALIST_GRID) subtleInk else accent
+                                var x = 0f
+                                while (x <= size.width) {
+                                    drawLine(color = gridColor.copy(alpha = lineAlpha), start = Offset(x, 0f), end = Offset(x, size.height), strokeWidth = 0.75.dp.toPx())
+                                    x += step
+                                }
+                                var y = 0f
+                                while (y <= size.height) {
+                                    drawLine(color = gridColor.copy(alpha = lineAlpha), start = Offset(0f, y), end = Offset(size.width, y), strokeWidth = 0.75.dp.toPx())
+                                    y += step
+                                }
+                            }
+                            SurfaceEffectStyle.DOT_MATRIX -> {
+                                val step = 28.dp.toPx()
+                                val dotRadius = 1.1.dp.toPx()
+                                var x = step * 0.5f
+                                while (x < size.width) {
+                                    var y = step * 0.5f
+                                    while (y < size.height * 0.50f) {
+                                        val fade = 1f - (y / (size.height * 0.50f))
+                                        val shimmer = 0.7f + 0.3f * sin((x + y) * 0.015f + phase * 6.28f)
+                                        drawCircle(color = accentBright.copy(alpha = 0.13f * fade * shimmer), radius = dotRadius, center = Offset(x, y))
+                                        y += step
+                                    }
+                                    x += step
+                                }
+                            }
+                            SurfaceEffectStyle.NEURAL_NODES -> {
+                                val anchors = listOf(
+                                    Offset(size.width * 0.16f, size.height * 0.12f),
+                                    Offset(size.width * 0.48f, size.height * (0.07f + phase * 0.025f)),
+                                    Offset(size.width * 0.84f, size.height * 0.16f),
+                                    Offset(size.width * 0.72f, size.height * (0.30f - phase * 0.015f)),
+                                    Offset(size.width * 0.30f, size.height * 0.24f)
+                                )
+                                for (i in 0 until anchors.lastIndex) {
+                                    drawLine(color = accent.copy(alpha = 0.15f), start = anchors[i], end = anchors[i + 1], strokeWidth = 1.dp.toPx())
+                                }
+                                drawLine(color = accent.copy(alpha = 0.11f), start = anchors[0], end = anchors[4], strokeWidth = 1.dp.toPx())
+                                val pulsePt = Offset(
+                                    anchors[0].x + (anchors[1].x - anchors[0].x) * phase,
+                                    anchors[0].y + (anchors[1].y - anchors[0].y) * phase
+                                )
+                                drawCircle(color = accentBright.copy(alpha = 0.48f), radius = 3.5.dp.toPx(), center = pulsePt)
+                                anchors.forEach { pt ->
+                                    drawCircle(color = accentBright.copy(alpha = 0.28f), radius = 3.dp.toPx(), center = pt)
+                                }
+                            }
+                            SurfaceEffectStyle.AURORA_VEIL -> {
+                                drawCircle(brush = auroraBrush, center = auroraCenter, radius = auroraRadius)
+                            }
+                            SurfaceEffectStyle.CARBON_WEAVE -> {
+                                val spacing = 22.dp.toPx()
+                                var offset = -size.height
+                                while (offset < size.width) {
+                                    drawLine(
+                                        color = subtleInk.copy(alpha = 0.06f),
+                                        start = Offset(offset, 0f),
+                                        end = Offset(offset + size.height * 0.4f, size.height * 0.4f),
+                                        strokeWidth = 1.dp.toPx()
+                                    )
+                                    offset += spacing
+                                }
+                            }
+                            SurfaceEffectStyle.LIQUID_SPECULAR -> {
+                                drawCircle(brush = shineBrush, center = shineCenter, radius = shineRadius)
+                            }
+                            SurfaceEffectStyle.LAB_RETICLE -> {
+                                val cx = size.width * 0.86f
+                                val cy = size.height * 0.13f
+                                val radius = 56.dp.toPx()
+                                drawCircle(color = accent.copy(alpha = 0.18f), radius = radius, center = Offset(cx, cy), style = stroke1)
+                                drawCircle(color = accent.copy(alpha = 0.09f), radius = radius * 0.62f, center = Offset(cx, cy), style = strokeThin)
+                                val angle = phase * 3.14159f
+                                val dx = cos(angle) * radius
+                                val dy = sin(angle) * radius
+                                drawLine(color = accentBright.copy(alpha = 0.24f), start = Offset(cx - dx, cy - dy), end = Offset(cx + dx, cy + dy), strokeWidth = 1.dp.toPx())
+                            }
+                            SurfaceEffectStyle.IOS_LIQUID_GLASS -> {
+                                drawCircle(brush = iosOrb1Brush, center = iosOrb1Center, radius = iosOrb1Radius)
+                                drawCircle(brush = iosOrb2Brush, center = iosOrb2Center, radius = iosOrb2Radius)
+                                drawLine(
+                                    color = Color.White.copy(alpha = 0.72f),
+                                    start = Offset(0f, 0.5.dp.toPx()),
+                                    end = Offset(size.width, 0.5.dp.toPx()),
+                                    strokeWidth = 1.dp.toPx()
+                                )
+                            }
+                        }
+                    }
                 }
-                SurfaceEffectStyle.LAB_RETICLE -> {
-                    val cx = size.width * 0.86f
-                    val cy = size.height * 0.13f - parallaxShift
-                    val radius = 56.dp.toPx()
-                    drawCircle(
-                        color = accent.copy(alpha = 0.18f),
-                        radius = radius,
-                        center = Offset(cx, cy),
-                        style = Stroke(1.dp.toPx())
-                    )
-                    drawCircle(
-                        color = accent.copy(alpha = 0.09f),
-                        radius = radius * 0.62f,
-                        center = Offset(cx, cy),
-                        style = Stroke(0.8.dp.toPx())
-                    )
-                    val angle = phase * 3.14159f
-                    val dx = cos(angle) * radius
-                    val dy = sin(angle) * radius
-                    drawLine(
-                        color = accentBright.copy(alpha = 0.24f),
-                        start = Offset(cx - dx, cy - dy),
-                        end = Offset(cx + dx, cy + dy),
-                        strokeWidth = 1.dp.toPx()
-                    )
-                }
-                SurfaceEffectStyle.IOS_LIQUID_GLASS -> {
-                    // Apple-inspired translucent pearlescent floating light orbs on clean white/platinum canvas
-                    val driftX = size.width * (0.22f + phase * 0.16f)
-                    val driftY = size.height * 0.12f - parallaxShift * 0.35f
-                    drawCircle(
-                        brush = Brush.radialGradient(
-                            colors = listOf(accent.copy(alpha = 0.11f), Color.Transparent),
-                            center = Offset(driftX, driftY),
-                            radius = size.width * 0.62f
-                        ),
-                        center = Offset(driftX, driftY),
-                        radius = size.width * 0.62f
-                    )
-                    val orb2X = size.width * (0.86f - phase * 0.12f)
-                    val orb2Y = size.height * 0.44f - parallaxShift * 0.2f
-                    drawCircle(
-                        brush = Brush.radialGradient(
-                            colors = listOf(Color(0xFF5AC8FA).copy(alpha = 0.10f), Color.Transparent),
-                            center = Offset(orb2X, orb2Y),
-                            radius = size.width * 0.56f
-                        ),
-                        center = Offset(orb2X, orb2Y),
-                        radius = size.width * 0.56f
-                    )
-                    drawLine(
-                        color = Color.White.copy(alpha = 0.72f),
-                        start = Offset(0f, 0.5.dp.toPx()),
-                        end = Offset(size.width, 0.5.dp.toPx()),
-                        strokeWidth = 1.dp.toPx()
-                    )
-                }
-            }
-        }
+        )
     }
 }
 
 /**
- * Crisp, GPU-accelerated staggered entrance choreography that never blocks taps
+ * Crisp, GPU-accelerated theme-aware staggered entrance choreography that never blocks taps
  * and immediately snaps to final state when [LocalReducedMotion] is enabled.
  */
 @Composable
@@ -637,6 +760,7 @@ fun ScrollRevealSection(
     content: @Composable () -> Unit
 ) {
     val reducedMotion = LocalReducedMotion.current
+    val archetype = LocalPrismThemeSpec.current.layoutArchetype
     if (reducedMotion) {
         Box(modifier = modifier) { content() }
         return
@@ -644,13 +768,27 @@ fun ScrollRevealSection(
 
     val progress = remember { androidx.compose.animation.core.Animatable(0f) }
     androidx.compose.runtime.LaunchedEffect(Unit) {
-        val staggerMs = (index.coerceIn(0, 6) * 32L)
+        val staggerStep = when (archetype) {
+            ThemeLayoutArchetype.TELEMETRY_HUD -> 16L
+            ThemeLayoutArchetype.KINETIC_DECK -> 22L
+            ThemeLayoutArchetype.ATELIER_BENTO -> 26L
+            else -> 24L
+        }
+        val durationMs = when (archetype) {
+            ThemeLayoutArchetype.TELEMETRY_HUD -> 140
+            ThemeLayoutArchetype.KINETIC_DECK -> 185
+            ThemeLayoutArchetype.EDITORIAL_MONOGRAPH -> 240
+            ThemeLayoutArchetype.IOS_LIQUID_LIGHT -> 230
+            ThemeLayoutArchetype.ATELIER_BENTO -> 195
+            ThemeLayoutArchetype.CLASSIC_PRISM -> 205
+        }
+        val staggerMs = (index.coerceIn(0, 5) * staggerStep)
         if (staggerMs > 0L) kotlinx.coroutines.delay(staggerMs)
         progress.animateTo(
             targetValue = 1f,
             animationSpec = tween(
-                durationMillis = 280,
-                easing = androidx.compose.animation.core.FastOutSlowInEasing
+                durationMillis = durationMs,
+                easing = FastOutSlowInEasing
             )
         )
     }
@@ -658,8 +796,24 @@ fun ScrollRevealSection(
     Box(
         modifier = modifier.graphicsLayer {
             val p = progress.value
-            alpha = 0.15f + 0.85f * p
-            translationY = (1f - p) * 14.dp.toPx()
+            alpha = 0.25f + 0.75f * p
+            when (archetype) {
+                ThemeLayoutArchetype.TELEMETRY_HUD -> {
+                    translationX = (1f - p) * 10.dp.toPx()
+                }
+                ThemeLayoutArchetype.EDITORIAL_MONOGRAPH -> {
+                    translationY = (1f - p) * 6.dp.toPx()
+                }
+                ThemeLayoutArchetype.KINETIC_DECK -> {
+                    val s = 0.97f + 0.03f * p
+                    scaleX = s
+                    scaleY = s
+                    translationY = (1f - p) * 10.dp.toPx()
+                }
+                else -> {
+                    translationY = (1f - p) * 11.dp.toPx()
+                }
+            }
         }
     ) {
         content()

@@ -128,7 +128,7 @@ fun PrivacyPolicyModalDialog(
                                 )
                             )
                             Text(
-                                text = "Updated v3.5.2 • Private In-Memory Reading",
+                                text = "Updated v4.0 • Transparent Data & AI Policy",
                                 style = MaterialTheme.typography.bodySmall.copy(
                                     color = palette.inkSecondary,
                                     fontSize = 11.5.sp
@@ -190,7 +190,7 @@ fun PrivacyPolicyScreen(
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 28.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // ── 1. VERIFIED PRIVACY SPECS BANNER ──
+        // ── 1. TRANSPARENT PRIVACY OVERVIEW BANNER ──
         item(key = "privacy_verified_banner") {
             Column(
                 modifier = Modifier
@@ -217,7 +217,7 @@ fun PrivacyPolicyScreen(
                                 .background(palette.accentEmerald)
                         )
                         Text(
-                            text = "ZERO-LOG VOLATILE RAM ARCHITECTURE",
+                            text = "ON-DEMAND PRIVACY & DATA SAFETY",
                             style = MaterialTheme.typography.labelSmall.copy(
                                 color = palette.accentSky,
                                 fontWeight = FontWeight.ExtraBold,
@@ -234,7 +234,7 @@ fun PrivacyPolicyScreen(
                             .padding(horizontal = 8.dp, vertical = 3.dp)
                     ) {
                         Text(
-                            text = "v3.5.2 Policy",
+                            text = "v4.0 Policy",
                             style = MaterialTheme.typography.labelSmall.copy(
                                 color = palette.inkPrimary,
                                 fontWeight = FontWeight.Bold,
@@ -245,7 +245,7 @@ fun PrivacyPolicyScreen(
                 }
 
                 Text(
-                    text = "Prism Solver reads screen frames only in temporary device memory (RAM) when you tap the floating pill. No screenshots, screen recordings, or personal credentials are ever written to disk or uploaded to third-party tracking servers.",
+                    text = "Prism Solver reads your screen only when you tap Solve, and only processes photos or PDFs that you explicitly select. Screenshots are processed in temporary memory and are never saved to your photo gallery.",
                     style = MaterialTheme.typography.bodySmall.copy(
                         color = palette.inkPrimary,
                         fontSize = 12.5.sp,
@@ -257,65 +257,62 @@ fun PrivacyPolicyScreen(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    PrivacySpecPill(label = "RAM-Only Capture", value = "0 Disk Writes", modifier = Modifier.weight(1f))
-                    PrivacySpecPill(label = "On-Device Reader", value = "Google ML Kit", modifier = Modifier.weight(1f))
-                    PrivacySpecPill(label = "Ad / Analytics SDKs", value = "0 Trackers", modifier = Modifier.weight(1f))
+                    PrivacySpecPill(label = "Screen Capture", value = "On Tap Only", modifier = Modifier.weight(1f))
+                    PrivacySpecPill(label = "On-Device OCR", value = "Google ML Kit", modifier = Modifier.weight(1f))
+                    PrivacySpecPill(label = "Monetization", value = "Google AdMob", modifier = Modifier.weight(1f))
                 }
             }
         }
 
-        // ── SECTION 01: TEMPORARY MEMORY CAPTURE & ON-DEVICE TEXT READER ──
+        // ── SCREEN READING, PHOTOS & PDFS ──
         item(key = "privacy_sec_01") {
             PrivacyPolicySectionCard(
-                stepNumber = "01",
-                title = "Temporary Memory Reading (No Saved Screenshots)",
+                title = "Screen Reading, Photos & PDFs",
                 icon = Icons.Filled.Memory,
                 bullets = listOf(
-                    "Single-Frame Memory Buffer: Only when you tap the floating pill to solve a question does Android capture a single frame into temporary memory.",
-                    "On-Device Text Reading: Text reading runs locally on your phone using Google ML Kit without sending full screenshots to any external text-reading server.",
-                    "Immediate Frame Disposal: Once the question and choices are read (within 150–300ms), the temporary image buffer is immediately cleared."
+                    "Screen reading runs only when you tap Solve. One temporary screenshot is checked in memory and is never saved to your gallery.",
+                    "Text on your screen is read on your phone first so only the question text is sent whenever possible.",
+                    "Photos (up to 2 MB) and PDFs (up to 3 MB) that you pick yourself are sent securely to generate your answer, then cleared from temporary memory."
                 )
             )
         }
 
-        // ── SECTION 02: SOLVING STYLES & DATA TRANSMISSION ──
+        // ── ACCOUNT, SHARED CLASS ANSWERS & FAIR USE ──
         item(key = "privacy_sec_02") {
             PrivacyPolicySectionCard(
-                stepNumber = "02",
-                title = "Solving Styles & Data Transmission",
+                title = "Google Sign-In, Shared Form Answers & Fair Use",
                 icon = Icons.Filled.Security,
                 bullets = listOf(
-                    "1. Fast Answer (Default): Sends only the question text over encrypted HTTPS to return the answer letter (A/B/C/D) in a few seconds.",
-                    "2. Best Accuracy: Compares answers across multiple helpers and shows when they agree on the floating pill.",
-                    "Optional Diagrams & Personal Keys: Cropped question images are sent only when you choose Photo & Diagrams or Diagram Boost. Optional personal keys connect directly from your device."
+                    "Google Sign-In keeps your saved history synced and protects daily usage limits for every student.",
+                    "Class-Wide Shared Form Answers: When a Google Form link is solved, its hashed link and verified answer text may be saved on our server so classmates opening the same quiz link get instant answers without repeating AI calls.",
+                    "Fair-Use Protection: Daily limits apply per account and per device. Repeatedly switching or deleting accounts on the same phone to bypass daily limits triggers a warning and then a device restriction."
                 )
             )
         }
 
-        // ── SECTION 03: FLOATING OVERLAY & SCREEN CAPTURE DISCLOSURE ──
+        // ── ADS & FLOATING HELPER ──
         item(key = "privacy_sec_03") {
             PrivacyPolicySectionCard(
-                stepNumber = "03",
-                title = "Floating Overlay & Screen Capture Disclosure",
+                title = "Ads & Floating Helper",
                 icon = Icons.Filled.VerifiedUser,
                 bullets = listOf(
-                    "No Accessibility Service Required: This app does not request or use Android Accessibility permissions and never auto-clicks or inspects other apps in the background.",
-                    "On-Demand Screen Reading Only: Screen frames are captured strictly when you tap the Dynamic Island to read an on-screen question, processed in memory, and never saved to disk.",
-                    "Instant Revocation: You can stop the floating Dynamic Island at any time from the Home screen, the pill close button, or the notification shade."
+                    "Prism Solver shows Google AdMob ads to help keep solving free. You can manage ad personalization anytime in Android Settings > Privacy > Ads.",
+                    "Prism Solver never uses hidden Accessibility auto-clicking or background screen recording.",
+                    "You can turn off the floating helper anytime from Home, the pill close button, Quick Settings, or your notification shade."
                 )
             )
         }
 
-        // ── SECTION 04: LOCAL KEY VAULT & EXPORTED STUDY DATA ──
+        // ── YOUR CONTROLS & ACCOUNT DELETION ──
         item(key = "privacy_sec_04") {
             PrivacyPolicySectionCard(
-                stepNumber = "04",
-                title = "Encrypted Local Key Vault & Exported Data",
+                title = "Your Data Controls & Deletion",
                 icon = Icons.Filled.Lock,
                 bullets = listOf(
-                    "Encrypted Device-Only Key Storage: Your personal API keys are encrypted with Android Keystore AES-256-GCM in a dedicated private file excluded from Android cloud backups.",
-                    "User-Controlled Study Exports: Solved questions and answers are kept locally so you can review or export them as .TXT, .CSV, .JSON, or .MD files in Export Questions & Answers.",
-                    "Educational Compliance: Designed strictly as a study and revision assistant. Users are responsible for complying with applicable academic and platform guidelines."
+                    "Automatic 7-Day Cleanup: Saved MCQ answers, quiz history, and local answer caches are automatically deleted after 7 days.",
+                    "Any optional personal keys you enter are encrypted on your phone only and never backed up to the cloud.",
+                    "You can also clear your saved history anytime, remove saved keys, or permanently delete your account from Settings.",
+                    "Built as a personal study and revision helper. Always follow your school, college, and exam rules."
                 )
             )
         }
@@ -537,14 +534,13 @@ private fun PrivacySpecPill(
 
 @Composable
 private fun PrivacyPolicySectionCard(
-    stepNumber: String,
     title: String,
     icon: ImageVector,
     bullets: List<String>
 ) {
     val palette = LocalWhiteGlassPalette.current
     val themeSpec = LocalPrismThemeSpec.current
-    val cardCorner = themeSpec.cornerRadiusDp.coerceIn(12, 24).dp
+    val cardCorner = themeSpec.cornerRadiusDp.coerceIn(12, 20).dp
 
     Column(
         modifier = Modifier
@@ -561,28 +557,18 @@ private fun PrivacyPolicySectionCard(
         ) {
             Box(
                 modifier = Modifier
+                    .size(30.dp)
                     .clip(RoundedCornerShape(8.dp))
-                    .background(palette.accentSkyContainer)
-                    .border(1.dp, palette.accentSky.copy(alpha = 0.6f), RoundedCornerShape(8.dp))
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                    .background(palette.accentSkyContainer),
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = stepNumber,
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        color = palette.accentSky,
-                        fontWeight = FontWeight.ExtraBold,
-                        fontSize = 11.sp
-                    )
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = palette.accentSky,
+                    modifier = Modifier.size(16.dp)
                 )
             }
-
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = palette.accentSky,
-                modifier = Modifier.size(18.dp)
-            )
 
             Text(
                 text = title,
@@ -594,7 +580,7 @@ private fun PrivacyPolicySectionCard(
             )
         }
 
-        HorizontalDivider(color = palette.cardHairlineBorder)
+        HorizontalDivider(color = palette.cardHairlineBorder.copy(alpha = 0.7f))
 
         bullets.forEach { bullet ->
             Row(

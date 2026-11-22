@@ -12,7 +12,12 @@ import com.google.gson.Gson
 import com.google.gson.JsonElement
 import com.google.gson.JsonParser
 import com.omnisolve.overlay.cache.PersistentQuizCacheManager
+import com.omnisolve.overlay.cache.SharedFormCacheRepository
 import com.omnisolve.overlay.model.QuestionSolveMode
+import com.omnisolve.overlay.data.UsageLimitCheckResult
+import com.omnisolve.overlay.data.UsageLimitFeature
+import com.omnisolve.overlay.data.UserUsageLimitManager
+import com.omnisolve.overlay.f1.F1AuthGate
 import com.omnisolve.overlay.f1.F1FailureKind
 import com.omnisolve.overlay.f1.F1ProviderHealthManager
 import com.omnisolve.overlay.f1.F1ProviderId
@@ -85,7 +90,8 @@ class FormExtractionException(
 
 class FormSolveException(
     message: String,
-    val needsGeminiWebLogin: Boolean = false
+    val needsGeminiWebLogin: Boolean = false,
+    val requiresGoogleSignIn: Boolean = false
 ) : IllegalStateException(message)
 
 enum class GoogleFormsModelOption(
@@ -96,27 +102,27 @@ enum class GoogleFormsModelOption(
 ) {
     GEMINI_38_FLASH(
         id = "gemini-3.8-flash",
-        label = "Smart Auto (Flash)",
-        badge = "Free • Fastest",
-        description = "Cloudflare Workers AI + Gemini 3.8 Flash • Best free speed & accuracy"
+        label = "Smart Auto",
+        badge = "Recommended",
+        description = "Best balance of speed and accuracy for quizzes"
     ),
     GEMINI_35_FLASH_LITE(
         id = "gemini-3.5-flash-lite",
-        label = "Turbo Lite",
-        badge = "Ultra-Fast",
-        description = "Instant lightweight replies for rapid multi-question forms"
+        label = "Fast Mode",
+        badge = "Quickest",
+        description = "Instant answers for long multi-question forms"
     ),
     GEMINI_WEB_AI(
         id = "gemini-web-ai",
-        label = "Gemini Web AI",
-        badge = "Direct Chat",
-        description = "Uses your signed-in Gemini Web session"
+        label = "Signed-In Browser",
+        badge = "Free • Unlimited",
+        description = "Uses your own browser session · 0 server limits"
     ),
     PERSONAL_API_KEYS(
         id = "personal-api-keys",
-        label = "My API Keys",
+        label = "My Own Keys",
         badge = "Custom",
-        description = "Uses your own saved AI key from Settings"
+        description = "Uses your personal keys saved in Settings"
     );
 
     companion object {
@@ -736,6 +742,13 @@ object GoogleFormsSolverEngine {
         subjectMode: SubjectMode = SubjectMode.GENERAL,
         cloudModelName: String = DEFAULT_FORMS_MODEL
     ): GoogleFormSolveResult = withContext(Dispatchers.IO) {
+        val auth = F1AuthGate.verifyGoogleAccount(context)
+        if (!auth.isAuthenticated || auth.uid.isNullOrBlank()) {
+            throw FormSolveException(
+                message = auth.errorMessage.ifBlank { "Sign in with Google to solve Google Forms, Photos, and PDFs." },
+                requiresGoogleSignIn = true
+            )
+        }
         val selectedOption = GoogleFormsModelOption.fromId(cloudModelName)
         val filteredQuestions = extractResult.questions
             .filterNot { isNonQuizMetadataField(it.questionText, it.options) }
@@ -749,6 +762,7 @@ object GoogleFormsSolverEngine {
         val usePersistentCache = OnlineConsensusRaceEngine.httpClientOverride == null &&
             GeminiWebBatchBridge.bridgeOverrideForTest == null &&
             httpClientOverrideForTest == null
+        val useSharedFormCache = usePersistentCache || SharedFormCacheRepository.remoteStoreOverrideForTest != null
 
         val formSolveStartMs = System.currentTimeMillis()
         val combinedParsedMap = linkedMapOf<Int, ParsedBatchEntry>()
@@ -756,14 +770,43 @@ object GoogleFormsSolverEngine {
         var primaryEngineUsed = ""
         var lastErrorMsg = ""
         var loginPromptRequired = false
+        var sharedFormMatchedCount = 0
 
-        // 0. Instant Cache Lookup — ONLY accept consensus-verified entries (confidence >= 96)
-        // so stale single-solver guesses from older models are never replayed.
-        if (usePersistentCache) {
+        // 0A. Class-Wide Jumble-Proof Form Cache Lookup (/sharedFormSolutions/{formHash})
+        // Instantly serves classmates opening the same Google Form link (even with shuffled
+        // question order or shuffled A/B/C/D options) with ZERO AI calls & ZERO daily quota used.
+        if (useSharedFormCache) {
+            val sharedLookup = runCatching {
+                SharedFormCacheRepository.lookupAndRemap(
+                    context = context,
+                    resolvedUrl = extractResult.resolvedUrl,
+                    liveQuestions = questions
+                )
+            }.getOrNull()
+            if (sharedLookup != null && sharedLookup.matchedByQuestionNumber.isNotEmpty()) {
+                for ((qNum, remapped) in sharedLookup.matchedByQuestionNumber) {
+                    combinedParsedMap[qNum] = ParsedBatchEntry(
+                        answerToken = remapped.answerToken,
+                        shortAnswerHint = remapped.shortAnswer,
+                        explanation = remapped.explanation
+                    )
+                }
+                sharedFormMatchedCount = sharedLookup.matchedByQuestionNumber.size
+                primaryEngineUsed = if (sharedFormMatchedCount == questions.size) {
+                    "Instant Class Cache • Jumble-Safe"
+                } else {
+                    "Class Cache + Live AI"
+                }
+            }
+        }
+
+        // 0B. Per-Question Cache Lookup for any questions not yet matched in the class form cache
+        val stillMissingAfterFormCache = questions.filter { !combinedParsedMap.containsKey(it.number) }
+        if (usePersistentCache && stillMissingAfterFormCache.isNotEmpty()) {
             val cacheHits = runCatching {
                 PersistentQuizCacheManager.lookupBatchAcrossDatabases(
                     context = context,
-                    questions = questions.map { it.number to (it.questionText to it.options) },
+                    questions = stillMissingAfterFormCache.map { it.number to (it.questionText to it.options) },
                     subject = subjectMode
                 )
             }.getOrDefault(emptyMap())
@@ -783,6 +826,23 @@ object GoogleFormsSolverEngine {
         }
 
         val uncachedQuestions = questions.filter { !combinedParsedMap.containsKey(it.number) }
+        // Free & Unlimited (0 server cost): Class Cache hits, Signed-In Browser (Gemini Web), & Personal API Keys
+        val requiresCloudFormQuota = uncachedQuestions.isNotEmpty() &&
+            selectedOption != GoogleFormsModelOption.PERSONAL_API_KEYS &&
+            selectedOption != GoogleFormsModelOption.GEMINI_WEB_AI
+        if (requiresCloudFormQuota) {
+            val quotaCheck = UserUsageLimitManager.checkQuota(
+                context = context,
+                uid = auth.uid,
+                feature = UsageLimitFeature.GOOGLE_FORMS
+            )
+            if (quotaCheck is UsageLimitCheckResult.LimitReached) {
+                throw FormSolveException(
+                    message = quotaCheck.userMessage,
+                    requiresGoogleSignIn = false
+                )
+            }
+        }
         val chunkSize = if (selectedOption == GoogleFormsModelOption.GEMINI_WEB_AI) 8 else 6
         val chunks = chunkQuestionsForBatch(uncachedQuestions, maxPerChunk = chunkSize, maxCharsPerChunk = 3600)
 
@@ -875,7 +935,7 @@ object GoogleFormsSolverEngine {
                 loginPromptRequired ->
                     "Sign in to Gemini Web AI first (tap 'Connect Gemini'), or switch model to Gemini 3.8 Flash / My API Keys."
                 isQuotaErr ->
-                    "Cloud server quota is busy right now — tap 'Connect Gemini' (free unlimited Web AI) or add your own free API key in Settings."
+                    "Cloud server quota is busy right now. Tap 'Connect Gemini' or add your own API key in Settings."
                 lastErrorMsg.isNotBlank() ->
                     "AI solver could not return verified answers ($lastErrorMsg). Tap 'Connect Gemini' or try My API Keys."
                 else ->
@@ -885,6 +945,18 @@ object GoogleFormsSolverEngine {
                 message = hint,
                 needsGeminiWebLogin = loginPromptRequired || (isQuotaErr && !hasWebSession)
             )
+        }
+
+        val answeredByLocalBrowser = primaryEngineUsed.contains("Web", ignoreCase = true) ||
+            primaryEngineUsed.contains("Browser", ignoreCase = true)
+        if (requiresCloudFormQuota && !answeredByLocalBrowser) {
+            runCatching {
+                UserUsageLimitManager.recordUsage(
+                    context = context.applicationContext,
+                    uid = auth.uid,
+                    feature = UsageLimitFeature.GOOGLE_FORMS
+                )
+            }
         }
 
         var unverifiedCount = 0
@@ -942,8 +1014,36 @@ object GoogleFormsSolverEngine {
             else -> "${primaryEngineUsed.ifBlank { selectedOption.label }} (${questions.size - unverifiedCount}/${questions.size} • Unverified)"
         }
 
+        val itemsToCache = solvedItems.filter { it.answerLetter != "?" }
+        if (useSharedFormCache && itemsToCache.isNotEmpty() && sharedFormMatchedCount < itemsToCache.size) {
+            val formUrlForCache = extractResult.resolvedUrl
+            val formTitleForCache = extractResult.formTitle
+            if (SharedFormCacheRepository.remoteStoreOverrideForTest != null) {
+                runCatching {
+                    SharedFormCacheRepository.upsertSolvedForm(
+                        context = context.applicationContext,
+                        resolvedUrl = formUrlForCache,
+                        formTitle = formTitleForCache,
+                        solvedItems = itemsToCache,
+                        isSingleQuestionCorrection = false
+                    )
+                }
+            } else {
+                CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
+                    runCatching {
+                        SharedFormCacheRepository.upsertSolvedForm(
+                            context = context.applicationContext,
+                            resolvedUrl = formUrlForCache,
+                            formTitle = formTitleForCache,
+                            solvedItems = itemsToCache,
+                            isSingleQuestionCorrection = false
+                        )
+                    }
+                }
+            }
+        }
+
         if (usePersistentCache) {
-            val itemsToCache = solvedItems.filter { it.answerLetter != "?" }
             val verifiedConfidence = if (finalEngineLabel.contains("Verified", ignoreCase = true) ||
                 finalEngineLabel.contains("Consensus", ignoreCase = true)
             ) 98 else 94
@@ -2240,8 +2340,17 @@ object GoogleFormsSolverEngine {
         context: Context,
         item: GoogleFormSolvedItem,
         subjectMode: SubjectMode,
-        cloudModelName: String = DEFAULT_FORMS_MODEL
+        cloudModelName: String = DEFAULT_FORMS_MODEL,
+        resolvedFormUrl: String = "",
+        formTitle: String = ""
     ): GoogleFormSolvedItem = withContext(Dispatchers.IO) {
+        val auth = F1AuthGate.verifyGoogleAccount(context)
+        if (!auth.isAuthenticated || auth.uid.isNullOrBlank()) {
+            throw FormSolveException(
+                message = auth.errorMessage.ifBlank { "Sign in with Google to re-solve questions." },
+                requiresGoogleSignIn = true
+            )
+        }
         val cleanStem = stripEmbeddedQuestionNumber(item.questionText)
         // Anti-poison step: evict suspected wrong answer from local Room & block stale crowd replay
         runCatching {
@@ -2277,6 +2386,11 @@ object GoogleFormsSolverEngine {
                 val optText = letterToOptionText(cleanAns, item.options)
                 val resolvedShort = optText.ifBlank { entry.shortAnswerHint.ifBlank { cleanAns } }
                 val finalExplanation = entry.explanation.ifBlank { "Re-verified: $cleanAns ($resolvedShort)" }
+                val updatedItem = item.copy(
+                    answerLetter = cleanAns,
+                    shortAnswer = resolvedShort,
+                    explanation = finalExplanation
+                )
                 // Self-heal local Room cache with the freshly verified answer
                 runCatching {
                     PersistentQuizCacheManager.storeVerifiedAnswer(
@@ -2292,11 +2406,33 @@ object GoogleFormsSolverEngine {
                         allowOverwriteRejected = true
                     )
                 }
-                return@withContext item.copy(
-                    answerLetter = cleanAns,
-                    shortAnswer = resolvedShort,
-                    explanation = finalExplanation
-                )
+                // Self-heal class-wide server form cache so future classmates get the corrected answer
+                if (resolvedFormUrl.isNotBlank()) {
+                    if (SharedFormCacheRepository.remoteStoreOverrideForTest != null) {
+                        runCatching {
+                            SharedFormCacheRepository.upsertSolvedForm(
+                                context = context.applicationContext,
+                                resolvedUrl = resolvedFormUrl,
+                                formTitle = formTitle,
+                                solvedItems = listOf(updatedItem),
+                                isSingleQuestionCorrection = true
+                            )
+                        }
+                    } else {
+                        CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
+                            runCatching {
+                                SharedFormCacheRepository.upsertSolvedForm(
+                                    context = context.applicationContext,
+                                    resolvedUrl = resolvedFormUrl,
+                                    formTitle = formTitle,
+                                    solvedItems = listOf(updatedItem),
+                                    isSingleQuestionCorrection = true
+                                )
+                            }
+                        }
+                    }
+                }
+                return@withContext updatedItem
             }
         }
         throw FormSolveException(
@@ -2385,25 +2521,26 @@ object GoogleFormsSolverEngine {
                             var isCheckbox = !!card.querySelector('[role="checkbox"]');
                             var cardFilled = false;
                             if (isCheckbox) {
-                                var letterTokens = (matched.answerLetter || '').split(/\s*,\s*/);
+                                // Jumble-proof: match checkbox option TEXT first so shuffled options never pick wrong boxes
                                 var textTokens = (matched.shortAnswer || '').split(/\s*,\s*/);
-                                for (var t = 0; t < letterTokens.length; t++) {
-                                    var lt = letterTokens[t].trim().toUpperCase();
-                                    if (lt.length === 1) {
-                                        var cIdx = lt.charCodeAt(0) - 65;
-                                        if (cIdx >= 0 && cIdx < radioOrCheck.length) {
-                                            cardFilled = clickIfNeeded(radioOrCheck[cIdx]) || cardFilled;
+                                for (var tt = 0; tt < textTokens.length; tt++) {
+                                    var tokNorm = norm(textTokens[tt]);
+                                    if (!tokNorm) continue;
+                                    for (var j = 0; j < radioOrCheck.length; j++) {
+                                        var oLab = norm(radioOrCheck[j].getAttribute('data-value') || radioOrCheck[j].getAttribute('aria-label') || radioOrCheck[j].innerText);
+                                        if (oLab && (oLab === tokNorm || (tokNorm.length >= 4 && (oLab.indexOf(tokNorm) !== -1 || tokNorm.indexOf(oLab) !== -1)))) {
+                                            cardFilled = clickIfNeeded(radioOrCheck[j]) || cardFilled;
                                         }
                                     }
                                 }
                                 if (!cardFilled) {
-                                    for (var tt = 0; tt < textTokens.length; tt++) {
-                                        var tokNorm = norm(textTokens[tt]);
-                                        if (!tokNorm) continue;
-                                        for (var j = 0; j < radioOrCheck.length; j++) {
-                                            var oLab = norm(radioOrCheck[j].getAttribute('data-value') || radioOrCheck[j].getAttribute('aria-label') || radioOrCheck[j].innerText);
-                                            if (oLab && (oLab === tokNorm || oLab.indexOf(tokNorm) !== -1 || tokNorm.indexOf(oLab) !== -1)) {
-                                                cardFilled = clickIfNeeded(radioOrCheck[j]) || cardFilled;
+                                    var letterTokens = (matched.answerLetter || '').split(/\s*,\s*/);
+                                    for (var t = 0; t < letterTokens.length; t++) {
+                                        var lt = letterTokens[t].trim().toUpperCase();
+                                        if (lt.length === 1) {
+                                            var cIdx = lt.charCodeAt(0) - 65;
+                                            if (cIdx >= 0 && cIdx < radioOrCheck.length) {
+                                                cardFilled = clickIfNeeded(radioOrCheck[cIdx]) || cardFilled;
                                             }
                                         }
                                     }
@@ -2665,18 +2802,21 @@ object GoogleFormsSolverEngine {
 object GoogleFormsSessionStore {
     private const val PREFS_NAME = "OmniSolvePrefs"
     private const val PREF_SAVED_FORMS_RESULT_JSON = "PREF_SAVED_FORMS_RESULT_JSON"
+    private const val PREF_SAVED_FORMS_RESULT_SAVED_AT_MS = "PREF_SAVED_FORMS_RESULT_SAVED_AT_MS"
     private const val PREF_SAVED_FORMS_URL = "PREF_SAVED_FORMS_URL"
+    const val RETENTION_MS = 7L * 24L * 60L * 60L * 1000L
     private val gson = Gson()
 
     @Volatile
     private var cachedResult: GoogleFormSolveResult? = null
 
-    fun saveResult(context: Context, result: GoogleFormSolveResult) {
+    fun saveResult(context: Context, result: GoogleFormSolveResult, nowMs: Long = System.currentTimeMillis()) {
         cachedResult = result
         try {
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             prefs.edit()
                 .putString(PREF_SAVED_FORMS_RESULT_JSON, gson.toJson(result))
+                .putLong(PREF_SAVED_FORMS_RESULT_SAVED_AT_MS, nowMs)
                 .apply {
                     if (result.resolvedUrl.startsWith("http", ignoreCase = true)) {
                         putString(PREF_SAVED_FORMS_URL, result.resolvedUrl)
@@ -2687,7 +2827,27 @@ object GoogleFormsSessionStore {
         }
     }
 
-    fun getLastResult(context: Context): GoogleFormSolveResult? {
+    fun purgeIfExpired(context: Context, nowMs: Long = System.currentTimeMillis()): Boolean {
+        return try {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val savedAt = prefs.getLong(PREF_SAVED_FORMS_RESULT_SAVED_AT_MS, 0L)
+            if (savedAt > 0L && (nowMs - savedAt) > RETENTION_MS) {
+                cachedResult = null
+                prefs.edit()
+                    .remove(PREF_SAVED_FORMS_RESULT_JSON)
+                    .remove(PREF_SAVED_FORMS_RESULT_SAVED_AT_MS)
+                    .apply()
+                true
+            } else {
+                false
+            }
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    fun getLastResult(context: Context, nowMs: Long = System.currentTimeMillis()): GoogleFormSolveResult? {
+        if (purgeIfExpired(context, nowMs)) return null
         cachedResult?.let { return it }
         return try {
             val json = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -2727,6 +2887,7 @@ object GoogleFormsSessionStore {
             context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                 .edit()
                 .remove(PREF_SAVED_FORMS_RESULT_JSON)
+                .remove(PREF_SAVED_FORMS_RESULT_SAVED_AT_MS)
                 .apply()
         } catch (_: Exception) {
         }

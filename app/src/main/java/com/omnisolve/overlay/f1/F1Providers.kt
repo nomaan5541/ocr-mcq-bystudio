@@ -149,27 +149,24 @@ object FirebaseGeminiF1Provider : F1ReasoningProvider {
         ocrEngine: OcrEngine?
     ): AnswerCandidate {
         val startMs = System.currentTimeMillis()
-        val chosenModel = if (classification.needsVisionEscalation ||
-            classification.category == F1QuestionCategory.MATHEMATICS ||
-            classification.category == F1QuestionCategory.COMPLEX_REASONING ||
-            request.raceMode == F1RaceMode.ACCURACY_CONSENSUS
-        ) {
-            PrismAiSolverEngine.MODEL_FLASH
-        } else {
-            PrismAiSolverEngine.normalizeCloudModel(request.requestedModel)
-        }
+        val chosenModel = PrismAiSolverEngine.MODEL_FLASH
+        val attachVisionBitmap = request.screenBitmap != null &&
+            (classification.needsVisionEscalation || classification.ocrConfidenceLow || promptText.length < 40)
         val enrichedPrompt = augmentPromptWithEvidence(promptText, evidence)
         return try {
             val ans = withTimeout(timeoutMs.coerceAtLeast(600L)) {
                 PrismAiSolverEngine.solveQuestion(
                     extractedText = enrichedPrompt,
-                    screenBitmap = if (classification.needsVisionEscalation) request.screenBitmap else null,
+                    screenBitmap = if (attachVisionBitmap) request.screenBitmap else null,
                     requestedModel = chosenModel,
                     subjectMode = request.subjectMode,
                     dualVerify = false,
                     translateToEnglish = request.translateToEnglish,
-                    forceVisionBitmap = classification.needsVisionEscalation && request.screenBitmap != null,
-                    compactFastMode = request.raceMode == F1RaceMode.FAST && !classification.needsVisionEscalation,
+                    forceVisionBitmap = attachVisionBitmap,
+                    compactFastMode = request.raceMode == F1RaceMode.FAST &&
+                        !attachVisionBitmap &&
+                        classification.category == F1QuestionCategory.SIMPLE_FACTUAL_MCQ &&
+                        promptText.length < 180,
                     solveMode = request.solveMode,
                     solveSessionId = request.requestId
                 )
@@ -222,9 +219,21 @@ object CloudflareWorkersF1Provider : F1ReasoningProvider {
         ocrEngine: OcrEngine?
     ): AnswerCandidate {
         val startMs = System.currentTimeMillis()
+        val upperPrompt = promptText.uppercase()
+        val hasTrickyReasoningCue = upperPrompt.contains(" NOT ") ||
+            upperPrompt.contains("EXCEPT") ||
+            upperPrompt.contains("INCORRECT") ||
+            upperPrompt.contains("ASSERTION") ||
+            upperPrompt.contains("STATEMENT") ||
+            upperPrompt.contains("MATCH") ||
+            upperPrompt.contains("CALCULATE") ||
+            upperPrompt.contains("SOLVE") ||
+            upperPrompt.contains("WHICH OF THE FOLLOWING")
         val useFastSmallModel = request.raceMode == F1RaceMode.FAST &&
-            classification.category != F1QuestionCategory.MATHEMATICS &&
-            classification.category != F1QuestionCategory.COMPLEX_REASONING
+            promptText.length < 130 &&
+            !hasTrickyReasoningCue &&
+            (classification.category == F1QuestionCategory.SIMPLE_FACTUAL_MCQ ||
+                classification.category == F1QuestionCategory.TRUE_FALSE)
         val modelName = if (useFastSmallModel) {
             PrismAiSolverEngine.CLOUDFLARE_FAST_MODEL
         } else {
@@ -424,25 +433,21 @@ object DirectVisionF1Provider : F1ReasoningProvider {
         ocrEngine: OcrEngine?
     ): AnswerCandidate {
         val startMs = System.currentTimeMillis()
-        val activeOcr = ocrEngine ?: OcrEngine()
+        val effectiveTimeout = timeoutMs.coerceAtLeast(800L)
+        val enrichedPrompt = augmentPromptWithEvidence(promptText, evidence)
         return try {
-            val visionResult = withTimeout(timeoutMs.coerceAtLeast(800L)) {
-                DirectVisionSolverEngine.solveFromScreenBitmap(
-                    context = context,
-                    rawBitmap = request.screenBitmap,
-                    ocrEngine = activeOcr,
-                    requestedModel = PrismAiSolverEngine.MODEL_FLASH,
-                    subjectMode = request.subjectMode,
-                    solveMode = request.solveMode,
-                    dualVerify = false,
-                    translateToEnglish = request.translateToEnglish,
-                    geminiWebSolver = null,
-                    forceFreshResolve = request.forceFreshResolve,
-                    previousWrongAnswer = request.previousWrongAnswer
-                )
-            }
+            val ans = DirectVisionSolverEngine.solveMultimodalDirectForF1(
+                rawBitmap = request.screenBitmap,
+                preExtractedText = enrichedPrompt,
+                requestedModel = PrismAiSolverEngine.MODEL_FLASH,
+                subjectMode = request.subjectMode,
+                solveMode = request.solveMode,
+                translateToEnglish = request.translateToEnglish,
+                forceFreshResolve = request.forceFreshResolve,
+                previousWrongAnswer = request.previousWrongAnswer,
+                timeoutMs = effectiveTimeout
+            )
             val elapsed = (System.currentTimeMillis() - startMs).coerceAtLeast(1L)
-            val ans = visionResult.answerModel
             if (ans != null) {
                 ans.toF1Candidate(
                     requestId = request.requestId,

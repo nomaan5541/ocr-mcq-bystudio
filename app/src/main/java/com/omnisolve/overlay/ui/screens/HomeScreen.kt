@@ -80,6 +80,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
@@ -178,6 +179,7 @@ fun HomeScreen(
     onSolveGoogleFormPastedText: () -> Unit = {},
     onSolveGoogleFormImageUri: (Uri) -> Unit = {},
     onSolveGoogleFormPdfUri: (Uri) -> Unit = {},
+    onOpenAskAiStudio: () -> Unit = {},
     onReSolveGoogleFormQuestion: (Int) -> Unit = {},
     onPinFormsKeyToDynamicIsland: () -> Unit = {},
     onUnpinFormsKeyFromDynamicIsland: () -> Unit = {},
@@ -204,29 +206,14 @@ fun HomeScreen(
     val themeSpec = LocalPrismThemeSpec.current
     val reducedMotion = LocalReducedMotion.current
 
-    // Route smoothly between Home Hub and dedicated studios using liquid motion
+    // Smooth GPU-composited directional forward push / reverse Back navigation between Home and sub-screens
     AnimatedContent(
         targetState = state.homeSubScreen,
         transitionSpec = {
-            if (reducedMotion) {
-                EnterTransition.None togetherWith ExitTransition.None
-            } else {
-                val enteringStudio = targetState != HomeSubScreen.MAIN
-                val dir = if (enteringStudio) 1 else -1
-                (slideInHorizontally(
-                    animationSpec = spring(dampingRatio = 0.84f, stiffness = 460f),
-                    initialOffsetX = { width -> dir * (width / 3) }
-                ) + fadeIn(tween(220)) + scaleIn(
-                    initialScale = 0.96f,
-                    animationSpec = tween(240, easing = FastOutSlowInEasing)
-                )) togetherWith (slideOutHorizontally(
-                    animationSpec = tween(200, easing = FastOutSlowInEasing),
-                    targetOffsetX = { width -> -dir * (width / 4) }
-                ) + fadeOut(tween(170)) + scaleOut(
-                    targetScale = 0.97f,
-                    animationSpec = tween(190)
-                ))
-            }
+            com.omnisolve.overlay.ui.physics.MotionTokens.subScreenTransition(
+                goingBack = targetState == HomeSubScreen.MAIN,
+                reducedMotion = reducedMotion
+            )
         },
         label = "home_subscreen_liquid_shift"
     ) { activeSubScreen ->
@@ -276,6 +263,7 @@ fun HomeScreen(
                 onSolveFromPastedText = onSolveGoogleFormPastedText,
                 onSolveFromImageUri = onSolveGoogleFormImageUri,
                 onSolveFromPdfUri = onSolveGoogleFormPdfUri,
+                onOpenAskAiStudio = onOpenAskAiStudio,
                 onReSolveQuestion = onReSolveGoogleFormQuestion,
                 onPinToDynamicIsland = onPinFormsKeyToDynamicIsland,
                 onUnpinFromDynamicIsland = onUnpinFormsKeyFromDynamicIsland,
@@ -496,7 +484,7 @@ fun HomeScreen(
                             .padding(end = 10.dp)
                     ) {
                         Text(
-                            text = "100% Free • Offline Cache & Fast AI Ready",
+                            text = "Sign in to start solving",
                             style = MaterialTheme.typography.titleSmall.copy(
                                 color = palette.inkPrimary,
                                 fontWeight = FontWeight.Bold,
@@ -506,7 +494,7 @@ fun HomeScreen(
                             overflow = TextOverflow.Ellipsis
                         )
                         Text(
-                            text = "Solves MCQs, Math (½ · Σ) & Forms free • Optional sign-in for cloud backup",
+                            text = "Google Sign-In unlocks MCQs, Math, Forms, offline cache, and cloud sync",
                             style = MaterialTheme.typography.bodySmall.copy(
                                 color = palette.inkSecondary,
                                 fontSize = 11.5.sp
@@ -682,9 +670,9 @@ private fun PrismCrimsonHeroCard(
     val borderW = (themeSpec.borderWidthTenths / 10f).dp
     val buttonCorner = PrismCurves.pillOrButtonCorner(themeSpec)
     val ctaInteraction = remember { MutableInteractionSource() }
-    val statusDotScale = if (!reducedMotion && isOverlayRunning) {
+    val statusDotScaleState = if (!reducedMotion && isOverlayRunning) {
         val pulse = rememberInfiniteTransition(label = "hero_live_dot_pulse")
-        val s by pulse.animateFloat(
+        pulse.animateFloat(
             initialValue = 0.85f,
             targetValue = 1.45f,
             animationSpec = infiniteRepeatable(
@@ -693,8 +681,7 @@ private fun PrismCrimsonHeroCard(
             ),
             label = "dot_scale"
         )
-        s
-    } else 1f
+    } else null
 
     Box(
         modifier = Modifier
@@ -775,7 +762,7 @@ private fun PrismCrimsonHeroCard(
                         Spacer(Modifier.height(8.dp))
 
                         Text(
-                            text = "MCQs, Math (½ · Σ), Match & Forms — tap the pill over any app",
+                            text = "MCQs, Math (½ · Σ), Match & Forms. Tap the pill over any app.",
                             style = MaterialTheme.typography.bodyMedium.copy(
                                 fontSize = 12.8.sp,
                                 fontWeight = FontWeight.Medium,
@@ -882,7 +869,11 @@ private fun PrismCrimsonHeroCard(
                     Box(
                         modifier = Modifier
                             .size(7.dp)
-                            .scale(statusDotScale)
+                            .graphicsLayer {
+                                val s = statusDotScaleState?.value ?: 1f
+                                scaleX = s
+                                scaleY = s
+                            }
                             .clip(CircleShape)
                             .background(if (isOverlayRunning) palette.accentMint else palette.accentSky)
                     )
@@ -1657,9 +1648,9 @@ private fun TiltedPhoneScannerIllustration(isRunning: Boolean) {
     }
 
     val scanBeamActive = !reducedMotion && (isRunning || (tapDemoTick > 0 && !showVerifiedBadge))
-    val scanBeamFrac = if (scanBeamActive) {
+    val scanBeamFracState = if (scanBeamActive) {
         val inf = rememberInfiniteTransition(label = "hero_scanner_beam")
-        val f by inf.animateFloat(
+        inf.animateFloat(
             initialValue = 0.12f,
             targetValue = 0.88f,
             animationSpec = infiniteRepeatable(
@@ -1671,8 +1662,7 @@ private fun TiltedPhoneScannerIllustration(isRunning: Boolean) {
             ),
             label = "beam_y"
         )
-        f
-    } else 0.42f
+    } else null
 
     val badgeColor = if (showVerifiedBadge) palette.accentMint else palette.accentSky
 
@@ -1778,7 +1768,7 @@ private fun TiltedPhoneScannerIllustration(isRunning: Boolean) {
                         drawLine(beamColor, Offset(0f, h - arm), Offset(0f, h), strokeWidth = sw, cap = StrokeCap.Round)
                         drawLine(beamColor, Offset(0f, h), Offset(arm, h), strokeWidth = sw, cap = StrokeCap.Round)
 
-                        val beamY = h * scanBeamFrac
+                        val beamY = h * (scanBeamFracState?.value ?: 0.42f)
                         drawLine(
                             brush = Brush.horizontalGradient(
                                 listOf(

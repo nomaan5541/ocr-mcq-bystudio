@@ -652,7 +652,7 @@ class OverlaySolveOrchestrator(
         suspend fun tryCloudflareServer(): AnswerModel? {
             if (PrismAiSolverEngine.isCloudflareTemporarilyUnavailable()) return null
             if (safePromptInput.count { it.isLetterOrDigit() } < 8) return null
-            onStageButtonText("Workers AI...")
+            onStageButtonText("Solving...")
             return try {
                 PrismAiSolverEngine.solveViaCloudflare(
                     extractedText = effectiveSafeInput,

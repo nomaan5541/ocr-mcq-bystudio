@@ -17,6 +17,7 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
+import com.omnisolve.overlay.f1.F1AuthGate
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -24,6 +25,11 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -50,11 +56,15 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoFixHigh
+import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -192,6 +202,8 @@ class GoogleFormsWebActivity : AppCompatActivity() {
         var isPinned by remember { mutableStateOf(GoogleFormsNotificationHelper.isNotificationPinned(this)) }
         var webViewInstance by remember { mutableStateOf<WebView?>(null) }
         var showFillPreviewDialog by remember { mutableStateOf(false) }
+        var showInBrowserReviewDrawer by remember { mutableStateOf(false) }
+        var reSolvingQuestionNumber by remember { mutableStateOf<Int?>(null) }
         var detectedNewPageHint by remember { mutableStateOf<String?>(null) }
         val lifecycleOwner = LocalLifecycleOwner.current
         fun checkGoogleSignedIn(): Boolean = try {
@@ -255,12 +267,74 @@ class GoogleFormsWebActivity : AppCompatActivity() {
                     val visible = obj.get("visibleQuestions")?.asInt ?: 0
                     Toast.makeText(
                         this,
-                        if (filled > 0) "Auto-filled $filled of $visible visible questions — review before submitting"
+                        if (filled > 0) "Auto-filled $filled of $visible visible questions. Review before submitting."
                         else "No matching questions on this visible page",
                         Toast.LENGTH_LONG
                     ).show()
                 } catch (_: Exception) {
                     Toast.makeText(this, "Auto-fill applied to matching options", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+
+        fun reSolveSingleQuestionInBrowser(questionNumber: Int) {
+            val active = solvedResult ?: return
+            val targetItem = active.items.firstOrNull { it.number == questionNumber } ?: return
+            if (reSolvingQuestionNumber != null || isSolvingPage) return
+            reSolvingQuestionNumber = questionNumber
+            scope.launch {
+                try {
+                    val subjMode = SubjectMode.fromId(
+                        prefs.getString(MainActivity.PREF_KEY_SUBJECT_MODE, SubjectMode.GENERAL.id)
+                    )
+                    val cloudModel = GoogleFormsSolverEngine.normalizeFormsModel(
+                        prefs.getString(
+                            MainActivity.PREF_KEY_GOOGLE_FORMS_MODEL,
+                            GoogleFormsSolverEngine.DEFAULT_FORMS_MODEL
+                        )
+                    )
+                    val refreshed = GoogleFormsSolverEngine.reSolveSingleItem(
+                        context = this@GoogleFormsWebActivity,
+                        item = targetItem,
+                        subjectMode = subjMode,
+                        cloudModelName = cloudModel,
+                        resolvedFormUrl = active.resolvedUrl.ifBlank { currentUrl },
+                        formTitle = active.formTitle
+                    )
+                    val updatedItems = active.items.map {
+                        if (it.number == questionNumber) refreshed else it
+                    }
+                    val updatedResult = active.copy(
+                        items = updatedItems,
+                        compactNotificationOutput = GoogleFormsSolverEngine.formatCompactAnswerOutput(updatedItems)
+                    )
+                    GoogleFormsSessionStore.saveResult(this@GoogleFormsWebActivity, updatedResult)
+                    solvedResult = updatedResult
+                    if (isPinned) {
+                        GoogleFormsNotificationHelper.pinAnswersNotification(
+                            context = this@GoogleFormsWebActivity,
+                            formTitle = updatedResult.formTitle,
+                            compactOutput = updatedResult.compactNotificationOutput,
+                            items = updatedResult.items
+                        )
+                    }
+                    // Immediately re-select the corrected answer on the live form page
+                    autoFillCurrentPage(overrideResult = updatedResult)
+                    Toast.makeText(
+                        this@GoogleFormsWebActivity,
+                        "Q$questionNumber updated to ${refreshed.answerLetter} (${refreshed.shortAnswer.take(32)})",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                } catch (ce: CancellationException) {
+                    throw ce
+                } catch (e: Exception) {
+                    Toast.makeText(
+                        this@GoogleFormsWebActivity,
+                        e.message ?: "Could not re-solve Q$questionNumber right now",
+                        Toast.LENGTH_LONG
+                    ).show()
+                } finally {
+                    reSolvingQuestionNumber = null
                 }
             }
         }
@@ -273,6 +347,15 @@ class GoogleFormsWebActivity : AppCompatActivity() {
             activeSolveJob?.cancel()
             activeSolveJob = scope.launch {
                 try {
+                    val auth = F1AuthGate.verifyGoogleAccount(this@GoogleFormsWebActivity)
+                    if (!auth.isAuthenticated || auth.uid.isNullOrBlank()) {
+                        Toast.makeText(
+                            this@GoogleFormsWebActivity,
+                            auth.errorMessage.ifBlank { "Sign in with Google inside Prism to solve forms." },
+                            Toast.LENGTH_LONG
+                        ).show()
+                        return@launch
+                    }
                     withTimeout(55_000L) {
                         val rawJson = withTimeoutOrNull(4_000L) {
                             suspendCancellableCoroutine<String?> { cont ->
@@ -282,7 +365,7 @@ class GoogleFormsWebActivity : AppCompatActivity() {
                             }
                         }.orEmpty()
                         if (rawJson.isBlank() || rawJson == "null") {
-                            throw IllegalStateException("Page did not respond in time — scroll to visible questions and retry.")
+                            throw IllegalStateException("Page did not respond in time. Scroll to visible questions and retry.")
                         }
 
                         val parsedExtract = GoogleFormsSolverEngine.parseWebViewDomJson(
@@ -350,7 +433,7 @@ class GoogleFormsWebActivity : AppCompatActivity() {
                 } catch (_: TimeoutCancellationException) {
                     Toast.makeText(
                         this@GoogleFormsWebActivity,
-                        "Form page solve timed out — please retry once the page finishes loading.",
+                        "Form page solve timed out. Please retry once the page finishes loading.",
                         Toast.LENGTH_LONG
                     ).show()
                 } catch (ce: CancellationException) {
@@ -419,7 +502,7 @@ class GoogleFormsWebActivity : AppCompatActivity() {
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(
-                            text = "Only the answer choices below will be selected. The form will NEVER be submitted automatically — review everything first.",
+                            text = "Only the answer choices below will be selected. The form will NEVER be submitted automatically. Review everything first.",
                             fontSize = 12.sp,
                             color = GrayMuted
                         )
@@ -439,12 +522,50 @@ class GoogleFormsWebActivity : AppCompatActivity() {
                                         .padding(10.dp),
                                     verticalArrangement = Arrangement.spacedBy(3.dp)
                                 ) {
-                                    Text(
-                                        text = "Q${item.number}: ${item.answerLetter}${if (item.shortAnswer.isNotBlank()) " • ${item.shortAnswer}" else ""}",
-                                        color = EmeraldOk,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 12.5.sp
-                                    )
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text(
+                                            text = "Q${item.number}: ${item.answerLetter}${if (item.shortAnswer.isNotBlank()) " • ${item.shortAnswer}" else ""}",
+                                            color = EmeraldOk,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 12.5.sp,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f).padding(end = 8.dp)
+                                        )
+                                        val isItemReSolving = reSolvingQuestionNumber == item.number
+                                        Box(
+                                            contentAlignment = Alignment.Center,
+                                            modifier = Modifier
+                                                .heightIn(min = 36.dp)
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(Color(0xFF1D1E24))
+                                                .border(1.dp, CrimsonAccent.copy(alpha = 0.55f), RoundedCornerShape(8.dp))
+                                                .clickable(enabled = reSolvingQuestionNumber == null, role = Role.Button) {
+                                                    reSolveSingleQuestionInBrowser(item.number)
+                                                }
+                                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                                                .testTag("btn_web_preview_resolve_q_${item.number}")
+                                        ) {
+                                            if (isItemReSolving) {
+                                                CircularProgressIndicator(
+                                                    color = CrimsonAccent,
+                                                    strokeWidth = 1.8.dp,
+                                                    modifier = Modifier.size(13.dp)
+                                                )
+                                            } else {
+                                                Text(
+                                                    text = "Re-solve",
+                                                    color = WhiteText,
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.SemiBold
+                                                )
+                                            }
+                                        }
+                                    }
                                     Text(
                                         text = item.questionText,
                                         color = WhiteText,
@@ -634,9 +755,9 @@ class GoogleFormsWebActivity : AppCompatActivity() {
                     } else if (solvedResult == null && !isSolvingPage) {
                         Text(
                             text = if (isGoogleSignedIn) {
-                                "Log in above if private, then tap Solve Page."
+                                "Sign in above if this form is private, then tap Solve Page."
                             } else {
-                                "Free Workers AI active • Tap Solve Page anytime."
+                                "Sign in with Google inside Prism, then tap Solve Page."
                             },
                             color = GrayMuted,
                             fontSize = 11.sp,
@@ -646,29 +767,172 @@ class GoogleFormsWebActivity : AppCompatActivity() {
                     }
                     val active = solvedResult
                     if (active != null) {
+                        // Expandable In-Browser Question Review & Instant Re-solve Drawer
+                        AnimatedVisibility(
+                            visible = showInBrowserReviewDrawer,
+                            enter = expandVertically() + fadeIn(),
+                            exit = shrinkVertically() + fadeOut()
+                        ) {
+                            LazyColumn(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(max = 210.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(ObsidianBg)
+                                    .border(1.dp, BorderDark, RoundedCornerShape(12.dp))
+                                    .padding(8.dp)
+                                    .testTag("list_web_review_resolve"),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                items(active.items, key = { "web_rev_${it.number}" }) { item ->
+                                    val isItemReSolving = reSolvingQuestionNumber == item.number
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(9.dp))
+                                            .background(SurfaceDark)
+                                            .border(1.dp, BorderDark, RoundedCornerShape(9.dp))
+                                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                                            Text(
+                                                text = "Q${item.number} · ${item.answerLetter}${if (item.shortAnswer.isNotBlank()) " (${item.shortAnswer})" else ""}",
+                                                color = EmeraldOk,
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            Text(
+                                                text = item.questionText,
+                                                color = GrayMuted,
+                                                fontSize = 11.sp,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.Center,
+                                            modifier = Modifier
+                                                .heightIn(min = 40.dp)
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(Color(0xFF1F1618))
+                                                .border(1.dp, CrimsonAccent.copy(alpha = 0.6f), RoundedCornerShape(8.dp))
+                                                .clickable(enabled = reSolvingQuestionNumber == null && !isSolvingPage, role = Role.Button) {
+                                                    reSolveSingleQuestionInBrowser(item.number)
+                                                }
+                                                .padding(horizontal = 10.dp, vertical = 6.dp)
+                                                .testTag("btn_web_resolve_q_${item.number}")
+                                        ) {
+                                            if (isItemReSolving) {
+                                                CircularProgressIndicator(
+                                                    color = CrimsonAccent,
+                                                    strokeWidth = 1.8.dp,
+                                                    modifier = Modifier.size(13.dp)
+                                                )
+                                            } else {
+                                                Icon(
+                                                    imageVector = Icons.Filled.Refresh,
+                                                    contentDescription = "Re-solve Q${item.number}",
+                                                    tint = CrimsonAccent,
+                                                    modifier = Modifier.size(13.dp)
+                                                )
+                                                Spacer(Modifier.width(4.dp))
+                                                Text(
+                                                    text = "Re-solve",
+                                                    color = WhiteText,
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(10.dp))
                                 .background(ObsidianBg)
                                 .border(1.dp, if (isPinned) EmeraldOk.copy(alpha = 0.6f) else BorderDark, RoundedCornerShape(10.dp))
-                                .padding(horizontal = 10.dp, vertical = 7.dp),
+                                .clickable(role = Role.Button) {
+                                    showInBrowserReviewDrawer = !showInBrowserReviewDrawer
+                                }
+                                .padding(horizontal = 10.dp, vertical = 7.dp)
+                                .testTag("btn_web_toggle_review_drawer"),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text(
-                                text = active.compactNotificationOutput,
-                                style = MaterialTheme.typography.labelLarge.copy(
-                                    color = EmeraldOk,
-                                    fontFamily = FontFamily.Monospace,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    fontSize = 13.sp
-                                ),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f)
+                            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                val isClassCache = active.engineLabel.contains("Class Cache", ignoreCase = true)
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Text(
+                                        text = active.compactNotificationOutput,
+                                        style = MaterialTheme.typography.labelLarge.copy(
+                                            color = EmeraldOk,
+                                            fontFamily = FontFamily.Monospace,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            fontSize = 13.sp
+                                        ),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f, fill = false)
+                                    )
+                                    if (isClassCache) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(3.dp),
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .background(Color(0xFF0E261C))
+                                                .border(1.dp, EmeraldOk.copy(alpha = 0.55f), RoundedCornerShape(6.dp))
+                                                .padding(horizontal = 5.dp, vertical = 2.dp)
+                                                .testTag("badge_web_class_cache")
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Filled.Bolt,
+                                                contentDescription = null,
+                                                tint = EmeraldOk,
+                                                modifier = Modifier.size(10.dp)
+                                            )
+                                            Text(
+                                                text = "Class Cache · 0 credits",
+                                                color = EmeraldOk,
+                                                fontSize = 9.5.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                maxLines = 1
+                                            )
+                                        }
+                                    }
+                                }
+                                Text(
+                                    text = if (showInBrowserReviewDrawer) {
+                                        "Tap any question above to re-solve & update live"
+                                    } else {
+                                        "Tap here if any answer looks wrong to re-solve"
+                                    },
+                                    color = GrayMuted,
+                                    fontSize = 10.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            Spacer(Modifier.width(6.dp))
+                            Icon(
+                                imageVector = if (showInBrowserReviewDrawer) Icons.Filled.ExpandMore else Icons.Filled.ExpandLess,
+                                contentDescription = "Toggle in-browser re-solve drawer",
+                                tint = GrayMuted,
+                                modifier = Modifier.size(18.dp)
                             )
-                            Spacer(Modifier.width(8.dp))
+                            Spacer(Modifier.width(6.dp))
                             Row(
                                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                                 verticalAlignment = Alignment.CenterVertically
@@ -688,6 +952,40 @@ class GoogleFormsWebActivity : AppCompatActivity() {
                                     Icon(
                                         imageVector = Icons.Filled.ContentCopy,
                                         contentDescription = "Copy key",
+                                        tint = WhiteText,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier
+                                        .size(width = 48.dp, height = 48.dp)
+                                        .clip(RoundedCornerShape(9.dp))
+                                        .background(Color(0xFF1E2026))
+                                        .clickable(role = Role.Button) {
+                                            val shareBody = buildString {
+                                                appendLine(active.formTitle.ifBlank { "Form Answers" })
+                                                appendLine("Key: ${active.compactNotificationOutput}")
+                                                appendLine()
+                                                active.items.forEach { item ->
+                                                    val ansDetail = if (item.shortAnswer.isNotBlank()) " — ${item.shortAnswer}" else ""
+                                                    appendLine("Q${item.number}: ${item.answerLetter}$ansDetail")
+                                                }
+                                            }.trim()
+                                            runCatching {
+                                                val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                                                    type = "text/plain"
+                                                    putExtra(Intent.EXTRA_SUBJECT, active.formTitle.ifBlank { "Form Answers" })
+                                                    putExtra(Intent.EXTRA_TEXT, shareBody)
+                                                }
+                                                startActivity(Intent.createChooser(sendIntent, "Share answer key"))
+                                            }
+                                        }
+                                        .testTag("btn_web_share_answers")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Share,
+                                        contentDescription = "Share answer key",
                                         tint = WhiteText,
                                         modifier = Modifier.size(16.dp)
                                     )

@@ -3,16 +3,21 @@ package com.omnisolve.overlay
 import android.content.Context
 import androidx.compose.ui.graphics.Color
 import androidx.test.core.app.ApplicationProvider
+import com.omnisolve.overlay.ads.AdConfig
 import com.omnisolve.overlay.data.LocalThemeRepository
 import com.omnisolve.overlay.data.LocalThemeSettingsCache
-import com.omnisolve.overlay.ui.theme.ALL_50_UNSLOP_THEMES
 import com.omnisolve.overlay.ui.theme.ALL_THEME_OPTIONS
+import com.omnisolve.overlay.ui.theme.CRIMSON_STUDIO_THEME
+import com.omnisolve.overlay.ui.theme.CURATED_PRISM_THEMES
 import com.omnisolve.overlay.ui.theme.FEATURED_THEMES
 import com.omnisolve.overlay.ui.theme.FEATURED_THEME_IDS
+import com.omnisolve.overlay.ui.theme.GLASS_PRISM_THEME
+import com.omnisolve.overlay.ui.theme.IOS_LIQUID_LIGHT_THEME
 import com.omnisolve.overlay.ui.theme.NORMAL_DEFAULT_THEME
 import com.omnisolve.overlay.ui.theme.RemoteThemeSpec
 import com.omnisolve.overlay.ui.theme.ThemeAnimationIntensity
 import com.omnisolve.overlay.ui.theme.ThemeColorAppearance
+import com.omnisolve.overlay.ui.theme.ThemeLayoutArchetype
 import com.omnisolve.overlay.ui.theme.contrastOnColor
 import com.omnisolve.overlay.ui.theme.findThemePresetById
 import com.omnisolve.overlay.ui.theme.normalizeHex
@@ -27,35 +32,31 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
-@Config(manifest = Config.NONE, sdk = [34])
+@Config(manifest = Config.NONE)
 class ThemeCatalogAndResolutionTest {
 
     @Test
-    fun catalogHasExact50UniqueUnslopThemesAnd4FeaturedPicksWithoutExtreme3dDefaults() {
+    fun catalogHasExact4CuratedPrismThemesWithoutExtreme3dDefaults() {
         assertTrue(NORMAL_DEFAULT_THEME.isNormalDefault)
         assertEquals(RemoteThemeSpec.DEFAULT_THEME_ID, NORMAL_DEFAULT_THEME.themeId)
-        assertEquals(0, NORMAL_DEFAULT_THEME.themeNumber)
+        assertEquals(1, NORMAL_DEFAULT_THEME.themeNumber)
 
-        assertEquals(50, ALL_50_UNSLOP_THEMES.size)
-        assertEquals(51, ALL_THEME_OPTIONS.size)
+        assertEquals(4, CURATED_PRISM_THEMES.size)
+        assertEquals(4, ALL_THEME_OPTIONS.size)
         assertEquals(NORMAL_DEFAULT_THEME, ALL_THEME_OPTIONS.first())
 
-        val numbers = ALL_50_UNSLOP_THEMES.map { it.themeNumber }
-        assertEquals((1..50).toList(), numbers)
+        val expectedIds = listOf(
+            "default_prism_crimson",
+            "ios_liquid_light",
+            "glass_prism",
+            "crimson_studio"
+        )
+        assertEquals(expectedIds, CURATED_PRISM_THEMES.map { it.themeId })
+        assertEquals(expectedIds, FEATURED_THEME_IDS)
+        assertEquals(4, FEATURED_THEMES.size)
 
         val uniqueIds = ALL_THEME_OPTIONS.map { it.themeId }.toSet()
-        assertEquals(51, uniqueIds.size)
-
-        // Curated Featured row: exact 4 themes in exact order, excluding liquid_metal
-        assertEquals(
-            listOf("jarvis_ai", "black_titanium", "obsidian_glass", "digital_laboratory"),
-            FEATURED_THEME_IDS
-        )
-        assertEquals(4, FEATURED_THEMES.size)
-        assertEquals(FEATURED_THEME_IDS, FEATURED_THEMES.map { it.themeId })
-        assertTrue(FEATURED_THEMES.all { it.isTopRecommendedForMcq })
-        assertEquals(4, ALL_50_UNSLOP_THEMES.count { it.isTopRecommendedForMcq })
-        assertFalse(findThemePresetById("liquid_metal").isTopRecommendedForMcq)
+        assertEquals(4, uniqueIds.size)
 
         // Zero presets default to EXTREME_3D
         assertTrue(
@@ -65,7 +66,7 @@ class ThemeCatalogAndResolutionTest {
     }
 
     @Test
-    fun all51ThemesConvertToPaletteMaterialColorSchemeAndJsonCleanly() {
+    fun allCuratedThemesConvertToPaletteMaterialColorSchemeAndJsonCleanly() {
         for (spec in ALL_THEME_OPTIONS) {
             val palette = spec.toPalette()
             val scheme = spec.toMaterialColorScheme()
@@ -96,53 +97,62 @@ class ThemeCatalogAndResolutionTest {
             assertEquals(spec.colorAppearance, parsed.colorAppearance)
             assertEquals(spec.useMonospaceAccents, parsed.useMonospaceAccents)
             assertEquals(spec.cornerRadiusDp, parsed.cornerRadiusDp)
+            assertEquals(spec.layoutArchetype, parsed.layoutArchetype)
         }
     }
 
     @Test
     fun lightAccentsProduceDarkContrastInkAndDarkAccentsProduceLightInk() {
-        val monochrome = findThemePresetById("monochrome_ultra").toPalette()
-        val titanium = findThemePresetById("black_titanium").toPalette()
-        val chrome = findThemePresetById("chrome_minimalism").toPalette()
-        val brutalism = findThemePresetById("digital_brutalism").toPalette()
         val redPrism = NORMAL_DEFAULT_THEME.toPalette()
+        val crimsonStudio = CRIMSON_STUDIO_THEME.toPalette()
 
-        assertEquals(Color(0xFF0A0C10), monochrome.onAccentInk)
-        assertEquals(Color(0xFF0A0C10), titanium.onAccentInk)
-        assertEquals(Color(0xFF0A0C10), chrome.onAccentInk)
-        assertEquals(Color(0xFF0A0C10), brutalism.onAccentInk)
         assertEquals(Color(0xFFF8FAFC), redPrism.onAccentInk)
+        assertEquals(Color(0xFFF8FAFC), crimsonStudio.onAccentInk)
 
         assertEquals(Color(0xFF0A0C10), contrastOnColor(Color(0xFFF5F5F5)))
         assertEquals(Color(0xFFF8FAFC), contrastOnColor(Color(0xFFD71921)))
+        assertEquals(Color(0xFFF8FAFC), contrastOnColor(Color(0xFFE3182D)))
     }
 
     @Test
     fun resolveWithOverridesSupportsSignatureRedAdaptiveLightAndMotionTiers() {
-        val jarvis = findThemePresetById("jarvis_ai")
+        val crimsonStudio = findThemePresetById("crimson_studio")
 
-        val signatureRed = jarvis.resolveWithOverrides(
+        val signatureRed = crimsonStudio.resolveWithOverrides(
             systemIsDark = false,
             animationOverride = ThemeAnimationIntensity.SUBTLE,
             appearanceOverride = ThemeColorAppearance.DARK_SIGNATURE_RED
         )
         assertTrue(signatureRed.isDark)
-        assertEquals("#D71921", signatureRed.accentPrimaryHex)
-        assertEquals("#D71921", signatureRed.islandAccentHex)
+        assertEquals("#E3182D", signatureRed.accentPrimaryHex)
+        assertEquals("#E3182D", signatureRed.islandAccentHex)
         assertEquals(ThemeAnimationIntensity.SUBTLE, signatureRed.animationIntensity)
         assertEquals(0.35f, signatureRed.animationIntensity.motionFactor, 0.001f)
 
-        val adaptiveLight = jarvis.resolveWithOverrides(
+        val adaptiveLight = crimsonStudio.resolveWithOverrides(
             systemIsDark = false,
             animationOverride = ThemeAnimationIntensity.EXTREME_3D,
             appearanceOverride = ThemeColorAppearance.ADAPTIVE_LIGHT_DARK
         )
         assertFalse(adaptiveLight.isDark)
-        assertEquals("#F6F7F9", adaptiveLight.canvasTopHex)
+        assertEquals("#F5F6FA", adaptiveLight.canvasTopHex)
         assertEquals("#101216", adaptiveLight.inkPrimaryHex)
-        assertEquals(jarvis.accentPrimaryHex, adaptiveLight.accentPrimaryHex)
+        assertEquals(crimsonStudio.accentPrimaryHex, adaptiveLight.accentPrimaryHex)
         assertEquals(ThemeAnimationIntensity.EXTREME_3D, adaptiveLight.animationIntensity)
-        assertEquals(1.65f, adaptiveLight.animationIntensity.motionFactor, 0.001f)
+        assertEquals(1.45f, adaptiveLight.animationIntensity.motionFactor, 0.001f)
+    }
+
+    @Test
+    fun lightAndGlassPrismThemesArePureWhiteAndBlueAndAdsAreDisabled() {
+        assertFalse("Prism Light must be a light theme", IOS_LIQUID_LIGHT_THEME.isDark)
+        assertEquals("#1B6EF3", IOS_LIQUID_LIGHT_THEME.accentPrimaryHex)
+
+        assertFalse("Glass Prism must be a pure white & blue light glass theme", GLASS_PRISM_THEME.isDark)
+        assertEquals("#0A66FF", GLASS_PRISM_THEME.accentPrimaryHex)
+
+        assertTrue("Default theme must stay Black & Red", NORMAL_DEFAULT_THEME.isDark)
+        assertTrue("Crimson Studio must stay Dark & Red", CRIMSON_STUDIO_THEME.isDark)
+        assertFalse("Ads must be disabled for clean ad-free release", AdConfig.ADS_ENABLED)
     }
 
     @Test
@@ -158,7 +168,7 @@ class ThemeCatalogAndResolutionTest {
 
         repo1.savePreferences(
             preferLocalDefault = false,
-            selectedPresetId = "jarvis_ai",
+            selectedPresetId = CRIMSON_STUDIO_THEME.themeId,
             animationIntensityOverride = ThemeAnimationIntensity.EXTREME_3D,
             colorAppearanceOverride = ThemeColorAppearance.ADAPTIVE_LIGHT_DARK
         )
@@ -167,10 +177,10 @@ class ThemeCatalogAndResolutionTest {
         val repo2 = LocalThemeRepository(prefs)
         val loaded = repo2.loadPreferences()
         assertFalse(loaded.preferLocalDefault)
-        assertEquals("jarvis_ai", loaded.selectedPresetId)
+        assertEquals(CRIMSON_STUDIO_THEME.themeId, loaded.selectedPresetId)
         assertEquals(ThemeAnimationIntensity.EXTREME_3D, loaded.animationIntensityOverride)
         assertEquals(ThemeColorAppearance.ADAPTIVE_LIGHT_DARK, loaded.colorAppearanceOverride)
-        assertEquals("jarvis_ai", resolveEffectiveBaseTheme(loaded).themeId)
+        assertEquals(CRIMSON_STUDIO_THEME.themeId, resolveEffectiveBaseTheme(loaded).themeId)
 
         // Revert back to Normal Red Prism Default resets preset and overrides
         repo2.revertToNormalDefaultTheme()
@@ -187,41 +197,16 @@ class ThemeCatalogAndResolutionTest {
         assertEquals("#00E5FF", normalizeHex("  #00e5ff ", "#D71921"))
         assertEquals("#D71921", normalizeHex("not-a-color", "#D71921"))
         assertEquals(NORMAL_DEFAULT_THEME, findThemePresetById("non_existent_theme_id"))
+        // Legacy removed theme IDs safely fall back to Prism Default
+        assertEquals(NORMAL_DEFAULT_THEME, findThemePresetById("jarvis_ai"))
     }
 
     @Test
-    fun signatureAtelierEditionsResolveAndRoundTripCleanly() {
-        val atelier = com.omnisolve.overlay.ui.theme.SIGNATURE_ATELIER_THEMES
-        assertEquals("Should ship 6 curated Signature Atelier Editions", 6, atelier.size)
-        assertEquals("Signature Atelier IDs must be unique", 6, atelier.map { it.themeId }.toSet().size)
-        assertTrue(
-            "No Signature Atelier theme should default to EXTREME_3D",
-            atelier.none { it.animationIntensity == ThemeAnimationIntensity.EXTREME_3D }
-        )
-
-        atelier.forEach { spec ->
-            assertEquals(spec.themeId, findThemePresetById(spec.themeId).themeId)
-            val palette = spec.toPalette()
-            val scheme = spec.toMaterialColorScheme()
-            assertNotNull(palette.accentSky)
-            assertNotNull(scheme.primary)
-            val decoded = RemoteThemeSpec.fromJsonString(spec.toJsonString())
-            assertNotNull(decoded)
-            assertEquals(spec.themeId, decoded!!.themeId)
-            assertEquals(spec.surfaceEffect, decoded.surfaceEffect)
-            assertEquals(spec.layoutArchetype, decoded.layoutArchetype)
-        }
-
-        // Verify all 4 redesigned layout archetypes are represented across Signature Atelier editions
-        val atelierArchetypes = atelier.map { it.layoutArchetype }.toSet()
-        assertTrue(atelierArchetypes.contains(com.omnisolve.overlay.ui.theme.ThemeLayoutArchetype.ATELIER_BENTO))
-        assertTrue(atelierArchetypes.contains(com.omnisolve.overlay.ui.theme.ThemeLayoutArchetype.TELEMETRY_HUD))
-        assertTrue(atelierArchetypes.contains(com.omnisolve.overlay.ui.theme.ThemeLayoutArchetype.EDITORIAL_MONOGRAPH))
-        assertTrue(atelierArchetypes.contains(com.omnisolve.overlay.ui.theme.ThemeLayoutArchetype.KINETIC_DECK))
-        assertEquals(
-            com.omnisolve.overlay.ui.theme.ThemeLayoutArchetype.CLASSIC_PRISM,
-            NORMAL_DEFAULT_THEME.layoutArchetype
-        )
+    fun curatedLayoutArchetypesMatchAllFourShippedThemes() {
+        assertEquals(ThemeLayoutArchetype.CLASSIC_PRISM, NORMAL_DEFAULT_THEME.layoutArchetype)
+        assertEquals(ThemeLayoutArchetype.IOS_LIQUID_LIGHT, IOS_LIQUID_LIGHT_THEME.layoutArchetype)
+        assertEquals(ThemeLayoutArchetype.GLASS_PRISM, GLASS_PRISM_THEME.layoutArchetype)
+        assertEquals(ThemeLayoutArchetype.CRIMSON_STUDIO, CRIMSON_STUDIO_THEME.layoutArchetype)
     }
 
     private fun resolveEffectiveBaseTheme(cache: LocalThemeSettingsCache): RemoteThemeSpec =

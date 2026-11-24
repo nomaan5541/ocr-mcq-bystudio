@@ -99,9 +99,19 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import com.omnisolve.overlay.ui.HomeSubScreen
 import com.omnisolve.overlay.ui.MainUiState
 import com.omnisolve.overlay.ui.components.LiveInteractiveDemoCard
+import com.omnisolve.overlay.ui.components.RedPrismLogoMark
 import com.omnisolve.overlay.ui.physics.LocalReducedMotion
 import com.omnisolve.overlay.ui.physics.ScrollRevealSection
 import com.omnisolve.overlay.ui.physics.liquidPressScale
@@ -191,7 +201,7 @@ fun IosLiquidLightHomeLayout(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Column(
+                    Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 4.dp)
@@ -199,66 +209,81 @@ fun IosLiquidLightHomeLayout(
                                 scaleX = heroTitleScale
                                 scaleY = heroTitleScale
                                 translationY = -6f * scrollCollapseFraction
-                            }
+                            },
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Text(
-                                text = "SOLVE ANYTHING",
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    color = palette.accentSky,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    letterSpacing = 1.2.sp,
-                                    fontSize = 10.5.sp
-                                )
-                            )
-                            Box(
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
                                 modifier = Modifier
                                     .clip(CircleShape)
-                                    .background(
-                                        if (state.isOverlayRunning) Color(0xFFE7F8ED) else Color(0xFFE5F1FF)
-                                    )
-                                    .border(
-                                        width = 0.8.dp,
-                                        color = if (state.isOverlayRunning) Color(0xFF24A148).copy(alpha = 0.45f)
-                                        else palette.accentSky.copy(alpha = 0.35f),
-                                        shape = CircleShape
-                                    )
+                                    .background(Color(0xD8E4F0FF))
+                                    .border(0.9.dp, Color.White.copy(alpha = 0.85f), CircleShape)
                                     .padding(horizontal = 10.dp, vertical = 4.dp)
                             ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(6.dp)
+                                        .clip(CircleShape)
+                                        .background(if (state.isOverlayRunning) Color(0xFF16A34A) else Color(0xFF1B6EF3))
+                                )
                                 Text(
-                                    text = if (state.isOverlayRunning) "● Island Active" else "Prism Light",
+                                    text = if (state.isOverlayRunning) "PRISM ACTIVE" else "PRISM LIQUID",
                                     style = MaterialTheme.typography.labelSmall.copy(
-                                        color = if (state.isOverlayRunning) Color(0xFF1A7F37) else palette.accentSky,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 10.5.sp
-                                    )
+                                        color = if (state.isOverlayRunning) Color(0xFF15803D) else Color(0xFF1B6EF3),
+                                        fontWeight = FontWeight.ExtraBold,
+                                        letterSpacing = 1.0.sp,
+                                        fontSize = 10.sp
+                                    ),
+                                    maxLines = 1
                                 )
                             }
+
+                            Text(
+                                text = buildAnnotatedString {
+                                    withStyle(SpanStyle(color = Color(0xFF0C1830), fontWeight = FontWeight.ExtraBold)) {
+                                        append("Solve ")
+                                    }
+                                    withStyle(
+                                        SpanStyle(
+                                            brush = Brush.horizontalGradient(
+                                                listOf(Color(0xFF1B6EF3), Color(0xFF0A54D8))
+                                            ),
+                                            fontWeight = FontWeight.ExtraBold
+                                        )
+                                    ) {
+                                        append("Anything")
+                                    }
+                                    withStyle(SpanStyle(color = Color(0xFF0C1830), fontWeight = FontWeight.ExtraBold)) {
+                                        append("\nOn Your Screen")
+                                    }
+                                },
+                                style = MaterialTheme.typography.displaySmall.copy(
+                                    fontSize = 27.sp,
+                                    lineHeight = 32.sp,
+                                    letterSpacing = (-0.7).sp
+                                )
+                            )
+                            Text(
+                                text = "Tap the floating capsule over any MCQ, Math (½ · Σ), or worksheet.",
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    color = Color(0xFF42597A),
+                                    fontSize = 12.5.sp,
+                                    lineHeight = 17.5.sp
+                                ),
+                                modifier = Modifier.graphicsLayer { alpha = heroSubtitleAlpha }
+                            )
                         }
 
-                        Spacer(modifier = Modifier.height(4.dp))
-
-                        Text(
-                            text = "Prism Liquid",
-                            style = MaterialTheme.typography.displaySmall.copy(
-                                color = palette.inkPrimary,
-                                fontWeight = FontWeight.ExtraBold,
-                                fontSize = 32.sp,
-                                letterSpacing = (-0.9).sp
-                            )
-                        )
-                        Text(
-                            text = "Tap the floating capsule over any MCQ, Math (½ · Σ), or worksheet.",
-                            style = MaterialTheme.typography.bodySmall.copy(
-                                color = palette.inkSecondary,
-                                fontSize = 13.sp,
-                                lineHeight = 18.sp
-                            ),
-                            modifier = Modifier.graphicsLayer { alpha = heroSubtitleAlpha }
+                        // Right Floating Crystal 3D Prism Orb inside animated glass rings & water droplets
+                        IosFloatingLiquidPrismArt(
+                            reducedMotion = reducedMotion,
+                            modifier = Modifier.size(width = 122.dp, height = 144.dp)
                         )
                     }
 
@@ -289,8 +314,8 @@ fun IosLiquidLightHomeLayout(
                             subtitle = if (state.isOverlayRunning) "Tap to close pill" else "Floating AI pill",
                             badge = if (state.isOverlayRunning) "LIVE" else "READY",
                             icon = if (state.isOverlayRunning) Icons.Filled.Stop else Icons.Filled.PlayArrow,
-                            accentColor = if (state.isOverlayRunning) Color(0xFFD71921) else Color(0xFF007AFF),
-                            highlighted = true,
+                            accentColor = if (state.isOverlayRunning) Color(0xFF0A54D8) else Color(0xFF1B6EF3),
+                            highlighted = false,
                             testTag = "btn_toggle_overlay",
                             modifier = Modifier.weight(1f),
                             onClick = {
@@ -475,7 +500,7 @@ fun IosLiquidLightHomeLayout(
                         IosInsetDivider()
                         IosGroupedToolRow(
                             icon = Icons.Filled.Tune,
-                            iconBg = Color(0xFFFF3B30),
+                            iconBg = Color(0xFF1B6EF3),
                             title = "Dynamic Island Studio",
                             subtitle = "In-place icon bar, opacity, gestures & physics",
                             testTag = "card_open_dynamic_island_studio",
@@ -809,20 +834,136 @@ private fun IosKineticDynamicIslandShowcase(
                 modifier = Modifier
                     .heightIn(min = 34.dp)
                     .clip(CircleShape)
-                    .background(if (isOverlayRunning) Color(0xFFFFECEC) else Color(0xFFE5F1FF))
+                    .background(if (isOverlayRunning) Color(0xFF1B6EF3) else Color(0xFFE3EEFF))
                     .clickable(role = Role.Button, onClick = onLaunchOrStop)
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                    .padding(horizontal = 13.dp, vertical = 6.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
                     text = if (isOverlayRunning) "Stop" else "Start",
                     style = MaterialTheme.typography.labelSmall.copy(
-                        color = if (isOverlayRunning) Color(0xFFD71921) else palette.accentSky,
+                        color = if (isOverlayRunning) Color.White else Color(0xFF1B6EF3),
                         fontWeight = FontWeight.ExtraBold,
                         fontSize = 11.5.sp
                     )
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun IosFloatingLiquidPrismArt(
+    reducedMotion: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val floatY = if (reducedMotion) {
+        0f
+    } else {
+        val transition = rememberInfiniteTransition(label = "ios_prism_crystal_float")
+        val y by transition.animateFloat(
+            initialValue = -5f,
+            targetValue = 5f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 3200, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "prism_float_y"
+        )
+        y
+    }
+
+    Box(
+        modifier = modifier,
+        contentAlignment = Alignment.Center
+    ) {
+        // Translucent frosted glass orbital rings & floating glossy blue-white water droplets
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val w = size.width
+            val h = size.height
+            val cx = w * 0.50f
+            val cy = h * 0.54f
+
+            // Soft crystal blue aura behind the 3D Prism
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(
+                        Color(0xFF5FA8FF).copy(alpha = 0.28f),
+                        Color(0xFF1B6EF3).copy(alpha = 0.08f),
+                        Color.Transparent
+                    ),
+                    center = Offset(cx, cy),
+                    radius = w * 0.62f
+                ),
+                center = Offset(cx, cy),
+                radius = w * 0.62f
+            )
+
+            // Outer frosted crystal disc ring
+            drawOval(
+                brush = Brush.linearGradient(
+                    colors = listOf(
+                        Color.White.copy(alpha = 0.90f),
+                        Color(0xFF90C2FF).copy(alpha = 0.55f),
+                        Color.White.copy(alpha = 0.72f)
+                    )
+                ),
+                topLeft = Offset(w * 0.06f, h * 0.44f),
+                size = Size(w * 0.88f, h * 0.36f),
+                style = Stroke(width = 2.6.dp.toPx())
+            )
+            // Inner frosted glass ring
+            drawOval(
+                brush = Brush.linearGradient(
+                    colors = listOf(
+                        Color.White.copy(alpha = 0.95f),
+                        Color(0xFF3B82F6).copy(alpha = 0.35f)
+                    )
+                ),
+                topLeft = Offset(w * 0.17f, h * 0.50f),
+                size = Size(w * 0.66f, h * 0.24f),
+                style = Stroke(width = 1.6.dp.toPx())
+            )
+
+            // Glossy floating water droplets around the prism
+            val droplets = listOf(
+                Triple(w * 0.86f, h * 0.28f - floatY * 0.5f, 5.5.dp.toPx()),
+                Triple(w * 0.14f, h * 0.22f + floatY * 0.4f, 3.6.dp.toPx()),
+                Triple(w * 0.88f, h * 0.82f + floatY * 0.6f, 4.4.dp.toPx())
+            )
+            droplets.forEach { (dx, dy, r) ->
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(Color.White, Color(0xFF9AC5FF), Color(0xFF1B6EF3).copy(alpha = 0.75f)),
+                        center = Offset(dx - r * 0.3f, dy - r * 0.3f),
+                        radius = r * 1.4f
+                    ),
+                    radius = r,
+                    center = Offset(dx, dy)
+                )
+            }
+        }
+
+        // Authentic outer 3D Prism logo floating gently inside the crystal rings
+        Box(
+            modifier = Modifier
+                .graphicsLayer { translationY = floatY }
+                .size(72.dp)
+                .shadow(
+                    elevation = 14.dp,
+                    shape = RoundedCornerShape(20.dp),
+                    ambientColor = Color(0xFF1B6EF3).copy(alpha = 0.25f),
+                    spotColor = Color(0xFF0A47B8).copy(alpha = 0.28f)
+                )
+                .clip(RoundedCornerShape(20.dp))
+                .background(Color.White.copy(alpha = 0.72f))
+                .border(1.2.dp, Color.White.copy(alpha = 0.92f), RoundedCornerShape(20.dp)),
+            contentAlignment = Alignment.Center
+        ) {
+            RedPrismLogoMark(
+                modifier = Modifier.size(64.dp),
+                animated = !reducedMotion
+            )
         }
     }
 }
@@ -841,25 +982,61 @@ private fun IosSquircleControlTile(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val shape = RoundedCornerShape(24.dp)
-    val bgColor = if (highlighted) accentColor else Color.White
-    val primaryTextColor = if (highlighted) Color.White else Color(0xFF1C1C1E)
-    val secondaryTextColor = if (highlighted) Color.White.copy(alpha = 0.85f) else Color(0xFF636366)
+    val primaryTextColor = if (highlighted) Color.White else Color(0xFF0C1830)
+    val secondaryTextColor = if (highlighted) Color.White.copy(alpha = 0.88f) else Color(0xFF4B6282)
 
     Column(
         modifier = modifier
-            .heightIn(min = 122.dp)
-            .liquidPressScale(interactionSource, pressedScale = 0.94f)
+            .heightIn(min = 128.dp)
+            .liquidPressScale(interactionSource, pressedScale = 0.95f)
             .shadow(
-                elevation = if (highlighted) 10.dp else 6.dp,
+                elevation = if (highlighted) 10.dp else 8.dp,
                 shape = shape,
-                ambientColor = if (highlighted) accentColor.copy(alpha = 0.25f) else Color.Black.copy(alpha = 0.05f),
-                spotColor = if (highlighted) accentColor.copy(alpha = 0.30f) else Color.Black.copy(alpha = 0.07f)
+                ambientColor = Color(0xFF1B6EF3).copy(alpha = 0.14f),
+                spotColor = Color(0xFF1B6EF3).copy(alpha = 0.16f)
             )
             .clip(shape)
-            .background(bgColor)
+            .background(
+                if (highlighted) {
+                    Brush.linearGradient(listOf(accentColor, Color(0xFF0A54D8)))
+                } else {
+                    Brush.verticalGradient(
+                        listOf(
+                            Color(0xF5FFFFFF),
+                            Color(0xE8EEF6FF)
+                        )
+                    )
+                }
+            )
+            .drawBehind {
+                if (!highlighted) {
+                    // Subtle flowing blue liquid-glass wave in bottom-right corner
+                    val wave = Path().apply {
+                        moveTo(size.width * 0.42f, size.height)
+                        cubicTo(
+                            size.width * 0.60f, size.height * 0.78f,
+                            size.width * 0.78f, size.height * 0.62f,
+                            size.width, size.height * 0.46f
+                        )
+                        lineTo(size.width, size.height)
+                        close()
+                    }
+                    drawPath(
+                        path = wave,
+                        brush = Brush.linearGradient(
+                            colors = listOf(
+                                Color(0xFF60A5FA).copy(alpha = 0.14f),
+                                Color(0xFF1B6EF3).copy(alpha = 0.24f)
+                            ),
+                            start = Offset(size.width * 0.45f, size.height),
+                            end = Offset(size.width, size.height * 0.48f)
+                        )
+                    )
+                }
+            }
             .border(
-                width = if (highlighted) 0.dp else 0.75.dp,
-                color = if (highlighted) Color.Transparent else Color(0xFFDCDCE4),
+                width = 1.dp,
+                color = if (highlighted) Color.White.copy(alpha = 0.35f) else Color.White.copy(alpha = 0.92f),
                 shape = shape
             )
             .clickable(
@@ -879,32 +1056,51 @@ private fun IosSquircleControlTile(
         ) {
             Box(
                 modifier = Modifier
-                    .size(38.dp)
+                    .size(40.dp)
+                    .shadow(
+                        elevation = 6.dp,
+                        shape = CircleShape,
+                        ambientColor = accentColor.copy(alpha = 0.35f),
+                        spotColor = accentColor.copy(alpha = 0.35f)
+                    )
                     .clip(CircleShape)
                     .background(
-                        if (highlighted) Color.White.copy(alpha = 0.22f) else accentColor.copy(alpha = 0.13f)
+                        if (highlighted) {
+                            Brush.linearGradient(listOf(Color.White.copy(alpha = 0.28f), Color.White.copy(alpha = 0.14f)))
+                        } else {
+                            Brush.linearGradient(listOf(accentColor, accentColor.copy(alpha = 0.78f)))
+                        }
                     ),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = icon,
                     contentDescription = null,
-                    tint = if (highlighted) Color.White else accentColor,
+                    tint = Color.White,
                     modifier = Modifier.size(20.dp)
                 )
             }
-            Box(
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
                 modifier = Modifier
                     .clip(CircleShape)
                     .background(
-                        if (highlighted) Color.White.copy(alpha = 0.20f) else Color(0xFFF2F2F7)
+                        if (highlighted) Color.White.copy(alpha = 0.20f) else Color(0xFFE8F2FF)
                     )
+                    .border(0.6.dp, Color.White.copy(alpha = 0.8f), CircleShape)
                     .padding(horizontal = 8.dp, vertical = 3.dp)
             ) {
+                Box(
+                    modifier = Modifier
+                        .size(5.dp)
+                        .clip(CircleShape)
+                        .background(if (highlighted) Color.White else accentColor)
+                )
                 Text(
                     text = badge,
                     style = MaterialTheme.typography.labelSmall.copy(
-                        color = if (highlighted) Color.White else accentColor,
+                        color = if (highlighted) Color.White else Color(0xFF1E3A5F),
                         fontWeight = FontWeight.ExtraBold,
                         fontSize = 9.5.sp
                     )
@@ -912,26 +1108,50 @@ private fun IosSquircleControlTile(
             }
         }
 
-        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleSmall.copy(
-                    color = primaryTextColor,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 14.5.sp
-                ),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodySmall.copy(
-                    color = secondaryTextColor,
-                    fontSize = 11.5.sp
-                ),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Bottom
+        ) {
+            Column(
+                modifier = Modifier.weight(1f).padding(end = 6.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleSmall.copy(
+                        color = primaryTextColor,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.5.sp
+                    ),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        color = secondaryTextColor,
+                        fontSize = 11.5.sp
+                    ),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .size(24.dp)
+                    .clip(CircleShape)
+                    .background(if (highlighted) Color.White.copy(alpha = 0.24f) else Color.White.copy(alpha = 0.88f))
+                    .border(0.7.dp, Color(0xFFBED8FF), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.ChevronRight,
+                    contentDescription = null,
+                    tint = if (highlighted) Color.White else Color(0xFF1B6EF3),
+                    modifier = Modifier.size(14.dp)
+                )
+            }
         }
     }
 }

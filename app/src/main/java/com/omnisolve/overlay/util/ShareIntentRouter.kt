@@ -13,6 +13,8 @@ sealed class SharedPayload {
     data class SharedPhoto(val uri: Uri, val caption: String = "") : SharedPayload()
     data class SharedPdf(val uri: Uri, val caption: String = "") : SharedPayload()
     data class SharedGoogleFormUrl(val url: String) : SharedPayload()
+    data class SharedQuizWebUrl(val url: String) : SharedPayload()
+    data class SharedLiveRoomCode(val roomCode: String) : SharedPayload()
     data class SharedQuestionText(val text: String) : SharedPayload()
 }
 
@@ -22,6 +24,21 @@ object ShareIntentRouter {
 
     private val GOOGLE_FORMS_URL_REGEX = Regex(
         pattern = """https?://(?:docs\.google\.com/forms/[^\s<>"]+|forms\.gle/[^\s<>"]+)""",
+        option = RegexOption.IGNORE_CASE
+    )
+
+    private val MICROSOFT_FORMS_URL_REGEX = Regex(
+        pattern = """https?://(?:forms\.office\.com/[^\s<>"]+|forms\.cloud\.microsoft/[^\s<>"]+)""",
+        option = RegexOption.IGNORE_CASE
+    )
+
+    private val GENERIC_HTTP_URL_REGEX = Regex(
+        pattern = """https?://[^\s<>"]+""",
+        option = RegexOption.IGNORE_CASE
+    )
+
+    private val PRISM_ROOM_DEEP_LINK_REGEX = Regex(
+        pattern = """prism://room/([A-Za-z0-9\-]{6,7})""",
         option = RegexOption.IGNORE_CASE
     )
 
@@ -45,14 +62,24 @@ object ShareIntentRouter {
     internal fun parseReadOnly(intent: Intent?): SharedPayload? {
         if (intent == null) return null
 
-        // Direct link tap ("Open with Prism" on forms.gle or docs.google.com/forms)
+        // Direct link tap ("Open with Prism" on forms.gle, docs.google.com/forms, forms.office.com, or prism://room/...)
         if (intent.action == Intent.ACTION_VIEW) {
             val rawUrl = intent.dataString?.trim().orEmpty()
             if (rawUrl.isNotBlank()) {
-                val matched = GOOGLE_FORMS_URL_REGEX.find(rawUrl)?.value
+                val roomMatch = PRISM_ROOM_DEEP_LINK_REGEX.find(rawUrl)?.groupValues?.getOrNull(1)
+                    ?.uppercase()?.filter { it.isLetterOrDigit() }
+                if (!roomMatch.isNullOrBlank() && roomMatch.length == 6) {
+                    return SharedPayload.SharedLiveRoomCode(roomCode = roomMatch)
+                }
+                val googleFormMatched = GOOGLE_FORMS_URL_REGEX.find(rawUrl)?.value
                     ?.trimEnd('.', ',', ')', ']', ';', '!')
-                if (!matched.isNullOrBlank()) {
-                    return SharedPayload.SharedGoogleFormUrl(url = matched)
+                if (!googleFormMatched.isNullOrBlank()) {
+                    return SharedPayload.SharedGoogleFormUrl(url = googleFormMatched)
+                }
+                val msFormMatched = MICROSOFT_FORMS_URL_REGEX.find(rawUrl)?.value
+                    ?.trimEnd('.', ',', ')', ']', ';', '!')
+                if (!msFormMatched.isNullOrBlank()) {
+                    return SharedPayload.SharedQuizWebUrl(url = msFormMatched)
                 }
             }
             return null
@@ -77,16 +104,31 @@ object ShareIntentRouter {
             return SharedPayload.SharedPhoto(uri = streamUri, caption = caption)
         }
 
-        // 3. Shared text containing a Google Forms link (even inside a WhatsApp chat message)
+        // 3. Shared text containing a Live Room link, Google Form link, Microsoft Form / Quiz URL, or MCQ text
         val combinedText = listOf(extraSubject, extraText)
             .filter { it.isNotBlank() }
             .joinToString("\n")
             .trim()
         if (combinedText.isNotBlank()) {
+            val roomDeep = PRISM_ROOM_DEEP_LINK_REGEX.find(combinedText)?.groupValues?.getOrNull(1)
+                ?.uppercase()?.filter { it.isLetterOrDigit() }
+            if (!roomDeep.isNullOrBlank() && roomDeep.length == 6) {
+                return SharedPayload.SharedLiveRoomCode(roomCode = roomDeep)
+            }
             val formUrlMatch = GOOGLE_FORMS_URL_REGEX.find(combinedText)?.value
                 ?.trimEnd('.', ',', ')', ']', ';', '!')
             if (!formUrlMatch.isNullOrBlank()) {
                 return SharedPayload.SharedGoogleFormUrl(url = formUrlMatch)
+            }
+            val msUrlMatch = MICROSOFT_FORMS_URL_REGEX.find(combinedText)?.value
+                ?.trimEnd('.', ',', ')', ']', ';', '!')
+            if (!msUrlMatch.isNullOrBlank()) {
+                return SharedPayload.SharedQuizWebUrl(url = msUrlMatch)
+            }
+            val onlyUrlMatch = GENERIC_HTTP_URL_REGEX.find(combinedText)?.value
+                ?.trimEnd('.', ',', ')', ']', ';', '!')
+            if (!onlyUrlMatch.isNullOrBlank() && combinedText.length <= onlyUrlMatch.length + 40) {
+                return SharedPayload.SharedQuizWebUrl(url = onlyUrlMatch)
             }
             return SharedPayload.SharedQuestionText(text = combinedText.take(4000))
         }

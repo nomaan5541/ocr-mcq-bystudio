@@ -109,6 +109,8 @@ private fun ArchitecturalGuestSignInBanner(
         ThemeLayoutArchetype.EDITORIAL_MONOGRAPH -> 12.dp
         ThemeLayoutArchetype.KINETIC_DECK -> 16.dp
         ThemeLayoutArchetype.IOS_LIQUID_LIGHT -> 22.dp
+        ThemeLayoutArchetype.GLASS_PRISM -> 20.dp
+        ThemeLayoutArchetype.CRIMSON_STUDIO -> 20.dp
         ThemeLayoutArchetype.CLASSIC_PRISM -> 16.dp
     }
     val useMono = archetype == ThemeLayoutArchetype.TELEMETRY_HUD
@@ -267,11 +269,11 @@ internal fun AtelierBentoHomeLayout(
                                         maxLines = 1
                                     )
                                     Text(
-                                        text = "Precision\nMCQ Solver",
+                                        text = "Solve Anything\nOn Your Screen",
                                         style = MaterialTheme.typography.headlineMedium.copy(
                                             color = palette.inkPrimary,
                                             fontWeight = FontWeight.ExtraBold,
-                                            fontSize = 24.sp,
+                                            fontSize = 23.sp,
                                             lineHeight = 27.sp,
                                             letterSpacing = (-0.6).sp
                                         ),
@@ -366,7 +368,7 @@ internal fun AtelierBentoHomeLayout(
                         } else {
                             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                 Text(
-                                    text = "Precision MCQ Solver",
+                                    text = "Solve Anything On Your Screen",
                                     style = MaterialTheme.typography.titleLarge.copy(
                                         color = palette.inkPrimary,
                                         fontWeight = FontWeight.ExtraBold
@@ -1004,13 +1006,13 @@ internal fun TelemetryHudHomeLayout(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "OPTICAL SOLVER // ${themeSpec.name.uppercase()}",
+                            text = "SOLVE ANYTHING ON YOUR SCREEN // ${themeSpec.name.uppercase()}",
                             style = MaterialTheme.typography.labelSmall.copy(
                                 color = accentActive,
                                 fontFamily = FontFamily.Monospace,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 10.sp,
-                                letterSpacing = 0.8.sp
+                                letterSpacing = 0.7.sp
                             ),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
@@ -1023,6 +1025,18 @@ internal fun TelemetryHudHomeLayout(
                                 .background(accentActive)
                         )
                     }
+
+                    Text(
+                        text = "Solve Anything On Your Screen",
+                        style = MaterialTheme.typography.titleLarge.copy(
+                            color = palette.inkPrimary,
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 19.sp,
+                            letterSpacing = (-0.3).sp
+                        ),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
 
                     // Live oscilloscope trace strip
                     Canvas(
@@ -1479,13 +1493,13 @@ internal fun EditorialMonographHomeLayout(
                     }
 
                     Text(
-                        text = "Focus. Tap. Solved.",
+                        text = "Solve Anything\nOn Your Screen",
                         style = MaterialTheme.typography.headlineLarge.copy(
                             color = palette.inkPrimary,
                             fontFamily = FontFamily.Serif,
                             fontWeight = FontWeight.Bold,
-                            fontSize = 30.sp,
-                            lineHeight = 35.sp,
+                            fontSize = 28.sp,
+                            lineHeight = 34.sp,
                             letterSpacing = (-0.4).sp
                         ),
                         textAlign = TextAlign.Center,
@@ -2124,11 +2138,11 @@ internal fun KineticDeckHomeLayout(
                         }
 
                         Text(
-                            text = "One-Tap Screen Solver",
+                            text = "Solve Anything On Your Screen",
                             style = MaterialTheme.typography.titleLarge.copy(
                                 color = palette.inkPrimary,
                                 fontWeight = FontWeight.ExtraBold,
-                                fontSize = 21.sp,
+                                fontSize = 20.5.sp,
                                 letterSpacing = (-0.4).sp
                             ),
                             textAlign = TextAlign.Center,

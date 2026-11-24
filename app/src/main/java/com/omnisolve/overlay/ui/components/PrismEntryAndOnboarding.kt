@@ -185,23 +185,46 @@ fun RedPrismLogoMark(
     modifier: Modifier = Modifier,
     animated: Boolean = false
 ) {
-    val shift = if (animated) {
-        val inf = rememberInfiniteTransition(label = "prismGlow")
-        val s by inf.animateFloat(
-            initialValue = -1f,
-            targetValue = 1f,
+    val shimmerAlpha = if (animated) {
+        val inf = rememberInfiniteTransition(label = "prismIconSheen")
+        val a by inf.animateFloat(
+            initialValue = 0.04f,
+            targetValue = 0.22f,
             animationSpec = infiniteRepeatable(
                 animation = tween(2200, easing = FastOutSlowInEasing),
                 repeatMode = RepeatMode.Reverse
             ),
-            label = "shift"
+            label = "sheen"
         )
-        s
-    } else 0f
+        a
+    } else 0.06f
 
-    Canvas(modifier = modifier) {
-        val r = size.minDimension * 0.44f
-        drawRedPrismGem(center = center, radius = r, highlightShift = shift, alpha = 1f)
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(24)),
+        contentAlignment = Alignment.Center
+    ) {
+        androidx.compose.foundation.Image(
+            painter = androidx.compose.ui.res.painterResource(id = com.omnisolve.overlay.R.drawable.ic_red_prism_fg),
+            contentDescription = null,
+            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+            modifier = Modifier.fillMaxSize()
+        )
+        if (animated) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.linearGradient(
+                            colors = listOf(
+                                Color.White.copy(alpha = shimmerAlpha),
+                                Color.Transparent,
+                                Color.Transparent
+                            )
+                        )
+                    )
+            )
+        }
     }
 }
 

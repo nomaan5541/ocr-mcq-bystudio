@@ -1186,13 +1186,15 @@ class F1MasterEngineRobolectricTest {
         assertTrue("reSolveSingleItem must block signed-out users with requiresGoogleSignIn=true", reSolveBlocked)
     }
 
-    // 35. AdConfig cleanly disables ads for production & testing tracks while preserving ad unit IDs
+    // 35. AdConfig enables live Interstitial and App Open units cleanly while protecting DEBUG builds with Google Test IDs
     @Test
     fun scenario35_adConfigUnitsConfiguredAndDebugSafe() {
-        assertFalse(AdConfig.ADS_ENABLED)
-        assertFalse(AdConfig.INTERSTITIAL_ENABLED)
-        assertFalse(AdConfig.APP_OPEN_ENABLED)
+        assertTrue(AdConfig.ADS_ENABLED)
+        assertTrue(AdConfig.INTERSTITIAL_ENABLED)
+        assertTrue(AdConfig.APP_OPEN_ENABLED)
         assertTrue(AdConfig.BANNER_AD_UNIT_ID.startsWith("ca-app-pub-"))
+        assertTrue(AdConfig.INTERSTITIAL_AD_UNIT_ID.startsWith("ca-app-pub-"))
+        assertTrue(AdConfig.APP_OPEN_AD_UNIT_ID.startsWith("ca-app-pub-"))
     }
 
     // 36. F1PerformanceMonitor formats Capture, OCR, Cache Lookup, Validation, and Failure Status for live benchmarking
@@ -2171,6 +2173,356 @@ class F1MasterEngineRobolectricTest {
             )
         } finally {
             F1MasterEngine.resetForTest()
+            F1AuthGate.authOverrideForTest = null
+            com.omnisolve.overlay.data.UserUsageLimitManager.resetForTests(context)
+        }
+    }
+
+    @Test
+    fun scenario45_universalQuizBrowser_andLiveClassRoomMultiplayerSync() = runBlocking {
+        // 1. Universal Quiz URL normalization & XSS/file-scheme security enforcement
+        assertEquals(
+            "https://forms.office.com/r/AbCdEf123",
+            GoogleFormsSolverEngine.normalizeUniversalQuizUrl("forms.office.com/r/AbCdEf123")
+        )
+        assertEquals(
+            "https://moodle.college.edu/mod/quiz/attempt.php?attempt=42",
+            GoogleFormsSolverEngine.normalizeUniversalQuizUrl("https://moodle.college.edu/mod/quiz/attempt.php?attempt=42")
+        )
+        assertEquals(
+            "Must block javascript: XSS scheme",
+            "",
+            GoogleFormsSolverEngine.normalizeUniversalQuizUrl("javascript:alert(document.cookie)")
+        )
+        assertEquals(
+            "Must block file: local read scheme",
+            "",
+            GoogleFormsSolverEngine.normalizeUniversalQuizUrl("file:///etc/passwd")
+        )
+        assertEquals(
+            "Must block data: scheme",
+            "",
+            GoogleFormsSolverEngine.normalizeUniversalQuizUrl("data:text/html,<script>alert(1)</script>")
+        )
+
+        // 2. Platform auto-detection across major quiz sites
+        assertEquals("Google Forms", GoogleFormsSolverEngine.detectQuizPlatformLabel("https://docs.google.com/forms/d/e/abc/viewform"))
+        assertEquals("Microsoft Forms", GoogleFormsSolverEngine.detectQuizPlatformLabel("https://forms.office.com/r/TestQuiz"))
+        assertEquals("Microsoft Forms", GoogleFormsSolverEngine.detectQuizPlatformLabel("https://forms.cloud.microsoft/r/TestQuiz"))
+        assertEquals("Moodle LMS", GoogleFormsSolverEngine.detectQuizPlatformLabel("https://moodle.university.edu/mod/quiz/view.php"))
+        assertEquals("NPTEL / Swayam", GoogleFormsSolverEngine.detectQuizPlatformLabel("https://onlinecourses.nptel.ac.in/noc25_cs01/assessment"))
+        assertEquals("Sanfoundry", GoogleFormsSolverEngine.detectQuizPlatformLabel("https://www.sanfoundry.com/operating-system-mcqs/"))
+        assertEquals("Testbook", GoogleFormsSolverEngine.detectQuizPlatformLabel("https://testbook.com/objective-questions/mcq"))
+        assertEquals("Quizizz", GoogleFormsSolverEngine.detectQuizPlatformLabel("https://quizizz.com/join/quiz/123"))
+        assertEquals("Web Quiz", GoogleFormsSolverEngine.detectQuizPlatformLabel("https://exam.mycollege.org/test/1"))
+
+        // 3. ShareIntentRouter deep links for Microsoft Forms & Prism Live Room invites
+        val msFormIntent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+            data = android.net.Uri.parse("https://forms.office.com/r/CS301Quiz")
+        }
+        val parsedMs = com.omnisolve.overlay.util.ShareIntentRouter.parseAndConsume(msFormIntent)
+        assertTrue(
+            "Microsoft Forms link must route as SharedQuizWebUrl",
+            parsedMs is com.omnisolve.overlay.util.SharedPayload.SharedQuizWebUrl &&
+                parsedMs.url == "https://forms.office.com/r/CS301Quiz"
+        )
+
+        val roomLinkIntent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+            data = android.net.Uri.parse("prism://room/K7M-29Q")
+        }
+        val parsedRoom = com.omnisolve.overlay.util.ShareIntentRouter.parseAndConsume(roomLinkIntent)
+        assertTrue(
+            "prism://room/K7M-29Q must route as SharedLiveRoomCode(K7M29Q)",
+            parsedRoom is com.omnisolve.overlay.util.SharedPayload.SharedLiveRoomCode &&
+                parsedRoom.roomCode == "K7M29Q"
+        )
+
+        // 4. Full Live Class Room v2 lifecycle (40-member cap -> Request Join -> Host Approve -> Locked URL -> Host Broadcast Short & Lengthy Answers -> AI Verify -> Expiry)
+        val rooms = java.util.concurrent.ConcurrentHashMap<String, com.omnisolve.overlay.data.LiveClassRoom>()
+        val membersMap = java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.ConcurrentHashMap<String, com.omnisolve.overlay.data.LiveRoomMember>>()
+        val answersMap = java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.ConcurrentHashMap<String, com.omnisolve.overlay.data.LiveRoomAnswer>>()
+        val fakeBackend = object : com.omnisolve.overlay.data.LiveClassRoomBackend {
+            override suspend fun createRoom(
+                room: com.omnisolve.overlay.data.LiveClassRoom,
+                hostMember: com.omnisolve.overlay.data.LiveRoomMember
+            ): Result<com.omnisolve.overlay.data.LiveClassRoom> {
+                rooms[room.roomCode] = room
+                membersMap.computeIfAbsent(room.roomCode) { java.util.concurrent.ConcurrentHashMap() }[hostMember.uid] = hostMember
+                answersMap.putIfAbsent(room.roomCode, java.util.concurrent.ConcurrentHashMap())
+                return Result.success(room)
+            }
+            override suspend fun getRoom(roomCode: String): Result<com.omnisolve.overlay.data.LiveClassRoom?> =
+                Result.success(rooms[roomCode])
+            override suspend fun getMember(roomCode: String, uid: String): Result<com.omnisolve.overlay.data.LiveRoomMember?> =
+                Result.success(membersMap[roomCode]?.get(uid))
+            override suspend fun upsertMemberRequest(
+                roomCode: String,
+                member: com.omnisolve.overlay.data.LiveRoomMember
+            ): Result<com.omnisolve.overlay.data.LiveRoomMember> {
+                membersMap.computeIfAbsent(roomCode) { java.util.concurrent.ConcurrentHashMap() }[member.uid] = member
+                return Result.success(member)
+            }
+            override suspend fun updateMemberStatus(roomCode: String, targetUid: String, newStatus: String): Result<Unit> {
+                val map = membersMap[roomCode] ?: return Result.failure(IllegalStateException("Missing room"))
+                val cur = map[targetUid] ?: return Result.failure(IllegalStateException("Missing member"))
+                map[targetUid] = cur.copy(status = newStatus)
+                return Result.success(Unit)
+            }
+            override suspend fun deleteMember(roomCode: String, targetUid: String): Result<Unit> {
+                membersMap[roomCode]?.remove(targetUid)
+                return Result.success(Unit)
+            }
+            override suspend fun updateRoomMemberCount(roomCode: String, newMemberCount: Int): Result<Unit> {
+                rooms[roomCode]?.let { rooms[roomCode] = it.copy(memberCount = newMemberCount) }
+                return Result.success(Unit)
+            }
+            override suspend fun updateRoomQuizUrl(roomCode: String, newQuizUrl: String): Result<Unit> {
+                rooms[roomCode]?.let { rooms[roomCode] = it.copy(quizUrl = newQuizUrl) }
+                return Result.success(Unit)
+            }
+            override suspend fun updateRoomQuestionCount(roomCode: String, newQuestionCount: Int): Result<Unit> {
+                rooms[roomCode]?.let { rooms[roomCode] = it.copy(questionCount = newQuestionCount) }
+                return Result.success(Unit)
+            }
+            override suspend fun closeRoom(roomCode: String): Result<Unit> {
+                rooms[roomCode]?.let { rooms[roomCode] = it.copy(active = false) }
+                return Result.success(Unit)
+            }
+            override suspend fun upsertAnswer(roomCode: String, answerId: String, answer: com.omnisolve.overlay.data.LiveRoomAnswer): Result<Unit> {
+                answersMap.computeIfAbsent(roomCode) { java.util.concurrent.ConcurrentHashMap() }[answerId] = answer
+                return Result.success(Unit)
+            }
+            override suspend fun updateVote(roomCode: String, answerId: String, confirmDelta: Int, disputeDelta: Int, voterUid: String): Result<Unit> {
+                val map = answersMap[roomCode] ?: return Result.failure(IllegalStateException("Missing room"))
+                val cur = map[answerId] ?: return Result.failure(IllegalStateException("Missing answer"))
+                map[answerId] = cur.copy(
+                    confirmCount = cur.confirmCount + confirmDelta,
+                    disputeCount = cur.disputeCount + disputeDelta,
+                    updatedByUid = voterUid
+                )
+                return Result.success(Unit)
+            }
+            override suspend fun applyAiVerification(
+                roomCode: String,
+                answerId: String,
+                answerBadge: String,
+                shortAnswer: String,
+                explanation: String,
+                verifierUid: String
+            ): Result<Unit> {
+                val map = answersMap[roomCode] ?: return Result.failure(IllegalStateException("Missing room"))
+                val cur = map[answerId] ?: return Result.failure(IllegalStateException("Missing answer"))
+                map[answerId] = cur.copy(
+                    answerBadge = answerBadge,
+                    shortAnswer = shortAnswer,
+                    explanation = explanation,
+                    sourceLabel = "AI Verified",
+                    verifiedByAi = true,
+                    updatedByUid = verifierUid
+                )
+                return Result.success(Unit)
+            }
+            override fun observeRoom(roomCode: String): kotlinx.coroutines.flow.Flow<com.omnisolve.overlay.data.LiveClassRoom?> =
+                kotlinx.coroutines.flow.flowOf(rooms[roomCode])
+            override fun observeMembers(roomCode: String): kotlinx.coroutines.flow.Flow<List<com.omnisolve.overlay.data.LiveRoomMember>> =
+                kotlinx.coroutines.flow.flowOf(membersMap[roomCode]?.values?.toList().orEmpty())
+            override fun observeAnswers(roomCode: String): kotlinx.coroutines.flow.Flow<List<com.omnisolve.overlay.data.LiveRoomAnswer>> =
+                kotlinx.coroutines.flow.flowOf(answersMap[roomCode]?.values?.sortedBy { it.questionNumber }.orEmpty())
+        }
+
+        var currentActor = "uid_alice" to "Alice"
+        val mockAiClient = okhttp3.OkHttpClient.Builder()
+            .addInterceptor { chain ->
+                val json = org.json.JSONObject().apply {
+                    put(
+                        "choices",
+                        org.json.JSONArray().put(
+                            org.json.JSONObject().put(
+                                "message",
+                                org.json.JSONObject().put("content", "ANSWER: C\nEXPLANATION: DNS resolves domain names to IP addresses.")
+                            )
+                        )
+                    )
+                }.toString()
+                okhttp3.Response.Builder()
+                    .request(chain.request())
+                    .protocol(okhttp3.Protocol.HTTP_1_1)
+                    .code(200)
+                    .message("OK")
+                    .body(json.toResponseBody("application/json".toMediaType()))
+                    .build()
+            }
+            .build()
+
+        com.omnisolve.overlay.data.LiveClassRoomRepository.backendOverrideForTest = fakeBackend
+        com.omnisolve.overlay.data.LiveClassRoomRepository.uidOverrideForTest = { currentActor }
+        F1AuthGate.authOverrideForTest = {
+            F1AuthCheckResult(isAuthenticated = true, uid = currentActor.first, email = "${currentActor.first}@college.edu")
+        }
+        com.omnisolve.overlay.api.OnlineConsensusRaceEngine.zeroAuthEndpointOverride = "https://mock.local/openai"
+        com.omnisolve.overlay.api.OnlineConsensusRaceEngine.httpClientOverride = mockAiClient
+        com.omnisolve.overlay.data.UserUsageLimitManager.resetForTests(context)
+        com.omnisolve.overlay.data.UserUsageLimitManager.disableCloudSyncForTest = true
+        com.omnisolve.overlay.data.DeviceAbuseGuard.disableCloudSyncForTest = true
+
+        try {
+            val nowMs = 1_800_000_000_000L
+            // Host Alice creates a room with locked exam URL (max 40 members)
+            val created = com.omnisolve.overlay.data.LiveClassRoomRepository.createRoom(
+                context = context,
+                roomName = "CSE-B Networks Quiz",
+                subject = SubjectMode.CODING,
+                initialQuizUrl = "https://forms.office.com/r/CS301Quiz",
+                nowMs = nowMs
+            ).getOrThrow()
+            assertTrue("Room code must be 6 uppercase alphanumeric chars", com.omnisolve.overlay.data.LiveClassRoomRepository.isValidRoomCode(created.roomCode))
+            assertEquals("uid_alice", created.hostUid)
+            assertEquals(40, created.maxMembers)
+            assertEquals(1, created.memberCount)
+            assertEquals("https://forms.office.com/r/CS301Quiz", created.quizUrl)
+
+            // Classmate Bob requests to join -> starts in PENDING status until host approves
+            currentActor = "uid_bob" to "Bob"
+            com.omnisolve.overlay.data.LiveClassRoomRepository.leaveRoom(context)
+            val joinOutcome = com.omnisolve.overlay.data.LiveClassRoomRepository.requestJoinRoom(
+                context = context,
+                rawCode = created.formattedCode(),
+                nowMs = nowMs + 60_000L
+            ).getOrThrow()
+            assertEquals(created.roomCode, joinOutcome.room.roomCode)
+            assertEquals(com.omnisolve.overlay.data.LiveRoomMember.STATUS_PENDING, joinOutcome.memberStatus)
+
+            // Non-host Bob CANNOT change the locked quiz URL
+            val bobUrlAttempt = com.omnisolve.overlay.data.LiveClassRoomRepository.updateLockedQuizUrl(
+                context = context,
+                roomCode = created.roomCode,
+                rawUrl = "https://evil.example.com"
+            )
+            assertTrue("Non-host must be blocked from changing locked exam URL", bobUrlAttempt.isFailure)
+
+            // Host Alice approves Bob -> memberCount increments to 2 and Bob becomes approved
+            currentActor = "uid_alice" to "Alice"
+            com.omnisolve.overlay.data.LiveClassRoomRepository.approveMember(
+                context = context,
+                roomCode = created.roomCode,
+                targetUid = "uid_bob",
+                currentApprovedCount = 1
+            ).getOrThrow()
+            assertEquals(2, rooms[created.roomCode]?.memberCount)
+            assertEquals(com.omnisolve.overlay.data.LiveRoomMember.STATUS_APPROVED, membersMap[created.roomCode]?.get("uid_bob")?.status)
+
+            // Enforces hard 40-member ceiling
+            val atCapacityApprove = com.omnisolve.overlay.data.LiveClassRoomRepository.approveMember(
+                context = context,
+                roomCode = created.roomCode,
+                targetUid = "uid_bob",
+                currentApprovedCount = 40
+            )
+            assertTrue("Cannot approve beyond 40 members", atCapacityApprove.isFailure)
+
+            // Host Alice updates locked exam URL cleanly
+            val updatedUrl = com.omnisolve.overlay.data.LiveClassRoomRepository.updateLockedQuizUrl(
+                context = context,
+                roomCode = created.roomCode,
+                rawUrl = "https://docs.google.com/forms/d/e/1FAIpQLSeNetworksFinal/viewform"
+            ).getOrThrow()
+            assertEquals("https://docs.google.com/forms/d/e/1FAIpQLSeNetworksFinal/viewform", updatedUrl)
+
+            // Host Alice publishes a Universal Quiz Browser solved batch (1-word answer + lengthy answer)
+            val quizBatch = com.omnisolve.overlay.api.GoogleFormSolveResult(
+                formTitle = "Networks Quiz",
+                resolvedUrl = updatedUrl,
+                items = listOf(
+                    com.omnisolve.overlay.api.GoogleFormSolvedItem(
+                        number = 1,
+                        questionText = "Which protocol resolves domain names to IP addresses?",
+                        options = listOf("HTTP", "SMTP", "DNS", "FTP"),
+                        answerLetter = "A",
+                        shortAnswer = "HTTP",
+                        explanation = "Initial guess."
+                    ),
+                    com.omnisolve.overlay.api.GoogleFormSolvedItem(
+                        number = 2,
+                        questionText = "What happens during TCP three-way handshake?",
+                        options = listOf(
+                            "Client sends SYN, server replies SYN-ACK, and client responds with final ACK",
+                            "Server broadcasts UDP packets without acknowledgements"
+                        ),
+                        answerLetter = "A",
+                        shortAnswer = "Client sends SYN, server replies SYN-ACK, and client responds with final ACK",
+                        explanation = "Standard TCP connection establishment."
+                    )
+                ),
+                compactNotificationOutput = "(1-A|2-A)",
+                engineLabel = "Google Forms"
+            )
+            val pushedCount = com.omnisolve.overlay.data.LiveClassRoomRepository.publishQuizResultToRoom(
+                context = context,
+                result = quizBatch,
+                sourceLabel = "Google Forms",
+                explicitRoomCode = created.roomCode
+            ).getOrThrow()
+            assertEquals(2, pushedCount)
+
+            val answerId = com.omnisolve.overlay.data.LiveClassRoomRepository.computeAnswerId(
+                "Which protocol resolves domain names to IP addresses?"
+            )
+            val syncedItem = answersMap[created.roomCode]?.get(answerId)
+            assertNotNull("Published answer must exist in room store", syncedItem)
+
+            // Verify Shuffled-Option-Proof smart display: short 1-word answer vs lengthy answer locator JS
+            val shortDisplay = com.omnisolve.overlay.data.LiveClassRoomRepository.formatSmartAnswerDisplay(syncedItem!!)
+            assertTrue("1-word answer must render directly as word", shortDisplay.isShortDirectAnswer)
+            assertEquals("HTTP", shortDisplay.directWordOrPhrase)
+
+            val longId = com.omnisolve.overlay.data.LiveClassRoomRepository.computeAnswerId(
+                "What happens during TCP three-way handshake?"
+            )
+            val longSynced = answersMap[created.roomCode]?.get(longId)!!
+            val longDisplay = com.omnisolve.overlay.data.LiveClassRoomRepository.formatSmartAnswerDisplay(longSynced)
+            assertFalse("Lengthy answer must switch to browser auto-locator mode", longDisplay.isShortDirectAnswer)
+            val locateJs = com.omnisolve.overlay.api.GoogleFormsSolverEngine.buildLocateShuffledOptionJavascript(
+                questionText = longSynced.questionText,
+                targetAnswerText = longDisplay.matchTargetText
+            )
+            assertTrue("Locate JS must include scrollIntoView highlight", locateJs.contains("scrollIntoView"))
+
+            // Bob disputes Q1 (voting allowed for approved member)
+            currentActor = "uid_bob" to "Bob"
+            com.omnisolve.overlay.data.LiveClassRoomRepository.voteAnswer(
+                context = context,
+                roomCode = created.roomCode,
+                answerId = answerId,
+                confirm = false
+            ).getOrThrow()
+            assertEquals(1, answersMap[created.roomCode]?.get(answerId)?.disputeCount)
+
+            // Host Alice triggers 1-Tap AI Tie-Breaker -> updates to C (DNS) & sets verifiedByAi = true
+            currentActor = "uid_alice" to "Alice"
+            val aiVerified = com.omnisolve.overlay.data.LiveClassRoomRepository.verifyAnswerWithAiTieBreaker(
+                context = context,
+                roomCode = created.roomCode,
+                answer = answersMap[created.roomCode]!![answerId]!!,
+                subjectMode = SubjectMode.CODING
+            ).getOrThrow()
+            assertEquals("C", aiVerified.answerBadge)
+            assertTrue("AI Tie-Breaker must mark answer verifiedByAi = true", aiVerified.verifiedByAi)
+            assertEquals("AI Verified", answersMap[created.roomCode]?.get(answerId)?.sourceLabel)
+
+            // Expired room (25 hours later) must reject join cleanly
+            currentActor = "uid_charlie" to "Charlie"
+            val expiredJoin = com.omnisolve.overlay.data.LiveClassRoomRepository.requestJoinRoom(
+                context = context,
+                rawCode = created.roomCode,
+                nowMs = nowMs + (25L * 60L * 60L * 1000L)
+            )
+            assertTrue("Room older than 24h must fail join with expiration message", expiredJoin.isFailure)
+        } finally {
+            com.omnisolve.overlay.data.LiveClassRoomRepository.backendOverrideForTest = null
+            com.omnisolve.overlay.data.LiveClassRoomRepository.uidOverrideForTest = null
+            com.omnisolve.overlay.data.LiveClassRoomRepository.leaveRoom(context)
+            com.omnisolve.overlay.api.OnlineConsensusRaceEngine.zeroAuthEndpointOverride = null
+            com.omnisolve.overlay.api.OnlineConsensusRaceEngine.httpClientOverride = null
             F1AuthGate.authOverrideForTest = null
             com.omnisolve.overlay.data.UserUsageLimitManager.resetForTests(context)
         }

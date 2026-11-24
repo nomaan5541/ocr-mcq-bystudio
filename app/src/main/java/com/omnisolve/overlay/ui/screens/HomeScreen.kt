@@ -50,6 +50,7 @@ import androidx.compose.material.icons.filled.CenterFocusStrong
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.FileDownload
+import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Opacity
@@ -71,15 +72,20 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
@@ -89,6 +95,7 @@ import android.net.Uri
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.omnisolve.overlay.MainActivity
+import com.omnisolve.overlay.data.LiveRoomAnswer
 import com.omnisolve.overlay.model.QuestionSolveMode
 import com.omnisolve.overlay.model.SolverMethod
 import com.omnisolve.overlay.model.SubjectMode
@@ -160,6 +167,7 @@ fun HomeScreen(
     onToggleFluidAnimations: (Boolean) -> Unit = {},
     onReplayIslandDynamics: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
+    onOpenRoomsTab: () -> Unit = {},
     onSignInServer: () -> Unit = {},
     onOpenGeminiLogin: () -> Unit = {},
     onToggleTheme: () -> Unit = {},
@@ -200,6 +208,17 @@ fun HomeScreen(
     onRevertToNormalDefaultTheme: () -> Unit = {},
     onSelectThemeAnimOverride: (ThemeAnimationIntensity) -> Unit = {},
     onSelectThemeAppearanceOverride: (ThemeColorAppearance) -> Unit = {},
+    onCreateLiveClassRoom: (String, SubjectMode, String) -> Unit = { _, _, _ -> },
+    onJoinLiveClassRoom: (String) -> Unit = {},
+    onApproveLiveRoomMember: (String) -> Unit = {},
+    onRejectOrRemoveLiveRoomMember: (String, Boolean) -> Unit = { _, _ -> },
+    onUpdateLiveRoomLockedUrl: (String) -> Unit = {},
+    onLeaveLiveClassRoom: () -> Unit = {},
+    onEndLiveClassRoom: () -> Unit = {},
+    onToggleLiveClassRoomAutoSync: (Boolean) -> Unit = {},
+    onVoteLiveRoomConfirm: (String) -> Unit = {},
+    onVoteLiveRoomDispute: (String) -> Unit = {},
+    onVerifyLiveRoomAnswerWithAi: (LiveRoomAnswer) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val palette = LocalWhiteGlassPalette.current
@@ -274,6 +293,27 @@ fun HomeScreen(
                 onShowBannerMessage = onShowBannerMessage,
                 onSignInGoogle = onSignInServer,
                 onOpenGeminiWebLogin = onOpenGeminiLogin,
+                modifier = modifier
+            )
+        }
+
+        HomeSubScreen.LIVE_CLASS_ROOM -> {
+            LiveClassRoomScreen(
+                state = state,
+                onBackToHome = { onOpenHomeSubScreen(HomeSubScreen.MAIN) },
+                onSignInGoogle = onSignInServer,
+                onCreateRoom = onCreateLiveClassRoom,
+                onJoinRoom = onJoinLiveClassRoom,
+                onApproveMember = onApproveLiveRoomMember,
+                onRejectOrRemoveMember = onRejectOrRemoveLiveRoomMember,
+                onUpdateLockedQuizUrl = onUpdateLiveRoomLockedUrl,
+                onLeaveRoom = onLeaveLiveClassRoom,
+                onEndRoom = onEndLiveClassRoom,
+                onToggleAutoSync = onToggleLiveClassRoomAutoSync,
+                onVoteConfirm = onVoteLiveRoomConfirm,
+                onVoteDispute = onVoteLiveRoomDispute,
+                onAiVerifyAnswer = onVerifyLiveRoomAnswerWithAi,
+                onShowBannerMessage = onShowBannerMessage,
                 modifier = modifier
             )
         }
@@ -407,254 +447,929 @@ fun HomeScreen(
                         )
                     }
 
+                    ThemeLayoutArchetype.GLASS_PRISM -> {
+                        GlassPrismHomeLayout(
+                            state = state,
+                            listState = listState,
+                            onToggleOverlay = onToggleOverlay,
+                            onOpenHomeSubScreen = onOpenHomeSubScreen,
+                            onOpenRoomsTab = onOpenRoomsTab,
+                            onSignInServer = onSignInServer,
+                            onSolvePhotoUri = onSolveGoogleFormImageUri,
+                            modifier = modifier
+                        )
+                    }
+
+                    ThemeLayoutArchetype.CRIMSON_STUDIO -> {
+                        PrismStudioHomeScreen(
+                            state = state,
+                            listState = listState,
+                            isStudioEdition = true,
+                            onToggleOverlay = onToggleOverlay,
+                            onOpenHomeSubScreen = onOpenHomeSubScreen,
+                            onOpenRoomsTab = onOpenRoomsTab,
+                            onSignInServer = onSignInServer,
+                            onSolvePhotoUri = onSolveGoogleFormImageUri,
+                            modifier = modifier
+                        )
+                    }
+
                     ThemeLayoutArchetype.CLASSIC_PRISM -> {
-    LazyColumn(
-        state = listState,
-        modifier = modifier
-            .fillMaxSize()
-            .testTag("home_screen_list"),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 118.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        // ── 1. HERO CARD ("Solve Anything On Your Screen") ──
-        item(key = "hero_banner") {
-            ScrollRevealSection(index = 0) {
-                Box(modifier = Modifier.testTag("home_layout_CLASSIC_PRISM")) {
-                    PrismCrimsonHeroCard(
-                        isOverlayRunning = state.isOverlayRunning,
-                        activeMethod = state.solverMethod,
-                        onToggleOverlay = onToggleOverlay
-                    )
-                }
-            }
-        }
-
-        // ── 1B. 10-SECOND 3-STEP QUICK GUIDE & OPTIONAL 5-SEC LIVE DEMO ──
-        item(key = "home_quick_how_to_use") {
-            val ctx = LocalContext.current
-            var showInlineDemo by remember { mutableStateOf(false) }
-            ScrollRevealSection(index = 1) {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    QuickThreeStepStrip()
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        HomeQuickActionPill(
-                            title = if (showInlineDemo) "Hide Live Demo" else "Try 5-Sec Demo",
-                            icon = Icons.Filled.Quiz,
-                            highlight = showInlineDemo,
-                            testTag = "btn_home_toggle_live_demo",
-                            onClick = { showInlineDemo = !showInlineDemo },
-                            modifier = Modifier.weight(1f)
-                        )
-                        HomeQuickActionPill(
-                            title = "Share with Friends",
-                            icon = Icons.Filled.Share,
-                            highlight = false,
-                            testTag = "btn_home_share_friends",
-                            onClick = { AppShareHelper.shareAppWithFriends(ctx) },
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                    if (showInlineDemo) {
-                        LiveInteractiveDemoCard(compact = true)
-                    }
-                }
-            }
-        }
-
-        if (state.firebaseUserId.isNullOrBlank()) {
-            item(key = "home_ocr_only_signin_card") {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(PrismCurves.cardCorner(themeSpec)))
-                        .background(palette.glassStrong)
-                        .border(1.dp, palette.accentSky.copy(alpha = 0.6f), RoundedCornerShape(PrismCurves.cardCorner(themeSpec)))
-                        .clickable(role = Role.Button, onClick = onSignInServer)
-                        .padding(horizontal = 14.dp, vertical = 12.dp)
-                        .testTag("card_home_ocr_limited_signin"),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .weight(1f)
-                            .padding(end = 10.dp)
-                    ) {
-                        Text(
-                            text = "Sign in to start solving",
-                            style = MaterialTheme.typography.titleSmall.copy(
-                                color = palette.inkPrimary,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 13.5.sp
-                            ),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Text(
-                            text = "Google Sign-In unlocks MCQs, Math, Forms, offline cache, and cloud sync",
-                            style = MaterialTheme.typography.bodySmall.copy(
-                                color = palette.inkSecondary,
-                                fontSize = 11.5.sp
-                            ),
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(palette.accentSky)
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "Sign In",
-                            style = MaterialTheme.typography.labelMedium.copy(
-                                color = palette.onAccentInk,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 11.5.sp
-                            ),
-                            maxLines = 1
+                        PrismStudioHomeScreen(
+                            state = state,
+                            listState = listState,
+                            isStudioEdition = false,
+                            onToggleOverlay = onToggleOverlay,
+                            onOpenHomeSubScreen = onOpenHomeSubScreen,
+                            onOpenRoomsTab = onOpenRoomsTab,
+                            onSignInServer = onSignInServer,
+                            onSolvePhotoUri = onSolveGoogleFormImageUri,
+                            modifier = modifier
                         )
                     }
                 }
             }
         }
-
-        // ── 2. THREE MAIN EVERYDAY FEATURES ──
-        item(key = "core_workspace_options") {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 2.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = "Main Tools",
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontSize = 17.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = palette.inkPrimary,
-                            letterSpacing = (-0.2).sp
-                        ),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier
-                            .weight(1f)
-                            .padding(end = 8.dp)
-                    )
-                    Text(
-                        text = "Only reads when you tap",
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = palette.inkSecondary
-                        ),
-                        maxLines = 1
-                    )
-                }
-
-                // 1. Solve a Google Form
-                GoogleFormsSolveHubCard(
-                    state = state,
-                    onOpenGoogleFormsSolve = {
-                        onOpenHomeSubScreen(HomeSubScreen.GOOGLE_FORMS_SOLVE)
-                    }
-                )
-
-                // 2. Choose Solving Style (Fast, Best Accuracy, Diagrams)
-                SelectAnswerModelHubCard(
-                    activeMethod = state.solverMethod,
-                    onOpenAnswerModels = {
-                        onOpenHomeSubScreen(HomeSubScreen.ANSWER_MODELS)
-                    },
-                    onResetToOcrDefault = {
-                        onSelectSolverMethod(SolverMethod.BACKGROUND_GEMINI)
-                    }
-                )
-
-                // 3. Customize Floating Pill Look (Theme-Matched!)
-                DynamicIslandStudioHubCard(
-                    state = state,
-                    onOpenIslandStudio = {
-                        onOpenHomeSubScreen(HomeSubScreen.DYNAMIC_ISLAND_STUDIO)
-                    }
-                )
-
-                Spacer(Modifier.height(4.dp))
-
-                Text(
-                    text = "Quick Links",
-                    style = MaterialTheme.typography.labelLarge.copy(
-                        fontSize = 12.5.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = palette.inkSecondary
-                    )
-                )
-
-                FlowRow(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    HomeQuickActionPill(
-                        title = "Themes",
-                        icon = Icons.Filled.Palette,
-                        highlight = false,
-                        showThemeSwatches = true,
-                        testTag = "card_open_theme_studio",
-                        onClick = { onOpenHomeSubScreen(HomeSubScreen.THEME_STUDIO) }
-                    )
-                    HomeQuickActionPill(
-                        title = if (state.customPinConfig.isPinned || state.isGoogleFormPinned) "Notifications • On" else "Notifications",
-                        icon = Icons.Filled.NotificationsActive,
-                        highlight = state.customPinConfig.isPinned || state.isGoogleFormPinned,
-                        testTag = "card_open_notification_studio",
-                        onClick = { onOpenHomeSubScreen(HomeSubScreen.NOTIFICATION_STUDIO) }
-                    )
-                    HomeQuickActionPill(
-                        title = if (state.historyEntries.isNotEmpty()) "History & Cache (${state.historyEntries.size})" else "History & Cache",
-                        icon = Icons.Filled.FileDownload,
-                        highlight = false,
-                        testTag = "card_open_export_qa",
-                        onClick = { onOpenHomeSubScreen(HomeSubScreen.EXPORT_QA) }
-                    )
-                    HomeQuickActionPill(
-                        title = "Privacy",
-                        icon = Icons.Filled.VerifiedUser,
-                        highlight = false,
-                        testTag = "card_open_privacy_policy",
-                        onClick = { onOpenHomeSubScreen(HomeSubScreen.PRIVACY_POLICY) }
-                    )
-                }
-            }
-        }
-
-        // ── 4. IN-APP SPONSORED BANNER (BOTTOM OF HOME MAIN TOOLS) ──────────
-        item(key = "home_main_tools_ad_slot") {
-            InAppAdMobBanner(
-                placementTag = "home_main_tools_bottom",
-                style = AdBannerStyle.INLINE_CARD
-            )
-        }
-                    }
-                }
-            }
-        }
-    }
     }
     }
 }
 
-// ── 1. HERO CARD ────────────────────────────────────────────────────────────
+// ── 1. NEW STUDIO EDITORIAL DEFAULT HERO & 2x2 BENTO TILE ───────────────────
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun StudioDefaultHeroCard(
+    isOverlayRunning: Boolean,
+    activeMethod: SolverMethod,
+    showInlineDemo: Boolean,
+    onToggleOverlay: () -> Unit,
+    onToggleDemo: () -> Unit,
+    onShareApp: () -> Unit
+) {
+    val palette = LocalWhiteGlassPalette.current
+    val reducedMotion = LocalReducedMotion.current
+    val ctaInteraction = remember { MutableInteractionSource() }
+    val statusColor = if (isOverlayRunning) Color(0xFF23A55A) else Color(0xFFD71921)
+    val pulseScale = if (!reducedMotion && isOverlayRunning) {
+        val pulse = rememberInfiniteTransition(label = "studio_hero_live_pulse")
+        pulse.animateFloat(
+            initialValue = 0.85f,
+            targetValue = 1.35f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(900, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "studio_dot_scale"
+        ).value
+    } else 1f
+
+    // Interactive Hero Poster showcase mode (0=MCQ, 1=Math, 2=Room, 3=Stealth)
+    var selectedShowcaseIdx by remember { mutableIntStateOf(0) }
+    var userPinnedShowcase by remember { mutableStateOf(false) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .shadow(
+                elevation = 18.dp,
+                shape = RoundedCornerShape(24.dp),
+                ambientColor = Color.Black.copy(alpha = 0.92f),
+                spotColor = statusColor.copy(alpha = 0.42f)
+            )
+            .clip(RoundedCornerShape(24.dp))
+            .background(
+                Brush.verticalGradient(
+                    listOf(Color(0xFF1B1D26), Color(0xFF111218), Color(0xFF0C0D11))
+                )
+            )
+            .drawBehind {
+                val w = size.width
+                val h = size.height
+
+                // Razor-thin top glass specular bevel highlight
+                drawLine(
+                    brush = Brush.horizontalGradient(
+                        listOf(
+                            Color.Transparent,
+                            Color.White.copy(alpha = 0.22f),
+                            Color.Transparent
+                        )
+                    ),
+                    start = Offset(w * 0.10f, 1.2.dp.toPx()),
+                    end = Offset(w * 0.90f, 1.2.dp.toPx()),
+                    strokeWidth = 1.3.dp.toPx(),
+                    cap = StrokeCap.Round
+                )
+
+                // Sweeping architectural double-curve contour ribbons (top-right + lower-left)
+                val topRibbon = Path().apply {
+                    moveTo(w * 0.48f, 0f)
+                    cubicTo(w * 0.65f, h * 0.22f, w * 0.82f, h * 0.12f, w, h * 0.34f)
+                }
+                val topRibbonInner = Path().apply {
+                    moveTo(w * 0.62f, 0f)
+                    cubicTo(w * 0.76f, h * 0.16f, w * 0.89f, h * 0.09f, w, h * 0.22f)
+                }
+                val bottomCurl = Path().apply {
+                    moveTo(0f, h * 0.74f)
+                    cubicTo(w * 0.18f, h * 0.84f, w * 0.26f, h * 0.96f, w * 0.44f, h)
+                }
+                drawPath(
+                    path = topRibbon,
+                    color = statusColor.copy(alpha = 0.22f),
+                    style = Stroke(width = 1.7.dp.toPx(), cap = StrokeCap.Round)
+                )
+                drawPath(
+                    path = topRibbonInner,
+                    color = Color.White.copy(alpha = 0.08f),
+                    style = Stroke(width = 1.1.dp.toPx(), cap = StrokeCap.Round)
+                )
+                drawPath(
+                    path = bottomCurl,
+                    color = statusColor.copy(alpha = 0.14f),
+                    style = Stroke(width = 1.3.dp.toPx(), cap = StrokeCap.Round)
+                )
+            }
+            .border(
+                width = 1.dp,
+                color = if (isOverlayRunning) statusColor.copy(alpha = 0.62f) else Color(0xFF2C2F3C),
+                shape = RoundedCornerShape(24.dp)
+            )
+            .padding(18.dp),
+        verticalArrangement = Arrangement.spacedBy(13.dp)
+    ) {
+        // Top status + active style row
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(7.dp),
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .background(statusColor.copy(alpha = 0.15f))
+                    .border(1.dp, statusColor.copy(alpha = 0.48f), CircleShape)
+                    .padding(horizontal = 10.dp, vertical = 5.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(7.dp)
+                        .graphicsLayer {
+                            scaleX = pulseScale
+                            scaleY = pulseScale
+                        }
+                        .clip(CircleShape)
+                        .background(statusColor)
+                )
+                Text(
+                    text = if (isOverlayRunning) "HELPER LIVE" else "READY",
+                    color = if (isOverlayRunning) Color(0xFF4ADE80) else Color(0xFFEEEEEE),
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    letterSpacing = 1.1.sp
+                )
+            }
+
+            Box(
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .background(Color(0xFF1D1F27))
+                    .border(1.dp, Color(0xFF2B2D37), CircleShape)
+                    .padding(horizontal = 10.dp, vertical = 5.dp)
+            ) {
+                Text(
+                    text = activeMethod.shortName,
+                    color = palette.inkSecondary,
+                    fontSize = 10.5.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+
+        // Hero Poster Split: Brand Tagline + 4 Interactive Curiosity Mode Chips Left | Animated Phone Right
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+            val showPhone = maxWidth >= 285.dp
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(7.dp)
+                ) {
+                    Text(
+                        text = "Solve Anything\nOn Your Screen",
+                        style = MaterialTheme.typography.headlineSmall.copy(
+                            fontSize = if (showPhone) 21.sp else 23.sp,
+                            lineHeight = 25.5.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = Color(0xFFEEEEEE),
+                            letterSpacing = (-0.5).sp
+                        ),
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = HERO_MINI_MCQ_SAMPLES[selectedShowcaseIdx].subtitleHint,
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontSize = 11.8.sp,
+                            lineHeight = 16.5.sp,
+                            color = Color(0xFF949BA4)
+                        ),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+
+                    // Interactive 4-Mode Curiosity Selector Chips
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(5.dp),
+                        verticalArrangement = Arrangement.spacedBy(5.dp),
+                        modifier = Modifier.padding(top = 2.dp)
+                    ) {
+                        HERO_MINI_MCQ_SAMPLES.forEachIndexed { idx, mode ->
+                            val isSelected = idx == selectedShowcaseIdx
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(
+                                        if (isSelected) Color(0xFFD71921).copy(alpha = 0.22f)
+                                        else Color(0xFF171922)
+                                    )
+                                    .border(
+                                        width = 0.9.dp,
+                                        color = if (isSelected) Color(0xFFD71921) else Color(0xFF282B36),
+                                        shape = RoundedCornerShape(8.dp)
+                                    )
+                                    .clickable(role = Role.Tab) {
+                                        selectedShowcaseIdx = idx
+                                        userPinnedShowcase = true
+                                    }
+                                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                                    .testTag("hero_poster_mode_${mode.modeTag.lowercase()}")
+                            ) {
+                                Text(
+                                    text = mode.modeTag,
+                                    color = if (isSelected) Color(0xFFEEEEEE) else Color(0xFF8C929C),
+                                    fontSize = 9.5.sp,
+                                    fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.SemiBold,
+                                    maxLines = 1
+                                )
+                            }
+                        }
+                    }
+                }
+
+                if (showPhone) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(5.dp)
+                    ) {
+                        AnimatedMcqScannerPhone(
+                            isOverlayRunning = isOverlayRunning,
+                            sampleIdx = selectedShowcaseIdx,
+                            autoCycle = !userPinnedShowcase,
+                            onAdvanceSample = { next -> selectedShowcaseIdx = next }
+                        )
+                        Text(
+                            text = "Tap to preview",
+                            color = Color(0xFF767676),
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Medium,
+                            letterSpacing = 0.3.sp
+                        )
+                    }
+                }
+            }
+        }
+
+        // Full-width primary Start / Stop CTA with sculpted depth shadow
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center,
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 52.dp)
+                .liquidPressScale(ctaInteraction, pressedScale = 0.96f)
+                .shadow(
+                    elevation = 10.dp,
+                    shape = RoundedCornerShape(14.dp),
+                    ambientColor = statusColor.copy(alpha = 0.50f),
+                    spotColor = statusColor.copy(alpha = 0.62f)
+                )
+                .clip(RoundedCornerShape(14.dp))
+                .background(
+                    Brush.horizontalGradient(
+                        if (isOverlayRunning) listOf(Color(0xFF23A55A), Color(0xFF1B8648))
+                        else listOf(Color(0xFFD71921), Color(0xFFB8141B))
+                    )
+                )
+                .border(
+                    width = 0.8.dp,
+                    color = Color.White.copy(alpha = 0.22f),
+                    shape = RoundedCornerShape(14.dp)
+                )
+                .clickable(
+                    interactionSource = ctaInteraction,
+                    indication = ripple(color = Color.White),
+                    role = Role.Button,
+                    onClick = onToggleOverlay
+                )
+                .padding(horizontal = 18.dp, vertical = 13.dp)
+                .testTag("btn_toggle_overlay")
+        ) {
+            Icon(
+                imageVector = if (isOverlayRunning) Icons.Filled.Stop else Icons.Filled.PlayArrow,
+                contentDescription = null,
+                tint = Color.White,
+                modifier = Modifier.size(19.dp)
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = if (isOverlayRunning) "Stop Floating Helper" else "Start Floating Helper",
+                color = Color.White,
+                fontSize = 14.5.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1
+            )
+        }
+
+        // Compact secondary actions (Try 5-Sec Demo + Share)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            HomeQuickActionPill(
+                title = if (showInlineDemo) "Hide Demo" else "Try 5-Sec Demo",
+                icon = Icons.Filled.Quiz,
+                highlight = showInlineDemo,
+                testTag = "btn_home_toggle_live_demo",
+                onClick = onToggleDemo,
+                modifier = Modifier.weight(1f)
+            )
+            HomeQuickActionPill(
+                title = "Share App",
+                icon = Icons.Filled.Share,
+                highlight = false,
+                testTag = "btn_home_share_friends",
+                onClick = onShareApp,
+                modifier = Modifier.weight(1f)
+            )
+        }
+    }
+}
+
+private data class MiniDemoMcqSample(
+    val modeTag: String,
+    val subtitleHint: String,
+    val islandSolvedLabel: String,
+    val question: String,
+    val options: List<Pair<String, String>>,
+    val correctIndex: Int
+)
+
+private val HERO_MINI_MCQ_SAMPLES = listOf(
+    MiniDemoMcqSample(
+        modeTag = "MCQ",
+        subtitleHint = "Reads any quiz app or form on screen & highlights the answer in 1 tap.",
+        islandSolvedLabel = "✓ Opt C",
+        question = "SI unit of force?",
+        options = listOf("A" to "Joule", "B" to "Watt", "C" to "Newton", "D" to "Pascal"),
+        correctIndex = 2
+    ),
+    MiniDemoMcqSample(
+        modeTag = "Math",
+        subtitleHint = "Solves calculus, algebra, physics formulas & diagrams step-by-step.",
+        islandSolvedLabel = "✓ x² + C",
+        question = "∫ 2x dx = ?",
+        options = listOf("A" to "2x²", "B" to "x² + C", "C" to "x + C", "D" to "2 + C"),
+        correctIndex = 1
+    ),
+    MiniDemoMcqSample(
+        modeTag = "Room",
+        subtitleHint = "Host solves once — up to 40 approved classmates see live answers.",
+        islandSolvedLabel = "LIVE · ✓ B",
+        question = "Powerhouse of cell?",
+        options = listOf("A" to "Ribosome", "B" to "Mitochondria", "C" to "Golgi", "D" to "Nucleus"),
+        correctIndex = 1
+    ),
+    MiniDemoMcqSample(
+        modeTag = "Stealth",
+        subtitleHint = "Hide the pill anytime & double-press Volume Down for silent answers.",
+        islandSolvedLabel = "91% ⚡",
+        question = "HTTP OK code?",
+        options = listOf("A" to "200 OK", "B" to "404", "C" to "500", "D" to "301"),
+        correctIndex = 0
+    )
+)
+
+/**
+ * Self-running interactive animated phone poster inside the Hero Card:
+ * loops smoothly through Scan Laser + Corner Brackets -> Solving -> Emerald Highlight,
+ * with glass sheen glare and 4 selectable live product modes (MCQ, Math, Room, Stealth).
+ */
+@Composable
+private fun AnimatedMcqScannerPhone(
+    isOverlayRunning: Boolean,
+    sampleIdx: Int,
+    autoCycle: Boolean,
+    onAdvanceSample: (Int) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val reducedMotion = LocalReducedMotion.current
+    val haptics = LocalHapticFeedback.current
+    val interaction = remember { MutableInteractionSource() }
+
+    // 0 = SCANNING, 1 = SOLVING, 2 = SOLVED
+    var phase by remember { mutableIntStateOf(if (reducedMotion) 2 else 0) }
+    var replayTrigger by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(reducedMotion, sampleIdx, replayTrigger) {
+        if (reducedMotion) {
+            phase = 2
+            return@LaunchedEffect
+        }
+        while (true) {
+            phase = 0 // Scan laser + corner brackets lock on
+            kotlinx.coroutines.delay(1450L)
+            phase = 1 // Dynamic Island shows Solving...
+            kotlinx.coroutines.delay(720L)
+            phase = 2 // Correct option highlights emerald + Island flips to answer badge
+            kotlinx.coroutines.delay(2350L)
+            if (autoCycle) {
+                onAdvanceSample((sampleIdx + 1) % HERO_MINI_MCQ_SAMPLES.size)
+                break
+            }
+        }
+    }
+
+    val laserFraction = if (!reducedMotion && phase == 0) {
+        val infinite = rememberInfiniteTransition(label = "hero_phone_scan_laser")
+        infinite.animateFloat(
+            initialValue = 0.10f,
+            targetValue = 0.90f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(1300, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "laser_y"
+        ).value
+    } else 0f
+
+    val sample = HERO_MINI_MCQ_SAMPLES[sampleIdx.coerceIn(0, HERO_MINI_MCQ_SAMPLES.lastIndex)]
+    val isSolved = phase == 2
+    val accentBorder by animateColorAsState(
+        targetValue = when {
+            isSolved -> Color(0xFF23A55A)
+            isOverlayRunning -> Color(0xFF23A55A).copy(alpha = 0.72f)
+            else -> Color(0xFFD71921).copy(alpha = 0.78f)
+        },
+        animationSpec = tween(300),
+        label = "phone_bezel_tint"
+    )
+
+    Box(
+        modifier = modifier
+            .width(116.dp)
+            .height(166.dp)
+            .graphicsLayer {
+                rotationZ = -2.4f
+            }
+            .liquidPressScale(interaction, pressedScale = 0.94f)
+            .shadow(
+                elevation = 20.dp,
+                shape = RoundedCornerShape(22.dp),
+                ambientColor = Color.Black.copy(alpha = 0.96f),
+                spotColor = accentBorder.copy(alpha = 0.65f)
+            )
+            .clip(RoundedCornerShape(22.dp))
+            .background(Color(0xFF090A0E))
+            .border(1.5.dp, accentBorder, RoundedCornerShape(22.dp))
+            .clickable(
+                interactionSource = interaction,
+                indication = ripple(color = Color(0xFFD71921)),
+                role = Role.Button
+            ) {
+                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                onAdvanceSample((sampleIdx + 1) % HERO_MINI_MCQ_SAMPLES.size)
+                replayTrigger++
+            }
+            .padding(5.dp)
+            .testTag("hero_interactive_phone_preview")
+    ) {
+        // Inner phone screen
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .clip(RoundedCornerShape(16.dp))
+                .background(
+                    Brush.verticalGradient(
+                        listOf(Color(0xFF151720), Color(0xFF0E1016))
+                    )
+                )
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 6.dp, vertical = 6.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                // Mini Dynamic Island Pill
+                val islandBg by animateColorAsState(
+                    targetValue = when (phase) {
+                        2 -> Color(0xFF103322)
+                        1 -> Color(0xFF2A1418)
+                        else -> Color(0xFF07080B)
+                    },
+                    animationSpec = tween(250),
+                    label = "island_bg"
+                )
+                val islandBorder by animateColorAsState(
+                    targetValue = when (phase) {
+                        2 -> Color(0xFF23A55A)
+                        1 -> Color(0xFFD71921)
+                        else -> Color(0xFF2A2D38)
+                    },
+                    animationSpec = tween(250),
+                    label = "island_border"
+                )
+                Row(
+                    modifier = Modifier
+                        .align(Alignment.CenterHorizontally)
+                        .clip(CircleShape)
+                        .background(islandBg)
+                        .border(0.8.dp, islandBorder, CircleShape)
+                        .padding(horizontal = 7.dp, vertical = 2.5.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(5.dp)
+                            .clip(CircleShape)
+                            .background(if (isSolved) Color(0xFF23A55A) else Color(0xFFD71921))
+                    )
+                    Text(
+                        text = when (phase) {
+                            0 -> "Scanning"
+                            1 -> "Solving…"
+                            else -> sample.islandSolvedLabel
+                        },
+                        color = if (isSolved) Color(0xFF4ADE80) else Color(0xFFEEEEEE),
+                        fontSize = 7.3.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        maxLines = 1
+                    )
+                }
+
+                // Mini Question Header
+                Text(
+                    text = sample.question,
+                    color = Color(0xFFEEEEEE),
+                    fontSize = 8.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 2.dp, start = 1.dp)
+                )
+
+                // 4 Mini Option Rows
+                sample.options.forEachIndexed { idx, (letter, label) ->
+                    val isWinner = isSolved && idx == sample.correctIndex
+                    val rowBg by animateColorAsState(
+                        targetValue = if (isWinner) Color(0xFF123725) else Color(0xFF1A1D26),
+                        animationSpec = tween(260),
+                        label = "mcq_row_bg_$idx"
+                    )
+                    val rowBorder by animateColorAsState(
+                        targetValue = if (isWinner) Color(0xFF23A55A) else Color(0xFF272A35),
+                        animationSpec = tween(260),
+                        label = "mcq_row_border_$idx"
+                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(rowBg)
+                            .border(0.8.dp, rowBorder, RoundedCornerShape(6.dp))
+                            .padding(horizontal = 5.dp, vertical = 3.5.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .size(12.dp)
+                                    .clip(CircleShape)
+                                    .background(if (isWinner) Color(0xFF23A55A) else Color(0xFF272A35))
+                            ) {
+                                Text(
+                                    text = letter,
+                                    color = if (isWinner) Color(0xFF0A0A0C) else Color(0xFFEEEEEE),
+                                    fontSize = 6.5.sp,
+                                    fontWeight = FontWeight.ExtraBold
+                                )
+                            }
+                            Text(
+                                text = label,
+                                color = if (isWinner) Color(0xFF4ADE80) else Color(0xFFB8BDC7),
+                                fontSize = 7.5.sp,
+                                fontWeight = if (isWinner) FontWeight.Bold else FontWeight.Medium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        if (isWinner) {
+                            Icon(
+                                imageVector = Icons.Filled.Check,
+                                contentDescription = null,
+                                tint = Color(0xFF4ADE80),
+                                modifier = Modifier.size(9.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Diagonal Subtle Glass Glare + Scanning Brackets & Laser Overlay
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                // Subtle diagonal glass highlight across upper-left screen
+                val glare = Path().apply {
+                    moveTo(0f, 0f)
+                    lineTo(size.width * 0.62f, 0f)
+                    lineTo(0f, size.height * 0.44f)
+                    close()
+                }
+                drawPath(
+                    path = glare,
+                    brush = Brush.linearGradient(
+                        colors = listOf(Color.White.copy(alpha = 0.08f), Color.Transparent),
+                        start = Offset(0f, 0f),
+                        end = Offset(size.width * 0.5f, size.height * 0.35f)
+                    )
+                )
+
+                // Sweeping Crimson Scan Laser + Corner Lock Brackets during Phase 0
+                if (!reducedMotion && phase == 0) {
+                    val y = size.height * laserFraction
+                    drawRect(
+                        brush = Brush.verticalGradient(
+                            colors = listOf(
+                                Color.Transparent,
+                                Color(0xFFD71921).copy(alpha = 0.26f),
+                                Color(0xFFD71921).copy(alpha = 0.06f),
+                                Color.Transparent
+                            ),
+                            startY = (y - 18.dp.toPx()).coerceAtLeast(0f),
+                            endY = (y + 8.dp.toPx()).coerceAtMost(size.height)
+                        )
+                    )
+                    drawLine(
+                        color = Color(0xFFD71921),
+                        start = Offset(4.dp.toPx(), y),
+                        end = Offset(size.width - 4.dp.toPx(), y),
+                        strokeWidth = 2.dp.toPx(),
+                        cap = StrokeCap.Round
+                    )
+                    // Corner lock brackets
+                    val pad = 5.dp.toPx()
+                    val arm = 8.dp.toPx()
+                    val stroke = 1.5.dp.toPx()
+                    val bc = Color(0xFFD71921).copy(alpha = 0.85f)
+                    // Top-left
+                    drawLine(bc, Offset(pad, pad + 20.dp.toPx()), Offset(pad + arm, pad + 20.dp.toPx()), stroke, StrokeCap.Round)
+                    drawLine(bc, Offset(pad, pad + 20.dp.toPx()), Offset(pad, pad + 20.dp.toPx() + arm), stroke, StrokeCap.Round)
+                    // Top-right
+                    drawLine(bc, Offset(size.width - pad, pad + 20.dp.toPx()), Offset(size.width - pad - arm, pad + 20.dp.toPx()), stroke, StrokeCap.Round)
+                    drawLine(bc, Offset(size.width - pad, pad + 20.dp.toPx()), Offset(size.width - pad, pad + 20.dp.toPx() + arm), stroke, StrokeCap.Round)
+                    // Bottom-left
+                    drawLine(bc, Offset(pad, size.height - pad), Offset(pad + arm, size.height - pad), stroke, StrokeCap.Round)
+                    drawLine(bc, Offset(pad, size.height - pad), Offset(pad, size.height - pad - arm), stroke, StrokeCap.Round)
+                    // Bottom-right
+                    drawLine(bc, Offset(size.width - pad, size.height - pad), Offset(size.width - pad - arm, size.height - pad), stroke, StrokeCap.Round)
+                    drawLine(bc, Offset(size.width - pad, size.height - pad), Offset(size.width - pad, size.height - pad - arm), stroke, StrokeCap.Round)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StudioBentoTile(
+    title: String,
+    subtitle: String,
+    badge: String,
+    badgeAccent: Boolean,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    testTag: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val tileShape = RoundedCornerShape(20.dp)
+    val accentStroke = if (badgeAccent) Color(0xFFD71921) else Color(0xFFEEEEEE)
+
+    Column(
+        modifier = modifier
+            .heightIn(min = 132.dp)
+            .liquidPressScale(interactionSource, pressedScale = 0.95f)
+            .shadow(
+                elevation = if (badgeAccent) 12.dp else 9.dp,
+                shape = tileShape,
+                ambientColor = Color.Black.copy(alpha = 0.9f),
+                spotColor = if (badgeAccent) Color(0xFFD71921).copy(alpha = 0.42f) else Color.Black.copy(alpha = 0.85f)
+            )
+            .clip(tileShape)
+            .background(
+                Brush.verticalGradient(
+                    listOf(Color(0xFF191B22), Color(0xFF121318), Color(0xFF0E0F14))
+                )
+            )
+            .drawBehind {
+                // Sculpted curved/curly ribbon waves in the bottom-right corner + subtle top bevel
+                val w = size.width
+                val h = size.height
+
+                // Top glass specular bevel
+                drawLine(
+                    brush = Brush.horizontalGradient(
+                        listOf(
+                            Color.Transparent,
+                            Color.White.copy(alpha = if (badgeAccent) 0.16f else 0.10f),
+                            Color.Transparent
+                        )
+                    ),
+                    start = Offset(w * 0.12f, 1.dp.toPx()),
+                    end = Offset(w * 0.88f, 1.dp.toPx()),
+                    strokeWidth = 1.2.dp.toPx(),
+                    cap = StrokeCap.Round
+                )
+
+                // Curly architectural double-wave curve hugging the bottom-right corner
+                val outerCurl = Path().apply {
+                    moveTo(w * 0.46f, h)
+                    cubicTo(
+                        w * 0.56f, h * 0.72f,
+                        w * 0.78f, h * 0.84f,
+                        w, h * 0.54f
+                    )
+                }
+                val innerCurl = Path().apply {
+                    moveTo(w * 0.64f, h)
+                    cubicTo(
+                        w * 0.72f, h * 0.80f,
+                        w * 0.86f, h * 0.88f,
+                        w, h * 0.70f
+                    )
+                }
+                val softRibbonFill = Path().apply {
+                    moveTo(w * 0.52f, h)
+                    cubicTo(
+                        w * 0.62f, h * 0.76f,
+                        w * 0.82f, h * 0.86f,
+                        w, h * 0.60f
+                    )
+                    lineTo(w, h)
+                    close()
+                }
+                drawPath(
+                    path = softRibbonFill,
+                    brush = Brush.linearGradient(
+                        colors = listOf(
+                            accentStroke.copy(alpha = if (badgeAccent) 0.13f else 0.055f),
+                            Color.Transparent
+                        ),
+                        start = Offset(w, h),
+                        end = Offset(w * 0.5f, h * 0.6f)
+                    )
+                )
+                drawPath(
+                    path = outerCurl,
+                    color = accentStroke.copy(alpha = if (badgeAccent) 0.34f else 0.13f),
+                    style = Stroke(width = 1.4.dp.toPx(), cap = StrokeCap.Round)
+                )
+                drawPath(
+                    path = innerCurl,
+                    color = accentStroke.copy(alpha = if (badgeAccent) 0.20f else 0.08f),
+                    style = Stroke(width = 1.dp.toPx(), cap = StrokeCap.Round)
+                )
+            }
+            .border(
+                width = 1.dp,
+                color = if (badgeAccent) Color(0xFFD71921).copy(alpha = 0.58f) else Color(0xFF282B36),
+                shape = tileShape
+            )
+            .clickable(
+                interactionSource = interactionSource,
+                indication = ripple(color = Color(0xFFD71921)),
+                role = Role.Button,
+                onClick = onClick
+            )
+            .padding(14.dp)
+            .testTag(testTag),
+        verticalArrangement = Arrangement.SpaceBetween
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.Top,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            // Raised 3D Sculpted Physical Icon Box (distinct shadow + beveled double rim)
+            val iconBoxShape = RoundedCornerShape(14.dp)
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(44.dp)
+                    .shadow(
+                        elevation = 8.dp,
+                        shape = iconBoxShape,
+                        ambientColor = Color.Black.copy(alpha = 0.95f),
+                        spotColor = if (badgeAccent) Color(0xFFD71921).copy(alpha = 0.65f) else Color.Black.copy(alpha = 0.9f)
+                    )
+                    .clip(iconBoxShape)
+                    .background(
+                        Brush.verticalGradient(
+                            if (badgeAccent) {
+                                listOf(Color(0xFF331419), Color(0xFF200C10))
+                            } else {
+                                listOf(Color(0xFF262934), Color(0xFF181A22))
+                            }
+                        )
+                    )
+                    .border(
+                        width = 1.25.dp,
+                        brush = Brush.verticalGradient(
+                            if (badgeAccent) {
+                                listOf(Color(0xFFFF4D55).copy(alpha = 0.72f), Color(0xFFD71921).copy(alpha = 0.32f))
+                            } else {
+                                listOf(Color.White.copy(alpha = 0.24f), Color(0xFF2C2F3C))
+                            }
+                        ),
+                        shape = iconBoxShape
+                    )
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = if (badgeAccent) Color(0xFFFF4D55) else Color(0xFFEEEEEE),
+                    modifier = Modifier.size(21.dp)
+                )
+            }
+
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(if (badgeAccent) Color(0xFFD71921) else Color(0xFF1F222C))
+                    .border(
+                        width = 0.8.dp,
+                        color = if (badgeAccent) Color(0xFFFF6B72).copy(alpha = 0.45f) else Color(0xFF303340),
+                        shape = RoundedCornerShape(8.dp)
+                    )
+                    .padding(horizontal = 7.dp, vertical = 3.5.dp)
+            ) {
+                Text(
+                    text = badge,
+                    color = if (badgeAccent) Color.White else Color(0xFFB5BAC1),
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    letterSpacing = 0.6.sp,
+                    maxLines = 1
+                )
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(
+                text = title,
+                color = Color(0xFFEEEEEE),
+                fontSize = 14.5.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = subtitle,
+                color = Color(0xFF949BA4),
+                fontSize = 11.5.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+// ── 1B. LEGACY HERO CARD (Retained for alternate themes if needed) ──────────
 
 @Composable
 private fun PrismCrimsonHeroCard(
@@ -1517,7 +2232,7 @@ private fun GoogleFormsSolveHubCard(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Text(
-                            text = "Solve a Google Form",
+                            text = "Universal Quiz Browser",
                             style = MaterialTheme.typography.titleMedium.copy(
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.Bold,
@@ -1548,7 +2263,7 @@ private fun GoogleFormsSolveHubCard(
                     }
                     Spacer(Modifier.height(2.dp))
                     Text(
-                        text = "Paste one quiz link to get answers & auto-fill",
+                        text = "Google Forms, Microsoft Forms, Moodle, NPTEL & any quiz site",
                         style = MaterialTheme.typography.bodySmall.copy(
                             fontSize = 12.sp,
                             color = palette.inkSecondary
@@ -1617,6 +2332,187 @@ private fun GoogleFormsSolveHubCard(
                 text = if (state.isGoogleFormPinned) "Status Bar Active" else "Notification Pin",
                 style = MaterialTheme.typography.labelSmall.copy(
                     color = if (state.isGoogleFormPinned) palette.accentMint else palette.inkSecondary,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 11.sp
+                ),
+                maxLines = 1
+            )
+        }
+    }
+}
+
+@Composable
+private fun LiveClassRoomHubCard(
+    state: MainUiState,
+    onOpenLiveClassRoom: () -> Unit
+) {
+    val palette = LocalWhiteGlassPalette.current
+    val themeSpec = LocalPrismThemeSpec.current
+    val cardCorner = PrismCurves.cardCorner(themeSpec)
+    val iconCorner = PrismCurves.iconWellCorner(themeSpec)
+    val stripCorner = PrismCurves.innerStripCorner(themeSpec)
+    val borderW = (themeSpec.borderWidthTenths / 10f).dp
+    val interactionSource = remember { MutableInteractionSource() }
+    val activeRoom = state.activeLiveClassRoom
+    val badgeText = activeRoom?.formattedCode() ?: "LIVE SYNC"
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .liquidPressScale(interactionSource, pressedScale = 0.98f)
+            .clip(RoundedCornerShape(cardCorner))
+            .background(palette.glassStrong)
+            .border(
+                borderW,
+                if (activeRoom != null) palette.accentSky.copy(alpha = 0.7f) else palette.cardHairlineBorder,
+                RoundedCornerShape(cardCorner)
+            )
+            .topGlassSpecularHighlight(cardCorner, alpha = if (palette.isDarkObsidian) 0.11f else 0.25f)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = ripple(color = palette.accentSky),
+                role = Role.Button,
+                onClick = onOpenLiveClassRoom
+            )
+            .padding(16.dp)
+            .testTag("card_open_live_class_room"),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f)
+            ) {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .size(46.dp)
+                        .clip(RoundedCornerShape(iconCorner))
+                        .background(palette.glassTintedSky)
+                        .border(1.dp, palette.accentSky.copy(alpha = 0.6f), RoundedCornerShape(iconCorner))
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Groups,
+                        contentDescription = null,
+                        tint = palette.accentSky,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+
+                Spacer(Modifier.width(12.dp))
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "Live Class Rooms",
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = palette.inkPrimary
+                            ),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(if (activeRoom != null) palette.accentMint else palette.accentSky)
+                                .padding(horizontal = 7.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = badgeText,
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    color = if (activeRoom != null) Color.White else palette.onAccentInk,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 9.5.sp
+                                ),
+                                maxLines = 1
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = if (activeRoom != null) {
+                            "${activeRoom.roomName} · ${state.liveClassRoomAnswers.size} answers live"
+                        } else {
+                            "Share a 6-digit code · Solve once, sync live with your whole class"
+                        },
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontSize = 12.sp,
+                            color = palette.inkSecondary
+                        ),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            Spacer(Modifier.width(8.dp))
+
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(32.dp)
+                    .clip(CircleShape)
+                    .background(palette.glassSubtle)
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.ChevronRight,
+                    contentDescription = "Open Live Class Rooms",
+                    tint = palette.inkPrimary,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(stripCorner))
+                .background(palette.canvasTop)
+                .border(1.dp, palette.cardHairlineBorder, RoundedCornerShape(stripCorner))
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(7.dp),
+                modifier = Modifier.weight(1f).padding(end = 8.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(7.dp)
+                        .clip(CircleShape)
+                        .background(if (activeRoom != null) palette.accentMint else palette.accentSky)
+                )
+                Text(
+                    text = if (activeRoom != null) {
+                        "${activeRoom.memberCount} classmates · AI Tie-Breaker ready"
+                    } else {
+                        "Vote Confirm / Dispute · 1-Tap AI Verify"
+                    },
+                    style = MaterialTheme.typography.labelMedium.copy(
+                        color = palette.inkPrimary,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 11.5.sp
+                    ),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Text(
+                text = if (activeRoom != null) "Connected" else "24h Private",
+                style = MaterialTheme.typography.labelSmall.copy(
+                    color = if (activeRoom != null) palette.accentMint else palette.inkSecondary,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 11.sp
                 ),

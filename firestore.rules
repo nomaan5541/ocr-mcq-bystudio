@@ -496,5 +496,650 @@ service cloud.firestore {
                        isValidSharedQuizCache(incoming(), questionHash);
       allow update, delete: if false;
     }
+
+    // ── Per-User Daily Usage Limits (/users/{userId}/dailyUsage/{dateKey}) ──
+    function isValidDateKey(dateKey) {
+      return dateKey is string &&
+             dateKey.size() == 10 &&
+             dateKey.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$');
+    }
+
+    function isValidUsageCounter(val) {
+      return val is int && val >= 0 && val <= 1000;
+    }
+
+    function isValidUserDailyUsage(data, dateKeyParam) {
+      return data.userId is string &&
+             data.userId.size() >= 1 &&
+             data.userId.size() <= 128 &&
+             data.userId == request.auth.uid &&
+             data.dateKey is string &&
+             data.dateKey == dateKeyParam &&
+             isValidDateKey(data.dateKey) &&
+             isValidUsageCounter(data.overlayMcqCount) &&
+             isValidUsageCounter(data.askTextCount) &&
+             isValidUsageCounter(data.askPhotoCount) &&
+             isValidUsageCounter(data.askPdfCount) &&
+             isValidUsageCounter(data.googleFormsCount) &&
+             data.createdAt is timestamp &&
+             data.createdAt <= request.time &&
+             data.updatedAt is timestamp &&
+             data.updatedAt <= request.time;
+    }
+
+    match /users/{userId}/dailyUsage/{dateKey} {
+      allow get: if isSignedIn() &&
+                    request.auth.uid == userId &&
+                    isValidId(userId) &&
+                    isValidDateKey(dateKey);
+
+      allow list: if false;
+
+      allow create: if isSignedIn() &&
+                       request.auth.uid == userId &&
+                       isValidId(userId) &&
+                       isValidDateKey(dateKey) &&
+                       incoming().keys().hasAll([
+                         'userId',
+                         'dateKey',
+                         'overlayMcqCount',
+                         'askTextCount',
+                         'askPhotoCount',
+                         'askPdfCount',
+                         'googleFormsCount',
+                         'createdAt',
+                         'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'userId',
+                         'dateKey',
+                         'overlayMcqCount',
+                         'askTextCount',
+                         'askPhotoCount',
+                         'askPdfCount',
+                         'googleFormsCount',
+                         'createdAt',
+                         'updatedAt'
+                       ]) &&
+                       isValidUserDailyUsage(incoming(), dateKey);
+
+      allow update: if isSignedIn() &&
+                       resource != null &&
+                       request.auth.uid == userId &&
+                       isValidId(userId) &&
+                       isValidDateKey(dateKey) &&
+                       incoming().userId == existing().userId &&
+                       incoming().dateKey == existing().dateKey &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'overlayMcqCount',
+                         'askTextCount',
+                         'askPhotoCount',
+                         'askPdfCount',
+                         'googleFormsCount',
+                         'updatedAt'
+                       ]) &&
+                       incoming().overlayMcqCount >= existing().overlayMcqCount &&
+                       incoming().askTextCount >= existing().askTextCount &&
+                       incoming().askPhotoCount >= existing().askPhotoCount &&
+                       incoming().askPdfCount >= existing().askPdfCount &&
+                       incoming().googleFormsCount >= existing().googleFormsCount &&
+                       isValidUserDailyUsage(incoming(), dateKey);
+
+      allow delete: if false;
+    }
+
+    // ── Device-Bound Quota & 2-Strike Anti-Abuse Guard (/deviceGuards/{deviceHash}) ──
+    function isValidDeviceGuard(data, hashParam) {
+      return data.deviceHash is string &&
+             data.deviceHash == hashParam &&
+             isValidQuestionHash(data.deviceHash) &&
+             data.dateKey is string &&
+             isValidDateKey(data.dateKey) &&
+             data.lastUid is string &&
+             data.lastUid == request.auth.uid &&
+             isValidId(data.lastUid) &&
+             data.seenUidCountToday is int &&
+             data.seenUidCountToday >= 1 &&
+             data.seenUidCountToday <= 100 &&
+             isValidUsageCounter(data.overlayMcqCount) &&
+             isValidUsageCounter(data.askTextCount) &&
+             isValidUsageCounter(data.askPhotoCount) &&
+             isValidUsageCounter(data.askPdfCount) &&
+             isValidUsageCounter(data.googleFormsCount) &&
+             data.strikeCount is int &&
+             data.strikeCount >= 0 &&
+             data.strikeCount <= 10 &&
+             data.banned is bool &&
+             data.lastStrikeReason is string &&
+             data.lastStrikeReason.size() <= 240 &&
+             data.lastDeletedAccountAtMs is int &&
+             data.lastDeletedAccountAtMs >= 0 &&
+             data.createdAt is timestamp &&
+             data.createdAt <= request.time &&
+             data.updatedAt is timestamp &&
+             data.updatedAt <= request.time;
+    }
+
+    match /deviceGuards/{deviceHash} {
+      allow get: if isSignedIn() && isValidQuestionHash(deviceHash);
+
+      allow list: if false;
+
+      allow create: if isSignedIn() &&
+                       isValidQuestionHash(deviceHash) &&
+                       incoming().keys().hasAll([
+                         'deviceHash',
+                         'dateKey',
+                         'lastUid',
+                         'seenUidCountToday',
+                         'overlayMcqCount',
+                         'askTextCount',
+                         'askPhotoCount',
+                         'askPdfCount',
+                         'googleFormsCount',
+                         'strikeCount',
+                         'banned',
+                         'lastStrikeReason',
+                         'lastDeletedAccountAtMs',
+                         'createdAt',
+                         'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'deviceHash',
+                         'dateKey',
+                         'lastUid',
+                         'seenUidCountToday',
+                         'overlayMcqCount',
+                         'askTextCount',
+                         'askPhotoCount',
+                         'askPdfCount',
+                         'googleFormsCount',
+                         'strikeCount',
+                         'banned',
+                         'lastStrikeReason',
+                         'lastDeletedAccountAtMs',
+                         'createdAt',
+                         'updatedAt'
+                       ]) &&
+                       isValidDeviceGuard(incoming(), deviceHash);
+
+      allow update: if isSignedIn() &&
+                       resource != null &&
+                       isValidQuestionHash(deviceHash) &&
+                       incoming().deviceHash == existing().deviceHash &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'dateKey',
+                         'lastUid',
+                         'seenUidCountToday',
+                         'overlayMcqCount',
+                         'askTextCount',
+                         'askPhotoCount',
+                         'askPdfCount',
+                         'googleFormsCount',
+                         'strikeCount',
+                         'banned',
+                         'lastStrikeReason',
+                         'lastDeletedAccountAtMs',
+                         'updatedAt'
+                       ]) &&
+                       incoming().dateKey >= existing().dateKey &&
+                       incoming().strikeCount >= existing().strikeCount &&
+                       (!existing().banned || incoming().banned == true) &&
+                       incoming().lastDeletedAccountAtMs >= existing().lastDeletedAccountAtMs &&
+                       (
+                         incoming().dateKey > existing().dateKey ||
+                         (
+                           incoming().seenUidCountToday >= existing().seenUidCountToday &&
+                           incoming().overlayMcqCount >= existing().overlayMcqCount &&
+                           incoming().askTextCount >= existing().askTextCount &&
+                           incoming().askPhotoCount >= existing().askPhotoCount &&
+                           incoming().askPdfCount >= existing().askPdfCount &&
+                           incoming().googleFormsCount >= existing().googleFormsCount
+                         )
+                       ) &&
+                       isValidDeviceGuard(incoming(), deviceHash);
+
+      allow delete: if false;
+    }
+
+    // ── Shared Class-Wide Google Form Cache (/sharedFormSolutions/{formHash}) ──
+    function isValidSharedFormSolution(data, hashParam) {
+      return data.formHash is string &&
+             data.formHash == hashParam &&
+             isValidQuestionHash(data.formHash) &&
+             data.formTitle is string &&
+             data.formTitle.size() <= 200 &&
+             data.createdByUid is string &&
+             isValidId(data.createdByUid) &&
+             data.updatedByUid is string &&
+             data.updatedByUid == request.auth.uid &&
+             isValidId(data.updatedByUid) &&
+             data.questionCount is int &&
+             data.questionCount >= 1 &&
+             data.questionCount <= 200 &&
+             data.revision is int &&
+             data.revision >= 1 &&
+             data.revision <= 10000 &&
+             data.entriesJson is string &&
+             data.entriesJson.size() >= 2 &&
+             data.entriesJson.size() <= 90000 &&
+             data.createdAt is timestamp &&
+             data.createdAt <= request.time &&
+             data.updatedAt is timestamp &&
+             data.updatedAt <= request.time;
+    }
+
+    match /sharedFormSolutions/{formHash} {
+      allow get: if isSignedIn() && isValidQuestionHash(formHash);
+
+      allow list: if false;
+
+      allow create: if isSignedIn() &&
+                       isValidQuestionHash(formHash) &&
+                       incoming().createdByUid == request.auth.uid &&
+                       incoming().keys().hasAll([
+                         'formHash',
+                         'formTitle',
+                         'createdByUid',
+                         'updatedByUid',
+                         'questionCount',
+                         'revision',
+                         'entriesJson',
+                         'createdAt',
+                         'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'formHash',
+                         'formTitle',
+                         'createdByUid',
+                         'updatedByUid',
+                         'questionCount',
+                         'revision',
+                         'entriesJson',
+                         'createdAt',
+                         'updatedAt'
+                       ]) &&
+                       isValidSharedFormSolution(incoming(), formHash);
+
+      allow update: if isSignedIn() &&
+                       resource != null &&
+                       isValidQuestionHash(formHash) &&
+                       incoming().formHash == existing().formHash &&
+                       incoming().createdByUid == existing().createdByUid &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().revision >= existing().revision &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'formTitle',
+                         'updatedByUid',
+                         'questionCount',
+                         'revision',
+                         'entriesJson',
+                         'updatedAt'
+                       ]) &&
+                       isValidSharedFormSolution(incoming(), formHash);
+
+      allow delete: if false;
+    }
+
+    // ── Prism Live Class Rooms (/liveClassRooms/{roomCode}) ──────────────────
+    function isValidRoomCode(code) {
+      return code is string &&
+             code.size() == 6 &&
+             code.matches('^[A-Z0-9]{6}$');
+    }
+
+    function isValidLiveClassRoom(data, codeParam) {
+      return data.roomCode is string &&
+             data.roomCode == codeParam &&
+             isValidRoomCode(data.roomCode) &&
+             data.roomName is string &&
+             data.roomName.size() >= 1 &&
+             data.roomName.size() <= 80 &&
+             data.subject is string &&
+             data.subject in ['GENERAL', 'MATH', 'SCIENCE', 'CODING', 'MEDICAL', 'LAW'] &&
+             data.hostUid is string &&
+             isValidId(data.hostUid) &&
+             data.hostName is string &&
+             data.hostName.size() >= 1 &&
+             data.hostName.size() <= 60 &&
+             data.hostPhotoUrl is string &&
+             data.hostPhotoUrl.size() <= 500 &&
+             data.quizUrl is string &&
+             data.quizUrl.size() <= 2048 &&
+             (data.quizUrl == '' || data.quizUrl.matches('^https?://.+')) &&
+             data.maxMembers is int &&
+             data.maxMembers == 40 &&
+             data.memberCount is int &&
+             data.memberCount >= 1 &&
+             data.memberCount <= 40 &&
+             data.questionCount is int &&
+             data.questionCount >= 0 &&
+             data.questionCount <= 200 &&
+             data.active is bool &&
+             data.expiresAtMs is int &&
+             data.expiresAtMs > 0 &&
+             data.createdAt is timestamp &&
+             data.createdAt <= request.time &&
+             data.updatedAt is timestamp &&
+             data.updatedAt <= request.time;
+    }
+
+    function isRoomHost(codeParam) {
+      return isSignedIn() &&
+             exists(/databases/$(database)/documents/liveClassRooms/$(codeParam)) &&
+             get(/databases/$(database)/documents/liveClassRooms/$(codeParam)).data.hostUid == request.auth.uid;
+    }
+
+    function isValidLiveRoomMember(data, codeParam, memberUidParam) {
+      return data.uid is string &&
+             data.uid == memberUidParam &&
+             isValidId(data.uid) &&
+             data.roomCode is string &&
+             data.roomCode == codeParam &&
+             isValidRoomCode(data.roomCode) &&
+             data.displayName is string &&
+             data.displayName.size() >= 1 &&
+             data.displayName.size() <= 60 &&
+             data.photoUrl is string &&
+             data.photoUrl.size() <= 500 &&
+             data.role is string &&
+             data.role in ['host', 'member'] &&
+             data.status is string &&
+             data.status in ['pending', 'approved', 'rejected'] &&
+             data.joinedAt is timestamp &&
+             data.joinedAt <= request.time &&
+             data.updatedAt is timestamp &&
+             data.updatedAt <= request.time;
+    }
+
+    function isValidLiveRoomAnswer(data, codeParam) {
+      return data.roomCode is string &&
+             data.roomCode == codeParam &&
+             isValidRoomCode(data.roomCode) &&
+             data.questionNumber is int &&
+             data.questionNumber >= 1 &&
+             data.questionNumber <= 200 &&
+             data.questionText is string &&
+             data.questionText.size() >= 1 &&
+             data.questionText.size() <= 2000 &&
+             data.optionsJson is string &&
+             data.optionsJson.size() >= 2 &&
+             data.optionsJson.size() <= 6000 &&
+             data.answerBadge is string &&
+             data.answerBadge.size() >= 1 &&
+             data.answerBadge.size() <= 40 &&
+             data.shortAnswer is string &&
+             data.shortAnswer.size() <= 600 &&
+             data.explanation is string &&
+             data.explanation.size() <= 1000 &&
+             data.sourceLabel is string &&
+             data.sourceLabel.size() >= 1 &&
+             data.sourceLabel.size() <= 60 &&
+             data.sharedByUid is string &&
+             isValidId(data.sharedByUid) &&
+             data.sharedByName is string &&
+             data.sharedByName.size() >= 1 &&
+             data.sharedByName.size() <= 60 &&
+             data.confirmCount is int &&
+             data.confirmCount >= 0 &&
+             data.confirmCount <= 500 &&
+             data.disputeCount is int &&
+             data.disputeCount >= 0 &&
+             data.disputeCount <= 500 &&
+             data.verifiedByAi is bool &&
+             data.updatedByUid is string &&
+             data.updatedByUid == request.auth.uid &&
+             isValidId(data.updatedByUid) &&
+             data.createdAt is timestamp &&
+             data.createdAt <= request.time &&
+             data.updatedAt is timestamp &&
+             data.updatedAt <= request.time;
+    }
+
+    match /liveClassRooms/{roomCode} {
+      // Invite-code capability: signed-in classmates can fetch a room if they have its 6-char code,
+      // while listing/browsing all rooms is strictly denied.
+      allow get: if isSignedIn() && isValidRoomCode(roomCode);
+
+      allow list: if false;
+
+      allow create: if isSignedIn() &&
+                       isValidRoomCode(roomCode) &&
+                       incoming().hostUid == request.auth.uid &&
+                       incoming().active == true &&
+                       incoming().maxMembers == 40 &&
+                       incoming().memberCount == 1 &&
+                       incoming().keys().hasAll([
+                         'roomCode',
+                         'roomName',
+                         'subject',
+                         'hostUid',
+                         'hostName',
+                         'hostPhotoUrl',
+                         'quizUrl',
+                         'maxMembers',
+                         'memberCount',
+                         'questionCount',
+                         'active',
+                         'expiresAtMs',
+                         'createdAt',
+                         'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'roomCode',
+                         'roomName',
+                         'subject',
+                         'hostUid',
+                         'hostName',
+                         'hostPhotoUrl',
+                         'quizUrl',
+                         'maxMembers',
+                         'memberCount',
+                         'questionCount',
+                         'active',
+                         'expiresAtMs',
+                         'createdAt',
+                         'updatedAt'
+                       ]) &&
+                       isValidLiveClassRoom(incoming(), roomCode);
+
+      // STRICT HOST-ONLY AUTHORITY: only the author/host who created the room can lock/change
+      // quizUrl, approve/remove members (updating memberCount <= 40), broadcast questionCount,
+      // rename, or close the room.
+      allow update: if isSignedIn() &&
+                       resource != null &&
+                       isValidRoomCode(roomCode) &&
+                       request.auth.uid == existing().hostUid &&
+                       incoming().roomCode == existing().roomCode &&
+                       incoming().hostUid == existing().hostUid &&
+                       incoming().hostName == existing().hostName &&
+                       incoming().hostPhotoUrl == existing().hostPhotoUrl &&
+                       incoming().maxMembers == existing().maxMembers &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().expiresAtMs == existing().expiresAtMs &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'active',
+                         'roomName',
+                         'quizUrl',
+                         'memberCount',
+                         'questionCount',
+                         'updatedAt'
+                       ]) &&
+                       isValidLiveClassRoom(incoming(), roomCode);
+
+      allow delete: if isSignedIn() &&
+                       resource != null &&
+                       isValidRoomCode(roomCode) &&
+                       existing().hostUid == request.auth.uid;
+
+      match /members/{memberUid} {
+        // Privacy-safe member list: strictly displayName, photoUrl, role, status (no email/phone).
+        allow get: if isSignedIn() && isValidRoomCode(roomCode) && isValidId(memberUid);
+        allow list: if isSignedIn() && isValidRoomCode(roomCode);
+
+        allow create: if isSignedIn() &&
+                         isValidRoomCode(roomCode) &&
+                         memberUid == request.auth.uid &&
+                         incoming().keys().hasAll([
+                           'uid',
+                           'roomCode',
+                           'displayName',
+                           'photoUrl',
+                           'role',
+                           'status',
+                           'joinedAt',
+                           'updatedAt'
+                         ]) &&
+                         incoming().keys().hasOnly([
+                           'uid',
+                           'roomCode',
+                           'displayName',
+                           'photoUrl',
+                           'role',
+                           'status',
+                           'joinedAt',
+                           'updatedAt'
+                         ]) &&
+                         (
+                           (isRoomHost(roomCode) && incoming().role == 'host' && incoming().status == 'approved') ||
+                           (!isRoomHost(roomCode) && incoming().role == 'member' && incoming().status == 'pending')
+                         ) &&
+                         isValidLiveRoomMember(incoming(), roomCode, memberUid);
+
+        allow update: if isSignedIn() &&
+                         resource != null &&
+                         isValidRoomCode(roomCode) &&
+                         isValidId(memberUid) &&
+                         incoming().uid == existing().uid &&
+                         incoming().roomCode == existing().roomCode &&
+                         incoming().role == existing().role &&
+                         incoming().joinedAt == existing().joinedAt &&
+                         (
+                           (
+                             // Host approves or declines a member request
+                             isRoomHost(roomCode) &&
+                             incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
+                           ) ||
+                           (
+                             // Member updates own displayName/photoUrl without changing status/role
+                             memberUid == request.auth.uid &&
+                             incoming().status == existing().status &&
+                             incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoUrl', 'updatedAt'])
+                           ) ||
+                           (
+                             // Previously rejected member re-requests as pending (cannot self-approve)
+                             memberUid == request.auth.uid &&
+                             existing().status == 'rejected' &&
+                             incoming().status == 'pending' &&
+                             incoming().diff(existing()).affectedKeys().hasOnly(['status', 'displayName', 'photoUrl', 'updatedAt'])
+                           )
+                         ) &&
+                         isValidLiveRoomMember(incoming(), roomCode, memberUid);
+
+        // Classmate can leave room; host can remove/reject any member.
+        allow delete: if isSignedIn() &&
+                         resource != null &&
+                         isValidRoomCode(roomCode) &&
+                         isValidId(memberUid) &&
+                         (memberUid == request.auth.uid || isRoomHost(roomCode));
+      }
+
+      match /answers/{answerId} {
+        allow get: if isSignedIn() && isValidRoomCode(roomCode) && isValidId(answerId);
+
+        allow list: if isSignedIn() && isValidRoomCode(roomCode);
+
+        // Host-only answer broadcast so only the room author solves & pushes live answers.
+        allow create: if isSignedIn() &&
+                         isValidRoomCode(roomCode) &&
+                         isValidId(answerId) &&
+                         isRoomHost(roomCode) &&
+                         incoming().sharedByUid == request.auth.uid &&
+                         incoming().updatedByUid == request.auth.uid &&
+                         incoming().keys().hasAll([
+                           'roomCode',
+                           'questionNumber',
+                           'questionText',
+                           'optionsJson',
+                           'answerBadge',
+                           'shortAnswer',
+                           'explanation',
+                           'sourceLabel',
+                           'sharedByUid',
+                           'sharedByName',
+                           'confirmCount',
+                           'disputeCount',
+                           'verifiedByAi',
+                           'updatedByUid',
+                           'createdAt',
+                           'updatedAt'
+                         ]) &&
+                         incoming().keys().hasOnly([
+                           'roomCode',
+                           'questionNumber',
+                           'questionText',
+                           'optionsJson',
+                           'answerBadge',
+                           'shortAnswer',
+                           'explanation',
+                           'sourceLabel',
+                           'sharedByUid',
+                           'sharedByName',
+                           'confirmCount',
+                           'disputeCount',
+                           'verifiedByAi',
+                           'updatedByUid',
+                           'createdAt',
+                           'updatedAt'
+                         ]) &&
+                         isValidLiveRoomAnswer(incoming(), roomCode);
+
+        allow update: if isSignedIn() &&
+                         resource != null &&
+                         isValidRoomCode(roomCode) &&
+                         isValidId(answerId) &&
+                         incoming().roomCode == existing().roomCode &&
+                         incoming().sharedByUid == existing().sharedByUid &&
+                         incoming().sharedByName == existing().sharedByName &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().confirmCount >= existing().confirmCount &&
+                         incoming().disputeCount >= existing().disputeCount &&
+                         (
+                           (
+                             // Host can update or AI-verify answer content
+                             isRoomHost(roomCode) &&
+                             incoming().diff(existing()).affectedKeys().hasOnly([
+                               'answerBadge',
+                               'shortAnswer',
+                               'explanation',
+                               'sourceLabel',
+                               'confirmCount',
+                               'disputeCount',
+                               'verifiedByAi',
+                               'updatedByUid',
+                               'updatedAt'
+                             ])
+                           ) ||
+                           (
+                             // Classmates can only increment confirm/dispute votes
+                             incoming().diff(existing()).affectedKeys().hasOnly([
+                               'confirmCount',
+                               'disputeCount',
+                               'updatedByUid',
+                               'updatedAt'
+                             ])
+                           )
+                         ) &&
+                         isValidLiveRoomAnswer(incoming(), roomCode);
+
+        allow delete: if isSignedIn() &&
+                         resource != null &&
+                         isValidRoomCode(roomCode) &&
+                         isValidId(answerId) &&
+                         (existing().sharedByUid == request.auth.uid || isRoomHost(roomCode));
+      }
+    }
   }
 }

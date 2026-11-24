@@ -49,6 +49,7 @@ import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.PictureAsPdf
@@ -115,6 +116,8 @@ fun QuickPlusTreeOverlay(
     onPickCamera: () -> Unit = {},
     onToggleFloatingPill: () -> Unit = {},
     isOverlayRunning: Boolean = false,
+    onOpenLiveClassRoom: () -> Unit = {},
+    activeLiveRoomCode: String? = null,
     modifier: Modifier = Modifier
 ) {
     val palette = LocalWhiteGlassPalette.current
@@ -349,8 +352,8 @@ fun QuickPlusTreeOverlay(
                     ) {
                         QuickBloomActionTile(
                             icon = Icons.Filled.Link,
-                            title = "Form Link",
-                            subtitle = "Google Forms",
+                            title = "Quiz Browser",
+                            subtitle = "Any quiz site • Cache",
                             badgeText = if (formsLeft > 0) "$formsLeft/$formsMax · Class Free" else "Class Cache Free",
                             accentTint = accentEmerald,
                             highlightBorder = true,
@@ -452,6 +455,102 @@ fun QuickPlusTreeOverlay(
                                 onDismiss()
                                 onPickPdf()
                             }
+                        )
+                    }
+                }
+
+                // Tier 2B Full-Width Capsule: Live Class Room (6-Digit Multiplayer Sync)
+                val liveRoomInteraction = remember { MutableInteractionSource() }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .graphicsLayer {
+                            val p = stripProgress.value
+                            alpha = p.coerceIn(0f, 1f)
+                            val s = 0.72f + (0.28f * p)
+                            scaleX = s
+                            scaleY = s
+                            translationY = (1f - p) * 52f
+                        }
+                        .liquidPressScale(liveRoomInteraction, pressedScale = 0.97f)
+                        .heightIn(min = 50.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(
+                            if (!activeLiveRoomCode.isNullOrBlank()) Color(0xFF1F1114) else Color(0xFF141519)
+                        )
+                        .border(
+                            width = 1.dp,
+                            color = if (!activeLiveRoomCode.isNullOrBlank()) accentCrimson.copy(alpha = 0.65f) else palette.cardHairlineBorder,
+                            shape = RoundedCornerShape(16.dp)
+                        )
+                        .clickable(
+                            interactionSource = liveRoomInteraction,
+                            indication = null,
+                            role = Role.Button,
+                            onClick = {
+                                onDismiss()
+                                onOpenLiveClassRoom()
+                            }
+                        )
+                        .padding(horizontal = 14.dp, vertical = 9.dp)
+                        .testTag("btn_plus_tree_live_room"),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(32.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(accentCrimson.copy(alpha = 0.16f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Groups,
+                                contentDescription = "Live Class Room",
+                                tint = accentCrimson,
+                                modifier = Modifier.size(17.dp)
+                            )
+                        }
+                        Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                            Text(
+                                text = if (!activeLiveRoomCode.isNullOrBlank()) "Live Room · $activeLiveRoomCode" else "Live Class Room",
+                                style = MaterialTheme.typography.labelLarge.copy(
+                                    color = palette.inkPrimary,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp
+                                ),
+                                maxLines = 1
+                            )
+                            Text(
+                                text = if (!activeLiveRoomCode.isNullOrBlank()) "Connected · Tap to view live class answers"
+                                else "Join or create a 6-digit class sync room",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    color = palette.inkSecondary,
+                                    fontSize = 10.5.sp
+                                ),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                    Box(
+                        modifier = Modifier
+                            .clip(CircleShape)
+                            .background(if (!activeLiveRoomCode.isNullOrBlank()) accentEmerald.copy(alpha = 0.2f) else Color(0xFF23252D))
+                            .padding(horizontal = 10.dp, vertical = 5.dp)
+                    ) {
+                        Text(
+                            text = if (!activeLiveRoomCode.isNullOrBlank()) "Live" else "Open",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                color = if (!activeLiveRoomCode.isNullOrBlank()) accentEmerald else palette.inkPrimary,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 11.sp
+                            )
                         )
                     }
                 }

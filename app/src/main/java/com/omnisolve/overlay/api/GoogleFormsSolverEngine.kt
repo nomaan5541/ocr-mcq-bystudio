@@ -94,6 +94,38 @@ class FormSolveException(
     val requiresGoogleSignIn: Boolean = false
 ) : IllegalStateException(message)
 
+enum class BrowserExtractionMode(
+    val id: String,
+    val label: String,
+    val shortLabel: String,
+    val description: String
+) {
+    FULL_PAGE(
+        id = "full_page",
+        label = "Full Page",
+        shortLabel = "Full Page",
+        description = "Extracts every question across the page, frames & math blocks"
+    ),
+    VISIBLE_SCREEN(
+        id = "visible_screen",
+        label = "Screen Only",
+        shortLabel = "Screen Only",
+        description = "Extracts only the questions currently visible on your screen"
+    ),
+    VISUAL_OCR(
+        id = "visual_ocr",
+        label = "Visual OCR",
+        shortLabel = "Visual OCR",
+        description = "Reads rendered images, diagrams, canvas & copy-locked pages"
+    ),
+    SELECTION(
+        id = "selection",
+        label = "Selected Text",
+        shortLabel = "Selection",
+        description = "Solves the exact text or question you highlighted on the page"
+    )
+}
+
 enum class GoogleFormsModelOption(
     val id: String,
     val label: String,
@@ -309,6 +341,83 @@ object GoogleFormsSolverEngine {
 
     fun normalizeGoogleFormUrl(rawInput: String): String = extractGoogleFormUrl(rawInput)
 
+    /**
+     * Safely normalizes ANY web quiz URL for the Universal Smart Quiz Browser.
+     * Strictly allows only `http://` and `https://` schemes (rejecting `javascript:`, `file:`, `data:`, etc.).
+     */
+    fun normalizeUniversalQuizUrl(rawInput: String): String {
+        val trimmed = rawInput.trim()
+        if (trimmed.isBlank()) return ""
+        val lower = trimmed.lowercase()
+        if (lower.startsWith("javascript:") ||
+            lower.startsWith("file:") ||
+            lower.startsWith("data:") ||
+            lower.startsWith("content:") ||
+            lower.startsWith("intent:")
+        ) {
+            return ""
+        }
+        val embeddedHttp = Regex("""https?://[^\s<>"']+""", RegexOption.IGNORE_CASE).find(trimmed)?.value
+        val candidate = (embeddedHttp ?: trimmed)
+            .trim()
+            .trimEnd('.', ',', ';', ')', ']', '>', '!', '"', '\'')
+        if (candidate.isBlank()) return ""
+        val withScheme = if (!candidate.startsWith("http://", ignoreCase = true) &&
+            !candidate.startsWith("https://", ignoreCase = true)
+        ) {
+            // Bare domain or host/path like "forms.office.com/r/abc" or "sanfoundry.com/..."
+            if (candidate.contains(".") && !candidate.contains(" ")) {
+                "https://$candidate"
+            } else {
+                // Treat plain keywords as a clean search query on Google so students can find any quiz portal
+                "https://www.google.com/search?q=${android.net.Uri.encode(candidate)}"
+            }
+        } else {
+            candidate
+        }
+        val parsed = runCatching { android.net.Uri.parse(withScheme) }.getOrNull() ?: return ""
+        val scheme = parsed.scheme?.lowercase().orEmpty()
+        val host = parsed.host?.lowercase().orEmpty()
+        if ((scheme != "http" && scheme != "https") || host.isBlank()) return ""
+        return withScheme
+    }
+
+    fun isStrictGoogleFormUrl(url: String): Boolean {
+        val lower = url.lowercase()
+        return lower.contains("docs.google.com/forms") || lower.contains("forms.gle/")
+    }
+
+    fun detectQuizPlatformLabel(url: String): String {
+        val lower = url.lowercase()
+        return when {
+            lower.contains("docs.google.com/forms") || lower.contains("forms.gle") -> "Google Forms"
+            lower.contains("forms.office.com") || lower.contains("forms.cloud.microsoft") -> "Microsoft Forms"
+            lower.contains("moodle") || lower.contains("/mod/quiz/") -> "Moodle LMS"
+            lower.contains("nptel") || lower.contains("swayam") || lower.contains("onlinecourses.") -> "NPTEL / Swayam"
+            lower.contains("quizizz.com") || lower.contains("wayground.com") -> "Quizizz"
+            lower.contains("kahoot.it") || lower.contains("kahoot.com") -> "Kahoot"
+            lower.contains("testbook.com") -> "Testbook"
+            lower.contains("sanfoundry.com") -> "Sanfoundry"
+            lower.contains("indiabix.com") -> "IndiaBIX"
+            lower.contains("codetantra.com") -> "CodeTantra"
+            lower.contains("hackerrank.com") -> "HackerRank"
+            lower.contains("geeksforgeeks.org") -> "GeeksforGeeks"
+            lower.contains("typeform.com") -> "Typeform"
+            else -> "Smart Quiz Web"
+        }
+    }
+
+    data class QuickQuizSiteShortcut(val label: String, val url: String)
+
+    val UNIVERSAL_QUICK_QUIZ_SITES: List<QuickQuizSiteShortcut> = listOf(
+        QuickQuizSiteShortcut("Google Forms", "https://docs.google.com/forms"),
+        QuickQuizSiteShortcut("Microsoft Forms", "https://forms.office.com"),
+        QuickQuizSiteShortcut("NPTEL", "https://onlinecourses.nptel.ac.in"),
+        QuickQuizSiteShortcut("Sanfoundry", "https://www.sanfoundry.com"),
+        QuickQuizSiteShortcut("IndiaBIX", "https://www.indiabix.com"),
+        QuickQuizSiteShortcut("Testbook", "https://testbook.com/objective-questions")
+    )
+
     internal fun prepareFormFetchUrl(url: String): String {
         val clean = extractGoogleFormUrl(url)
         if (clean.isBlank()) return ""
@@ -325,7 +434,8 @@ object GoogleFormsSolverEngine {
         val lower = url.lowercase()
         return lower.contains("docs.google.com/forms") ||
             lower.contains("forms.gle/") ||
-            lower.contains("forms.office.com")
+            lower.contains("forms.office.com") ||
+            lower.contains("forms.cloud.microsoft")
     }
 
     /**
@@ -2154,70 +2264,208 @@ object GoogleFormsSolverEngine {
     // ─── Multi-Page / Interactive WebView DOM Extraction & Auto-Fill Suite ───
 
     /**
-     * JavaScript snippet injected inside `GoogleFormsWebActivity` to extract all visible
-     * questions, MCQ radio options, checkboxes, dropdowns, and short-text items from the
-     * live Google Forms DOM (works even on private login-gated and multi-section forms).
+     * Universal 4-Pass JavaScript Quiz Extractor injected inside `GoogleFormsWebActivity`
+     * (Universal Smart Quiz Browser). Extracts visible questions & options from:
+     * 1. Google Forms (`div[role="listitem"]`)
+     * 2. Microsoft Forms (`[data-automation-id="questionItem"]`)
+     * 3. Moodle / NPTEL / Swayam / LMS portals (`.que`, `.qt-mc-question`, `.gcb-question-row`)
+     * 4. ANY generic web quiz site (radio/checkbox `input[name]` groups, `<fieldset>`,
+     *    `[role="radiogroup"]`, `.question`/`.mcq` cards, and numbered MCQ text blocks on
+     *    Sanfoundry, IndiaBIX, Testbook, Quizizz, CodeTantra, GeeksforGeeks, etc.).
      */
     const val JS_EXTRACT_VISIBLE_QUESTIONS: String = """
         (function() {
             try {
-                var titleEl = document.querySelector('[role="heading"][aria-level="1"]') || document.querySelector('.F9yp7e');
-                var formTitle = titleEl ? titleEl.innerText.trim() : (document.title || 'Google Form').replace(/\s*-\s*Google Forms\s*$/i, '');
-                var cards = document.querySelectorAll('div[role="listitem"]');
-                var out = [];
-                for (var i = 0; i < cards.length; i++) {
-                    var card = cards[i];
-                    try {
-                        if (window.getComputedStyle(card).display === 'none') continue;
-                    } catch (_ignored) {}
-                    if (card.closest('[aria-hidden="true"]')) continue;
-
-                    var hasControl = !!card.querySelector('[role="radio"], [role="checkbox"], [role="option"], [role="listbox"], input, textarea, select');
-                    if (!hasControl) continue;
-
-                    var headingEl = card.querySelector('[role="heading"]');
-                    var stem = headingEl ? headingEl.innerText : '';
-                    stem = stem
+                function cleanStr(s) {
+                    return (s || '')
                         .replace(/\s*\*+\s*$/g, '')
                         .replace(/\brequired question\b/gi, '')
                         .replace(/\s+/g, ' ')
                         .trim();
-                    if (!stem) continue;
+                }
+                function isVisible(el) {
+                    if (!el) return false;
+                    try {
+                        var st = window.getComputedStyle(el);
+                        if (st.display === 'none' || st.visibility === 'hidden' || st.opacity === '0') return false;
+                    } catch (_e) {}
+                    if (el.closest && el.closest('[aria-hidden="true"]')) return false;
+                    return true;
+                }
+                function pushUnique(arr, val, stem) {
+                    var v = cleanStr(val);
+                    var low = v.toLowerCase();
+                    if (!v || v === stem || v.length > 260) return;
+                    if (low === 'other:' || low === 'other' || low === 'choose' || low === 'select' || low === 'clear selection') return;
+                    if (arr.indexOf(v) === -1) arr.push(v);
+                }
 
+                var titleEl = document.querySelector('[role="heading"][aria-level="1"]') ||
+                    document.querySelector('[data-automation-id="formTitle"]') ||
+                    document.querySelector('.F9yp7e, h1');
+                var formTitle = titleEl ? cleanStr(titleEl.innerText) : cleanStr((document.title || 'Quiz Page').replace(/\s*-\s*Google Forms\s*$/i, ''));
+                var out = [];
+                var seenStems = {};
+                function addQuestion(stem, opts, typeLabel) {
+                    var s = cleanStr(stem);
+                    if (!s || s.length < 4) return;
+                    var key = s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+                    if (!key || seenStems[key]) return;
+                    seenStems[key] = true;
+                    out.push({ questionText: s, options: opts || [], typeLabel: typeLabel || (opts && opts.length > 0 ? 'MCQ' : 'Short') });
+                }
+
+                // PASS 1: Google Forms
+                var gCards = document.querySelectorAll('div[role="listitem"]');
+                for (var i = 0; i < gCards.length; i++) {
+                    var card = gCards[i];
+                    if (!isVisible(card)) continue;
+                    var hasControl = !!card.querySelector('[role="radio"], [role="checkbox"], [role="option"], [role="listbox"], input, textarea, select');
+                    if (!hasControl) continue;
+                    var headingEl = card.querySelector('[role="heading"]');
+                    var stem = headingEl ? cleanStr(headingEl.innerText) : '';
+                    if (!stem) continue;
                     var opts = [];
                     var optionEls = card.querySelectorAll('[role="radio"], [role="checkbox"], [role="option"]');
                     for (var j = 0; j < optionEls.length; j++) {
                         var el = optionEls[j];
-                        var rawVal = el.getAttribute('data-value') || el.getAttribute('aria-label') || el.innerText || '';
-                        rawVal = rawVal.replace(/\s+/g, ' ').trim();
-                        var lowOpt = rawVal.toLowerCase();
-                        if (rawVal && lowOpt !== 'other:' && lowOpt !== 'other' && lowOpt !== 'choose' && lowOpt !== 'select' && opts.indexOf(rawVal) === -1) {
-                            opts.push(rawVal);
-                        }
+                        pushUnique(opts, el.getAttribute('data-value') || el.getAttribute('aria-label') || el.innerText || '', stem);
                     }
-
-                    // Fallback: span option labels inside radio/checkbox/dropdown rows
                     if (opts.length === 0) {
                         var spans = card.querySelectorAll('.aDTYNe, .nWQGrd span, .eBFwI span, .vRMGwf');
                         for (var k = 0; k < spans.length; k++) {
-                            var sText = (spans[k].innerText || '').replace(/\s+/g, ' ').trim();
-                            var lowSpan = sText.toLowerCase();
-                            if (sText && sText !== stem && lowSpan !== 'other:' && lowSpan !== 'other' && lowSpan !== 'choose' && lowSpan !== 'select' && opts.indexOf(sText) === -1) {
-                                opts.push(sText);
-                            }
+                            pushUnique(opts, spans[k].innerText || '', stem);
                         }
                     }
-
                     var isDropdown = !!card.querySelector('[role="listbox"], select');
                     var isCheckbox = !!card.querySelector('[role="checkbox"]');
                     var isText = !!card.querySelector('input[type="text"], input[type="email"], input[type="number"], input[type="url"], textarea');
                     var qType = isDropdown ? 'Dropdown' : (isCheckbox ? 'Checkbox' : (opts.length > 0 ? 'MCQ' : (isText ? 'Short' : 'Extracted')));
-                    out.push({
-                        questionText: stem,
-                        options: opts,
-                        typeLabel: qType
-                    });
+                    addQuestion(stem, opts, qType);
                 }
+
+                // PASS 2: Microsoft Forms
+                if (out.length === 0) {
+                    var msCards = document.querySelectorAll('[data-automation-id="questionItem"], .office-form-question');
+                    for (var m = 0; m < msCards.length; m++) {
+                        var mCard = msCards[m];
+                        if (!isVisible(mCard)) continue;
+                        var mTitle = mCard.querySelector('[data-automation-id="questionTitle"], .question-title-box, h2, h3');
+                        var mStem = mTitle ? cleanStr(mTitle.innerText) : '';
+                        if (!mStem) continue;
+                        var mOpts = [];
+                        var mChoices = mCard.querySelectorAll('[data-automation-id="choiceItem"], [role="radio"], [role="checkbox"], label');
+                        for (var mc = 0; mc < mChoices.length; mc++) {
+                            pushUnique(mOpts, mChoices[mc].innerText || mChoices[mc].getAttribute('aria-label') || '', mStem);
+                        }
+                        var mIsCheck = !!mCard.querySelector('input[type="checkbox"], [role="checkbox"]');
+                        addQuestion(mStem, mOpts, mIsCheck ? 'Checkbox' : (mOpts.length > 0 ? 'MCQ' : 'Short'));
+                    }
+                }
+
+                // PASS 3: Moodle / NPTEL / Swayam / LMS Quiz Containers
+                if (out.length === 0) {
+                    var lmsCards = document.querySelectorAll('.que, .qt-mc-question, .gcb-question-row, .quiz-question, .question-card, .mcq-question, [data-testid*="question"]');
+                    for (var l = 0; l < lmsCards.length; l++) {
+                        var lCard = lmsCards[l];
+                        if (!isVisible(lCard)) continue;
+                        var qTextEl = lCard.querySelector('.qtext, .qt-question, .question-text, .question-title, h2, h3, p');
+                        var lStem = qTextEl ? cleanStr(qTextEl.innerText) : '';
+                        if (!lStem || lStem.length < 6) continue;
+                        var lOpts = [];
+                        var lChoiceEls = lCard.querySelectorAll('.answer label, .qt-choices label, .option, .choice, [role="radio"], [role="checkbox"], li label, button[class*="option"]');
+                        for (var lc = 0; lc < lChoiceEls.length; lc++) {
+                            pushUnique(lOpts, lChoiceEls[lc].innerText || '', lStem);
+                        }
+                        if (lOpts.length >= 2 || lCard.querySelector('input[type="text"], textarea, select')) {
+                            var lIsCheck = !!lCard.querySelector('input[type="checkbox"], [role="checkbox"]');
+                            addQuestion(lStem, lOpts, lIsCheck ? 'Checkbox' : (lOpts.length > 0 ? 'MCQ' : 'Short'));
+                        }
+                    }
+                }
+
+                // PASS 4: Universal HTML Radio/Checkbox Groups & Generic Quiz Sites (Sanfoundry, IndiaBIX, Testbook, College Portals)
+                if (out.length === 0) {
+                    var groupedByName = {};
+                    var inputs = document.querySelectorAll('input[type="radio"], input[type="checkbox"]');
+                    for (var r = 0; r < inputs.length; r++) {
+                        var inp = inputs[r];
+                        if (!isVisible(inp) && !(inp.parentElement && isVisible(inp.parentElement))) continue;
+                        var gName = inp.getAttribute('name') || ('group_' + r);
+                        if (!groupedByName[gName]) groupedByName[gName] = [];
+                        groupedByName[gName].push(inp);
+                    }
+                    var groupNames = Object.keys(groupedByName);
+                    for (var g = 0; g < groupNames.length; g++) {
+                        var groupInputs = groupedByName[groupNames[g]];
+                        if (groupInputs.length < 2 || groupInputs.length > 10) continue;
+                        var container = groupInputs[0].closest('fieldset, .question, .form-group, section, article, li, tr, div');
+                        if (!container) continue;
+                        var uOpts = [];
+                        for (var gi = 0; gi < groupInputs.length; gi++) {
+                            var gInp = groupInputs[gi];
+                            var lbl = null;
+                            if (gInp.id) lbl = document.querySelector('label[for="' + gInp.id.replace(/"/g, '\\"') + '"]');
+                            if (!lbl) lbl = gInp.closest('label');
+                            var oTxt = lbl ? lbl.innerText : (gInp.parentElement ? gInp.parentElement.innerText : gInp.value);
+                            pushUnique(uOpts, oTxt, '');
+                        }
+                        var stemCandidate = '';
+                        var leg = container.querySelector('legend, h2, h3, h4, .question, p');
+                        if (leg) stemCandidate = cleanStr(leg.innerText);
+                        if (!stemCandidate || stemCandidate.length < 6) {
+                            var rawBlock = (container.innerText || '').split('\n');
+                            for (var rb = 0; rb < rawBlock.length; rb++) {
+                                var line = cleanStr(rawBlock[rb]);
+                                if (line.length >= 8 && uOpts.indexOf(line) === -1) {
+                                    stemCandidate = line;
+                                    break;
+                                }
+                            }
+                        }
+                        if (stemCandidate && uOpts.length >= 2) {
+                            var uIsCheck = groupInputs[0].type === 'checkbox';
+                            addQuestion(stemCandidate, uOpts, uIsCheck ? 'Checkbox' : 'MCQ');
+                        }
+                    }
+                }
+
+                // PASS 5: Clean Text-Block MCQ Fallback (Sanfoundry / IndiaBIX / GeeksforGeeks / Practice Pages)
+                if (out.length === 0) {
+                    var bodyRoot = document.querySelector('main, article, .entry-content, .content, #content') || document.body;
+                    var rawLines = (bodyRoot ? bodyRoot.innerText : '').split('\n').map(function(x) { return cleanStr(x); }).filter(function(x) { return x.length > 0; });
+                    var curQ = null;
+                    var curOpts = [];
+                    var qStartRe = /^(?:Q\.?\s*\d+|\d+[\.\)])\s+(.{8,})/i;
+                    var optRe = /^(?:\(?[A-Da-d][\.\)]|[a-d]\))\s+(.+)/;
+                    function flushTextQ() {
+                        if (curQ && curOpts.length >= 2 && out.length < 40) {
+                            addQuestion(curQ, curOpts.slice(0, 6), 'MCQ');
+                        }
+                        curQ = null;
+                        curOpts = [];
+                    }
+                    for (var ln = 0; ln < rawLines.length; ln++) {
+                        var txt = rawLines[ln];
+                        if (/^(?:view answer|show answer|explanation:|answer:|workspace|report)/i.test(txt)) {
+                            flushTextQ();
+                            continue;
+                        }
+                        var om = txt.match(optRe);
+                        if (om && curQ) {
+                            pushUnique(curOpts, om[1], curQ);
+                            continue;
+                        }
+                        var qm = txt.match(qStartRe);
+                        if (qm) {
+                            flushTextQ();
+                            curQ = qm[1];
+                            continue;
+                        }
+                    }
+                    flushTextQ();
+                }
+
                 return JSON.stringify({ formTitle: formTitle, questions: out });
             } catch (e) {
                 return JSON.stringify({ error: e.toString(), questions: [] });
@@ -2636,7 +2884,51 @@ object GoogleFormsSolverEngine {
                             filledCount++;
                         }
                     }
-                    return JSON.stringify({ filledCount: filledCount, visibleQuestions: cards.length });
+
+                    // Universal Quiz Site Auto-Fill Fallback (Microsoft Forms, Moodle, NPTEL, HTML Radio/Checkbox Quizzes)
+                    var universalVisible = cards.length;
+                    if (cards.length === 0) {
+                        var uCards = document.querySelectorAll('[data-automation-id="questionItem"], .office-form-question, .que, .qt-mc-question, .gcb-question-row, fieldset, .quiz-question, .question-card');
+                        universalVisible = uCards.length;
+                        for (var u = 0; u < uCards.length; u++) {
+                            var uCard = uCards[u];
+                            var uText = norm(uCard.innerText || '');
+                            if (!uText) continue;
+                            var uMatch = findBestMatch(uText);
+                            if (!uMatch) continue;
+                            var wantShort = norm(uMatch.shortAnswer);
+                            var uFilled = false;
+                            var clickables = uCard.querySelectorAll('[data-automation-id="choiceItem"], [role="radio"], [role="checkbox"], label, input[type="radio"], input[type="checkbox"]');
+                            if (wantShort) {
+                                for (var c = 0; c < clickables.length; c++) {
+                                    var cEl = clickables[c];
+                                    var cLab = norm(cEl.innerText || cEl.getAttribute('aria-label') || cEl.value || '');
+                                    if (cLab && (cLab === wantShort || (wantShort.length >= 3 && (cLab.indexOf(wantShort) !== -1 || wantShort.indexOf(cLab) !== -1)))) {
+                                        var inp = cEl.tagName === 'INPUT' ? cEl : cEl.querySelector('input[type="radio"], input[type="checkbox"]');
+                                        if (inp && !inp.checked) inp.click();
+                                        else if (!inp) cEl.click();
+                                        uFilled = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            if (!uFilled && uMatch.answerLetter && uMatch.answerLetter.length === 1) {
+                                var pureInputs = uCard.querySelectorAll('input[type="radio"], input[type="checkbox"], [role="radio"], [role="checkbox"]');
+                                var uIdx = uMatch.answerLetter.toUpperCase().charCodeAt(0) - 65;
+                                if (uIdx >= 0 && uIdx < pureInputs.length) {
+                                    pureInputs[uIdx].click();
+                                    uFilled = true;
+                                }
+                            }
+                            if (uFilled) {
+                                uCard.style.borderLeft = '4px solid #10B981';
+                                uCard.style.paddingLeft = '10px';
+                                filledCount++;
+                            }
+                        }
+                    }
+
+                    return JSON.stringify({ filledCount: filledCount, visibleQuestions: universalVisible });
                 } catch (e) {
                     return JSON.stringify({ error: e.toString(), filledCount: 0, visibleQuestions: 0 });
                 }
@@ -2792,6 +3084,718 @@ object GoogleFormsSolverEngine {
         }
 
         return false
+    }
+
+    /**
+     * Generates a safe, non-submitting DOM locator script for Live Class Room students whose
+     * exam site randomizes A/B/C/D option order per student.
+     *
+     * Given the host's solved [targetAnswerText], this scans visible MCQ options on the student's
+     * current WebView page, computes normalized token overlap, highlights & smoothly scrolls to
+     * the matching option on THEIR screen, and returns JSON `{ matched, localLetter, localIndex, matchedText }`.
+     */
+    fun buildLocateShuffledOptionJavascript(
+        questionText: String,
+        targetAnswerText: String
+    ): String {
+        val targetJson = org.json.JSONObject.quote(targetAnswerText.trim().take(600))
+        val qJson = org.json.JSONObject.quote(questionText.trim().take(400))
+        return """
+            (function() {
+              try {
+                var targetRaw = $targetJson || '';
+                var qRaw = $qJson || '';
+                function norm(s) {
+                  return String(s || '').toLowerCase()
+                    .replace(/^[a-h][\)\.\:\-\s]+/i, '')
+                    .replace(/[^a-z0-9\s]+/g, ' ')
+                    .replace(/\s+/g, ' ')
+                    .trim();
+                }
+                var target = norm(targetRaw);
+                if (!target) return JSON.stringify({ matched: false, localLetter: '', localIndex: -1, matchedText: '' });
+                var targetTokens = target.split(' ').filter(function(t) { return t.length >= 2; });
+
+                function scoreText(candRaw) {
+                  var cand = norm(candRaw);
+                  if (!cand || cand.length > 650) return 0;
+                  if (cand === target) return 1.0;
+                  if (cand.indexOf(target) !== -1 || target.indexOf(cand) !== -1) {
+                    var ratio = Math.min(cand.length, target.length) / Math.max(cand.length, target.length);
+                    if (ratio >= 0.45) return 0.90;
+                  }
+                  if (targetTokens.length === 0) return 0;
+                  var candTokens = cand.split(' ');
+                  var candSet = {};
+                  for (var i = 0; i < candTokens.length; i++) candSet[candTokens[i]] = true;
+                  var hits = 0;
+                  for (var j = 0; j < targetTokens.length; j++) {
+                    if (candSet[targetTokens[j]]) hits++;
+                  }
+                  return hits / Math.max(targetTokens.length, 1);
+                }
+
+                // Clear any previous Prism locator highlight
+                var prev = document.querySelectorAll('[data-prism-located="1"]');
+                for (var p = 0; p < prev.length; p++) {
+                  prev[p].style.outline = '';
+                  prev[p].style.backgroundColor = '';
+                  prev[p].removeAttribute('data-prism-located');
+                }
+
+                // Collect option groups (Google Forms, MS Forms, Moodle, generic radios/checkboxes/labels)
+                var selectors = [
+                  '[role="radio"]',
+                  '[role="checkbox"]',
+                  '[data-automation-id="choiceItem"]',
+                  '.answer > div',
+                  '.r0, .r1',
+                  'label',
+                  '[role="option"]'
+                ];
+                var nodes = [];
+                for (var s = 0; s < selectors.length; s++) {
+                  var found = document.querySelectorAll(selectors[s]);
+                  for (var k = 0; k < found.length; k++) {
+                    var el = found[k];
+                    if (el && el.offsetParent !== null) {
+                      var txt = (el.innerText || el.getAttribute('aria-label') || el.getAttribute('data-value') || '').trim();
+                      if (txt.length >= 1 && txt.length <= 650) {
+                        nodes.push({ el: el, text: txt });
+                      }
+                    }
+                  }
+                  if (nodes.length >= 2) break;
+                }
+
+                var best = null;
+                var bestScore = 0;
+                var bestIdx = -1;
+                for (var idx = 0; idx < nodes.length; idx++) {
+                  var sc = scoreText(nodes[idx].text);
+                  if (sc > bestScore) {
+                    bestScore = sc;
+                    best = nodes[idx];
+                    bestIdx = idx;
+                  }
+                }
+
+                if (!best || bestScore < 0.55) {
+                  return JSON.stringify({ matched: false, localLetter: '', localIndex: -1, matchedText: '' });
+                }
+
+                // Estimate local option letter (A, B, C, D...) within the same parent group
+                var localSlot = bestIdx;
+                var parent = best.el.parentElement;
+                if (parent) {
+                  var groupParent = parent.parentElement || parent;
+                  var siblings = groupParent.querySelectorAll('[role="radio"], [role="checkbox"], [data-automation-id="choiceItem"], label');
+                  if (siblings.length >= 2 && siblings.length <= 10) {
+                    for (var m = 0; m < siblings.length; m++) {
+                      if (siblings[m] === best.el || siblings[m].contains(best.el)) {
+                        localSlot = m;
+                        break;
+                      }
+                    }
+                  }
+                }
+                var letters = ['A','B','C','D','E','F','G','H'];
+                var letter = (localSlot >= 0 && localSlot < letters.length) ? letters[localSlot] : '';
+
+                // Gently highlight & scroll into view without auto-submitting
+                best.el.setAttribute('data-prism-located', '1');
+                best.el.style.outline = '2.5px solid #10B981';
+                best.el.style.borderRadius = '10px';
+                best.el.style.backgroundColor = 'rgba(16, 185, 129, 0.14)';
+                try {
+                  best.el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                } catch (_) {}
+
+                return JSON.stringify({
+                  matched: true,
+                  localLetter: letter,
+                  localIndex: localSlot,
+                  matchedText: best.text.slice(0, 120)
+                });
+              } catch (e) {
+                return JSON.stringify({ matched: false, localLetter: '', localIndex: -1, matchedText: '' });
+              }
+            })();
+        """.trimIndent()
+    }
+
+    /**
+     * 1-Tap "Highlight All" for Live Class Room members (and solo exams):
+     * Scans the current shuffled webpage once, matches every synced answer by meaning/text,
+     * and highlights all matched options in emerald green WITHOUT clicking or touching Name/Roll No.
+     */
+    fun buildHighlightAllAnswersJavascript(
+        answers: List<Pair<Int, String>>
+    ): String {
+        val arr = org.json.JSONArray()
+        for ((qNum, text) in answers.take(60)) {
+            val trimmed = text.trim().take(400)
+            if (trimmed.isNotBlank()) {
+                val obj = org.json.JSONObject()
+                obj.put("q", qNum)
+                obj.put("t", trimmed)
+                arr.put(obj)
+            }
+        }
+        val payloadJson = arr.toString()
+        return """
+            (function() {
+              try {
+                var targets = $payloadJson;
+                if (!targets || !targets.length) return JSON.stringify({ count: 0 });
+
+                function norm(s) {
+                  return String(s || '').toLowerCase()
+                    .replace(/^[a-h][\)\.\:\-\s]+/i, '')
+                    .replace(/[^a-z0-9\s]+/g, ' ')
+                    .replace(/\s+/g, ' ')
+                    .trim();
+                }
+
+                function scoreText(candRaw, targetNorm, targetTokens) {
+                  var cand = norm(candRaw);
+                  if (!cand || cand.length > 650) return 0;
+                  if (cand === targetNorm) return 1.0;
+                  if (cand.indexOf(targetNorm) !== -1 || targetNorm.indexOf(cand) !== -1) {
+                    var ratio = Math.min(cand.length, targetNorm.length) / Math.max(cand.length, targetNorm.length);
+                    if (ratio >= 0.45) return 0.90;
+                  }
+                  if (!targetTokens.length) return 0;
+                  var candTokens = cand.split(' ');
+                  var candSet = {};
+                  for (var i = 0; i < candTokens.length; i++) candSet[candTokens[i]] = true;
+                  var hits = 0;
+                  for (var j = 0; j < targetTokens.length; j++) {
+                    if (candSet[targetTokens[j]]) hits++;
+                  }
+                  return hits / Math.max(targetTokens.length, 1);
+                }
+
+                var prev = document.querySelectorAll('[data-prism-located="1"]');
+                for (var p = 0; p < prev.length; p++) {
+                  prev[p].style.outline = '';
+                  prev[p].style.backgroundColor = '';
+                  prev[p].removeAttribute('data-prism-located');
+                }
+
+                var selectors = [
+                  '[role="radio"]',
+                  '[role="checkbox"]',
+                  '[data-automation-id="choiceItem"]',
+                  '.answer > div',
+                  '.r0, .r1',
+                  'label',
+                  '[role="option"]'
+                ];
+                var nodes = [];
+                for (var s = 0; s < selectors.length; s++) {
+                  var found = document.querySelectorAll(selectors[s]);
+                  for (var k = 0; k < found.length; k++) {
+                    var el = found[k];
+                    if (el && el.offsetParent !== null) {
+                      var txt = (el.innerText || el.getAttribute('aria-label') || el.getAttribute('data-value') || '').trim();
+                      if (txt.length >= 1 && txt.length <= 650) {
+                        nodes.push({ el: el, text: txt, used: false });
+                      }
+                    }
+                  }
+                  if (nodes.length >= 2) break;
+                }
+
+                var highlighted = 0;
+                var firstMatch = null;
+                for (var a = 0; a < targets.length; a++) {
+                  var tNorm = norm(targets[a].t);
+                  if (!tNorm) continue;
+                  var tTokens = tNorm.split(' ').filter(function(tok) { return tok.length >= 2; });
+                  var best = null;
+                  var bestScore = 0;
+                  for (var n = 0; n < nodes.length; n++) {
+                    if (nodes[n].used) continue;
+                    var sc = scoreText(nodes[n].text, tNorm, tTokens);
+                    if (sc > bestScore) {
+                      bestScore = sc;
+                      best = nodes[n];
+                    }
+                  }
+                  if (best && bestScore >= 0.58) {
+                    best.used = true;
+                    best.el.setAttribute('data-prism-located', '1');
+                    best.el.style.outline = '2.5px solid #10B981';
+                    best.el.style.borderRadius = '10px';
+                    best.el.style.backgroundColor = 'rgba(16, 185, 129, 0.16)';
+                    if (!firstMatch) firstMatch = best.el;
+                    highlighted++;
+                  }
+                }
+                if (firstMatch) {
+                  try { firstMatch.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (_) {}
+                }
+                return JSON.stringify({ count: highlighted });
+              } catch (e) {
+                return JSON.stringify({ count: 0 });
+              }
+            })();
+        """.trimIndent()
+    }
+
+    /**
+     * Next-Gen Universal Smart Quiz DOM Extractor supporting:
+     * - Full Page vs Visible Screen viewport filtering (`getBoundingClientRect()`) vs Highlighted Selection
+     * - Open Shadow DOM & same-origin `<iframe>` traversal
+     * - MathJax / KaTeX TeX annotation & aria-label preservation (`annotation[encoding="application/x-tex"]`, `data-tex`)
+     * - Code blocks (`<pre>`, `<code>`), image `alt` descriptions, and Pass-6 generic block fallback
+     */
+    fun buildSmartExtractJavascript(mode: BrowserExtractionMode): String {
+        val modeId = mode.id
+        return """
+            (function() {
+              try {
+                var MODE = '$modeId';
+                function cleanStr(s) {
+                  return String(s || '')
+                    .replace(/\s*\*+\s*$/g, '')
+                    .replace(/\brequired question\b/gi, '')
+                    .replace(/\s+/g, ' ')
+                    .trim();
+                }
+
+                // Collect main document + same-origin iframes + open shadow roots
+                var roots = [document];
+                try {
+                  var iframes = document.querySelectorAll('iframe');
+                  for (var fi = 0; fi < iframes.length; fi++) {
+                    try {
+                      var fdoc = iframes[fi].contentDocument;
+                      if (fdoc && fdoc.body) roots.push(fdoc);
+                    } catch (_crossOrigin) {}
+                  }
+                } catch (_e) {}
+                try {
+                  var allEls = document.querySelectorAll('*');
+                  for (var si = 0; si < allEls.length && roots.length < 24; si++) {
+                    if (allEls[si].shadowRoot) roots.push(allEls[si].shadowRoot);
+                  }
+                } catch (_e2) {}
+
+                function qsaAll(selector) {
+                  var acc = [];
+                  for (var ri = 0; ri < roots.length; ri++) {
+                    try {
+                      var list = roots[ri].querySelectorAll(selector);
+                      for (var li = 0; li < list.length; li++) acc.push(list[li]);
+                    } catch (_qErr) {}
+                  }
+                  return acc;
+                }
+
+                // Rich text extractor that preserves MathJax/KaTeX formulas, code blocks & image alt text
+                function richText(el) {
+                  if (!el) return '';
+                  try {
+                    var clone = el.cloneNode(true);
+                    // Preserve KaTeX / MathJax TeX source before reading text
+                    var texNodes = clone.querySelectorAll('annotation[encoding="application/x-tex"], annotation[encoding="TeX"]');
+                    for (var ti = 0; ti < texNodes.length; ti++) {
+                      var tex = (texNodes[ti].textContent || '').trim();
+                      if (tex) {
+                        var mathContainer = texNodes[ti].closest('.katex, mjx-container, math') || texNodes[ti].parentElement;
+                        if (mathContainer) mathContainer.textContent = ' ' + tex + ' ';
+                      }
+                    }
+                    var dataTexNodes = clone.querySelectorAll('[data-tex], [data-latex]');
+                    for (var dt = 0; dt < dataTexNodes.length; dt++) {
+                      var dtex = (dataTexNodes[dt].getAttribute('data-tex') || dataTexNodes[dt].getAttribute('data-latex') || '').trim();
+                      if (dtex) dataTexNodes[dt].textContent = ' ' + dtex + ' ';
+                    }
+                    // Preserve descriptive image alt text inside questions/options
+                    var imgs = clone.querySelectorAll('img[alt]');
+                    for (var ii = 0; ii < imgs.length; ii++) {
+                      var alt = (imgs[ii].getAttribute('alt') || '').trim();
+                      if (alt.length >= 2 && alt.length <= 160) {
+                        var sp = document.createElement('span');
+                        sp.textContent = ' ' + alt + ' ';
+                        imgs[ii].replaceWith(sp);
+                      }
+                    }
+                    return cleanStr(clone.innerText || clone.textContent || '');
+                  } catch (_rtErr) {
+                    return cleanStr(el.innerText || el.textContent || '');
+                  }
+                }
+
+                function isInViewport(el) {
+                  if (MODE !== 'visible_screen') return true;
+                  if (!el || !el.getBoundingClientRect) return true;
+                  try {
+                    var r = el.getBoundingClientRect();
+                    var vh = window.innerHeight || document.documentElement.clientHeight || 800;
+                    var vw = window.innerWidth || document.documentElement.clientWidth || 400;
+                    return r.height > 0 && r.width > 0 && r.bottom > 16 && r.top < (vh - 16) && r.right > 0 && r.left < vw;
+                  } catch (_vpErr) {
+                    return true;
+                  }
+                }
+
+                function isVisible(el) {
+                  if (!el) return false;
+                  try {
+                    var st = window.getComputedStyle(el);
+                    if (st.display === 'none' || st.visibility === 'hidden' || st.opacity === '0') return false;
+                  } catch (_e) {}
+                  if (el.closest && el.closest('[aria-hidden="true"]')) return false;
+                  return isInViewport(el);
+                }
+
+                var titleEl = document.querySelector('[role="heading"][aria-level="1"]') ||
+                  document.querySelector('[data-automation-id="formTitle"]') ||
+                  document.querySelector('.F9yp7e, h1');
+                var formTitle = titleEl ? cleanStr(titleEl.innerText) : cleanStr((document.title || 'Quiz Page').replace(/\s*-\s*Google Forms\s*$/i, ''));
+
+                // MODE: SELECTION — solve whatever text the user highlighted
+                if (MODE === 'selection') {
+                  var selText = '';
+                  try { selText = String(window.getSelection ? window.getSelection().toString() : '').trim(); } catch (_se) {}
+                  if (!selText) {
+                    for (var sri = 1; sri < roots.length; sri++) {
+                      try {
+                        var subSel = roots[sri].getSelection ? String(roots[sri].getSelection().toString()).trim() : '';
+                        if (subSel) { selText = subSel; break; }
+                      } catch (_se2) {}
+                    }
+                  }
+                  if (!selText || selText.length < 4) {
+                    return JSON.stringify({ formTitle: formTitle, questions: [], selectionEmpty: true });
+                  }
+                  var selLines = selText.split('\n').map(function(l) { return cleanStr(l); }).filter(function(l) { return l.length > 0; });
+                  var selOpts = [];
+                  var selStemParts = [];
+                  var optPattern = /^(?:\(?[A-Fa-f][\.\)\:]|[a-f]\))\s+(.+)/;
+                  for (var sl = 0; sl < selLines.length; sl++) {
+                    var om = selLines[sl].match(optPattern);
+                    if (om) selOpts.push(cleanStr(om[1]));
+                    else selStemParts.push(selLines[sl]);
+                  }
+                  var finalStem = selStemParts.join(' ').trim() || selText;
+                  return JSON.stringify({
+                    formTitle: formTitle + ' (Selection)',
+                    questions: [{ questionText: finalStem, options: selOpts, typeLabel: selOpts.length >= 2 ? 'MCQ' : 'Selection' }]
+                  });
+                }
+
+                function pushUnique(arr, val, stem) {
+                  var v = cleanStr(val);
+                  var low = v.toLowerCase();
+                  if (!v || v === stem || v.length > 280) return;
+                  if (low === 'other:' || low === 'other' || low === 'choose' || low === 'select' || low === 'clear selection') return;
+                  if (arr.indexOf(v) === -1) arr.push(v);
+                }
+
+                var out = [];
+                var seenStems = {};
+                function addQuestion(stem, opts, typeLabel) {
+                  var s = cleanStr(stem);
+                  if (!s || s.length < 4) return;
+                  var key = s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+                  if (!key || seenStems[key]) return;
+                  seenStems[key] = true;
+                  out.push({ questionText: s, options: opts || [], typeLabel: typeLabel || (opts && opts.length > 0 ? 'MCQ' : 'Short') });
+                }
+
+                // PASS 1: Google Forms
+                var gCards = qsaAll('div[role="listitem"]');
+                for (var i = 0; i < gCards.length; i++) {
+                  var card = gCards[i];
+                  if (!isVisible(card)) continue;
+                  var hasControl = !!card.querySelector('[role="radio"], [role="checkbox"], [role="option"], [role="listbox"], input, textarea, select');
+                  if (!hasControl) continue;
+                  var headingEl = card.querySelector('[role="heading"]');
+                  var stem = headingEl ? richText(headingEl) : '';
+                  if (!stem) continue;
+                  var opts = [];
+                  var optionEls = card.querySelectorAll('[role="radio"], [role="checkbox"], [role="option"]');
+                  for (var j = 0; j < optionEls.length; j++) {
+                    var el = optionEls[j];
+                    pushUnique(opts, el.getAttribute('data-value') || el.getAttribute('aria-label') || richText(el) || '', stem);
+                  }
+                  if (opts.length === 0) {
+                    var spans = card.querySelectorAll('.aDTYNe, .nWQGrd span, .eBFwI span, .vRMGwf');
+                    for (var k = 0; k < spans.length; k++) pushUnique(opts, richText(spans[k]), stem);
+                  }
+                  var isDropdown = !!card.querySelector('[role="listbox"], select');
+                  var isCheckbox = !!card.querySelector('[role="checkbox"]');
+                  var isText = !!card.querySelector('input[type="text"], input[type="email"], input[type="number"], input[type="url"], textarea');
+                  var qType = isDropdown ? 'Dropdown' : (isCheckbox ? 'Checkbox' : (opts.length > 0 ? 'MCQ' : (isText ? 'Short' : 'Extracted')));
+                  addQuestion(stem, opts, qType);
+                }
+
+                // PASS 2: Microsoft Forms
+                if (out.length === 0) {
+                  var msCards = qsaAll('[data-automation-id="questionItem"], .office-form-question');
+                  for (var m = 0; m < msCards.length; m++) {
+                    var mCard = msCards[m];
+                    if (!isVisible(mCard)) continue;
+                    var mTitle = mCard.querySelector('[data-automation-id="questionTitle"], .question-title-box, h2, h3');
+                    var mStem = mTitle ? richText(mTitle) : '';
+                    if (!mStem) continue;
+                    var mOpts = [];
+                    var mChoices = mCard.querySelectorAll('[data-automation-id="choiceItem"], [role="radio"], [role="checkbox"], label');
+                    for (var mc = 0; mc < mChoices.length; mc++) {
+                      pushUnique(mOpts, richText(mChoices[mc]) || mChoices[mc].getAttribute('aria-label') || '', mStem);
+                    }
+                    var mIsCheck = !!mCard.querySelector('input[type="checkbox"], [role="checkbox"]');
+                    addQuestion(mStem, mOpts, mIsCheck ? 'Checkbox' : (mOpts.length > 0 ? 'MCQ' : 'Short'));
+                  }
+                }
+
+                // PASS 3: Moodle / NPTEL / Swayam / Testbook / Canvas / Blackboard / Quizizz Containers
+                if (out.length === 0) {
+                  var lmsCards = qsaAll('.que, .qt-mc-question, .gcb-question-row, .quiz-question, .question-card, .mcq-question, [data-testid*="question"], [class*="question-container"], [class*="QuestionCard"]');
+                  for (var l = 0; l < lmsCards.length; l++) {
+                    var lCard = lmsCards[l];
+                    if (!isVisible(lCard)) continue;
+                    var qTextEl = lCard.querySelector('.qtext, .qt-question, .question-text, .question-title, h2, h3, p');
+                    var lStem = qTextEl ? richText(qTextEl) : '';
+                    if (!lStem || lStem.length < 6) continue;
+                    var lOpts = [];
+                    var lChoiceEls = lCard.querySelectorAll('.answer label, .qt-choices label, .option, .choice, [role="radio"], [role="checkbox"], li label, button[class*="option"], [data-testid*="option"]');
+                    for (var lc = 0; lc < lChoiceEls.length; lc++) {
+                      pushUnique(lOpts, richText(lChoiceEls[lc]), lStem);
+                    }
+                    if (lOpts.length >= 2 || lCard.querySelector('input[type="text"], textarea, select')) {
+                      var lIsCheck = !!lCard.querySelector('input[type="checkbox"], [role="checkbox"]');
+                      addQuestion(lStem, lOpts, lIsCheck ? 'Checkbox' : (lOpts.length > 0 ? 'MCQ' : 'Short'));
+                    }
+                  }
+                }
+
+                // PASS 4: Universal HTML Radio/Checkbox Groups & Generic Quiz Portals
+                if (out.length === 0) {
+                  var groupedByName = {};
+                  var inputs = qsaAll('input[type="radio"], input[type="checkbox"]');
+                  for (var r = 0; r < inputs.length; r++) {
+                    var inp = inputs[r];
+                    if (!isVisible(inp) && !(inp.parentElement && isVisible(inp.parentElement))) continue;
+                    var gName = inp.getAttribute('name') || ('group_' + r);
+                    if (!groupedByName[gName]) groupedByName[gName] = [];
+                    groupedByName[gName].push(inp);
+                  }
+                  var groupNames = Object.keys(groupedByName);
+                  for (var g = 0; g < groupNames.length; g++) {
+                    var groupInputs = groupedByName[groupNames[g]];
+                    if (groupInputs.length < 2 || groupInputs.length > 10) continue;
+                    var container = groupInputs[0].closest('fieldset, .question, .form-group, section, article, li, tr, div');
+                    if (!container) continue;
+                    var uOpts = [];
+                    for (var gi = 0; gi < groupInputs.length; gi++) {
+                      var gInp = groupInputs[gi];
+                      var lbl = null;
+                      var ownerDoc = gInp.ownerDocument || document;
+                      if (gInp.id) lbl = ownerDoc.querySelector('label[for="' + gInp.id.replace(/"/g, '\\"') + '"]');
+                      if (!lbl) lbl = gInp.closest('label');
+                      var oTxt = lbl ? richText(lbl) : (gInp.parentElement ? richText(gInp.parentElement) : gInp.value);
+                      pushUnique(uOpts, oTxt, '');
+                    }
+                    var stemCandidate = '';
+                    var leg = container.querySelector('legend, h2, h3, h4, .question, p');
+                    if (leg) stemCandidate = richText(leg);
+                    if (!stemCandidate || stemCandidate.length < 6) {
+                      var rawBlock = richText(container).split('\n');
+                      for (var rb = 0; rb < rawBlock.length; rb++) {
+                        var line = cleanStr(rawBlock[rb]);
+                        if (line.length >= 8 && uOpts.indexOf(line) === -1) {
+                          stemCandidate = line;
+                          break;
+                        }
+                      }
+                    }
+                    if (stemCandidate && uOpts.length >= 2) {
+                      var uIsCheck = groupInputs[0].type === 'checkbox';
+                      addQuestion(stemCandidate, uOpts, uIsCheck ? 'Checkbox' : 'MCQ');
+                    }
+                  }
+                }
+
+                // PASS 5: Clean Text-Block MCQ Fallback (Sanfoundry / IndiaBIX / GeeksforGeeks / Practice Pages)
+                if (out.length === 0) {
+                  var bodyRoot = document.querySelector('main, article, .entry-content, .content, #content') || document.body;
+                  var textSource = '';
+                  if (MODE === 'visible_screen') {
+                    var visBlocks = qsaAll('p, li, h1, h2, h3, h4, pre, code, .question, .option, td, div');
+                    var linesAcc = [];
+                    for (var vb = 0; vb < visBlocks.length && linesAcc.length < 180; vb++) {
+                      var elV = visBlocks[vb];
+                      if (elV.children && elV.children.length > 3) continue;
+                      if (!isVisible(elV)) continue;
+                      var vt = richText(elV);
+                      if (vt.length >= 2 && linesAcc.indexOf(vt) === -1) linesAcc.push(vt);
+                    }
+                    textSource = linesAcc.join('\n');
+                  } else {
+                    textSource = bodyRoot ? (bodyRoot.innerText || '') : '';
+                  }
+                  var rawLines = textSource.split('\n').map(function(x) { return cleanStr(x); }).filter(function(x) { return x.length > 0; });
+                  var curQ = null;
+                  var curOpts = [];
+                  var qStartRe = /^(?:Q\.?\s*\d+|\d+[\.\)])\s+(.{8,})/i;
+                  var optRe = /^(?:\(?[A-Fa-f][\.\)\:]|[a-f]\))\s+(.+)/;
+                  function flushTextQ() {
+                    if (curQ && curOpts.length >= 2 && out.length < 40) {
+                      addQuestion(curQ, curOpts.slice(0, 6), 'MCQ');
+                    }
+                    curQ = null;
+                    curOpts = [];
+                  }
+                  for (var ln = 0; ln < rawLines.length; ln++) {
+                    var txt = rawLines[ln];
+                    if (/^(?:view answer|show answer|explanation:|answer:|workspace|report)/i.test(txt)) {
+                      flushTextQ();
+                      continue;
+                    }
+                    var om = txt.match(optRe);
+                    if (om && curQ) {
+                      pushUnique(curOpts, om[1], curQ);
+                      continue;
+                    }
+                    var qm = txt.match(qStartRe);
+                    if (qm) {
+                      flushTextQ();
+                      curQ = qm[1];
+                      continue;
+                    }
+                  }
+                  flushTextQ();
+
+                  // PASS 6: Smart Visible Problem/Question Fallback (so unconventional pages still extract cleanly)
+                  if (out.length === 0 && rawLines.length > 0) {
+                    var qLines = rawLines.filter(function(l) {
+                      return l.length >= 14 && (l.indexOf('?') !== -1 || /\b(find|calculate|solve|what|which|evaluate|determine|compute)\b/i.test(l));
+                    });
+                    if (qLines.length > 0) {
+                      for (var ql = 0; ql < Math.min(qLines.length, 6); ql++) {
+                        addQuestion(qLines[ql], [], 'Extracted');
+                      }
+                    } else if (MODE === 'visible_screen') {
+                      var snippet = rawLines.slice(0, 12).join(' ').slice(0, 600);
+                      if (snippet.length >= 18) addQuestion(snippet, [], 'Screen');
+                    }
+                  }
+                }
+
+                return JSON.stringify({ formTitle: formTitle, questions: out });
+              } catch (e) {
+                return JSON.stringify({ error: e.toString(), questions: [] });
+              }
+            })();
+        """.trimIndent()
+    }
+
+    /**
+     * Browser Extension: Unlock Copy & Text Selection on restricted quiz sites.
+     */
+    const val JS_UNLOCK_COPY_AND_SELECT: String = """
+        (function() {
+          try {
+            var styleId = 'prism-unlock-select-style';
+            if (!document.getElementById(styleId)) {
+              var st = document.createElement('style');
+              st.id = styleId;
+              st.textContent = '*, *::before, *::after { -webkit-user-select: text !important; user-select: text !important; -webkit-touch-callout: default !important; }';
+              (document.head || document.documentElement).appendChild(st);
+            }
+            var events = ['copy', 'cut', 'selectstart', 'contextmenu', 'mousedown'];
+            events.forEach(function(evt) {
+              window.addEventListener(evt, function(e) { e.stopImmediatePropagation(); }, true);
+              document.addEventListener(evt, function(e) { e.stopImmediatePropagation(); }, true);
+            });
+            document.oncopy = null;
+            document.onselectstart = null;
+            document.oncontextmenu = null;
+            if (document.body) {
+              document.body.oncopy = null;
+              document.body.onselectstart = null;
+              document.body.oncontextmenu = null;
+            }
+            return 'unlocked';
+          } catch (e) {
+            return 'err';
+          }
+        })();
+    """
+
+    /**
+     * Browser Extension: Smart Dark Reader — softens harsh white exam sites while preserving natural image/diagram colors.
+     */
+    fun buildDarkReaderJavascript(enable: Boolean): String {
+        return if (enable) {
+            """
+                (function() {
+                  var id = 'prism-dark-reader-style';
+                  if (!document.getElementById(id)) {
+                    var s = document.createElement('style');
+                    s.id = id;
+                    s.textContent = 'html { filter: invert(0.92) hue-rotate(180deg) !important; background: #0c0e14 !important; } ' +
+                      'img, video, picture, canvas, svg, [style*="background-image"] { filter: invert(1) hue-rotate(180deg) !important; }';
+                    (document.head || document.documentElement).appendChild(s);
+                  }
+                  return 'on';
+                })();
+            """.trimIndent()
+        } else {
+            """
+                (function() {
+                  var el = document.getElementById('prism-dark-reader-style');
+                  if (el && el.parentNode) el.parentNode.removeChild(el);
+                  return 'off';
+                })();
+            """.trimIndent()
+        }
+    }
+
+    /**
+     * Browser Extension: Smoothly scrolls to a solved question on the webpage and pulses a highlight frame.
+     */
+    fun buildScrollToQuestionJavascript(questionText: String): String {
+        val snippet = JSONObject.quote(questionText.trim().take(72))
+        return """
+            (function() {
+              try {
+                var target = ($snippet || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+                if (!target) return 'miss';
+                var tokens = target.split(' ').filter(function(t) { return t.length >= 3; }).slice(0, 6);
+                var nodes = document.querySelectorAll('div[role="listitem"], [data-automation-id="questionItem"], .que, .quiz-question, fieldset, h2, h3, p, [role="heading"]');
+                var best = null;
+                var bestScore = 0;
+                for (var i = 0; i < nodes.length; i++) {
+                  var el = nodes[i];
+                  var txt = (el.innerText || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+                  if (!txt || txt.length > 900) continue;
+                  var hits = 0;
+                  for (var t = 0; t < tokens.length; t++) {
+                    if (txt.indexOf(tokens[t]) !== -1) hits++;
+                  }
+                  var sc = tokens.length ? (hits / tokens.length) : 0;
+                  if (sc > bestScore) { bestScore = sc; best = el; }
+                }
+                if (best && bestScore >= 0.45) {
+                  best.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  var oldOutline = best.style.outline;
+                  best.style.outline = '2.5px solid #D71921';
+                  best.style.borderRadius = '10px';
+                  setTimeout(function() { best.style.outline = oldOutline; }, 1800);
+                  return 'ok';
+                }
+                return 'miss';
+              } catch (e) {
+                return 'err';
+              }
+            })();
+        """.trimIndent()
     }
 }
 

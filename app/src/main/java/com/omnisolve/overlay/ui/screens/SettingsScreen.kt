@@ -99,8 +99,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
@@ -168,6 +174,8 @@ fun SettingsScreen(
     onToggleHaptics: (Boolean) -> Unit,
     onTestVibration: () -> Unit,
     onToggleInstantDetect: (Boolean) -> Unit,
+    onToggleVolumeDoublePress: (Boolean) -> Unit = {},
+    onToggleStealthHideAll: () -> Unit = {},
     onSolvePractice: () -> Unit,
     onNextPractice: () -> Unit,
     onClearHistory: () -> Unit,
@@ -301,7 +309,43 @@ fun SettingsScreen(
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 116.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // ── 0. SIMPLE QUICK STATUS CARD ────────────────────────────────────
+        // ── 0. SCULPTED 3-TILE QUICK CONTROL BAR (Stealth · Vol ↓↓ · Format) ──
+        item(key = "settings_quick_3tile_strip") {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                SettingsQuickTile(
+                    label = if (state.isStealthHiddenAll) "Show Pill" else "Hide All",
+                    status = if (state.isStealthHiddenAll) "HIDDEN" else "VISIBLE",
+                    active = state.isStealthHiddenAll,
+                    icon = if (state.isStealthHiddenAll) Icons.Filled.Visibility else Icons.Filled.Shield,
+                    testTag = "quick_tile_settings_hide_all",
+                    onClick = onToggleStealthHideAll,
+                    modifier = Modifier.weight(1f)
+                )
+                SettingsQuickTile(
+                    label = "Vol ↓↓",
+                    status = if (state.volumeDoublePressEnabled) "ON" else "OFF",
+                    active = state.volumeDoublePressEnabled,
+                    icon = Icons.Filled.VisibilityOff,
+                    testTag = "quick_tile_settings_vol_trigger",
+                    onClick = { onToggleVolumeDoublePress(!state.volumeDoublePressEnabled) },
+                    modifier = Modifier.weight(1f)
+                )
+                SettingsQuickTile(
+                    label = if (state.batteryCamouflage) "91–94%" else "A B C D",
+                    status = if (state.batteryCamouflage) "CAMO" else "CLEAR",
+                    active = state.batteryCamouflage,
+                    icon = if (state.batteryCamouflage) Icons.Filled.BatteryChargingFull else Icons.Filled.FontDownload,
+                    testTag = "quick_tile_settings_answer_format",
+                    onClick = { onToggleChargingCamo(!state.batteryCamouflage) },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+
+        // ── 0B. SIMPLE QUICK STATUS CARD ────────────────────────────────────
         item(key = "settings_overview_card") {
             SystemReadinessHeroCard(
                 hasOverlayPermission = hasOverlayPermission,
@@ -497,8 +541,31 @@ fun SettingsScreen(
                 )
 
                 LivingSwitchRow(
+                    title = "Double-Press Volume Down to Solve",
+                    subtitle = "Press Volume Down twice quickly to scan silently — works even when the pill is hidden.",
+                    checked = state.volumeDoublePressEnabled,
+                    onCheckedChange = onToggleVolumeDoublePress,
+                    icon = Icons.Filled.VisibilityOff,
+                    testTag = "switch_volume_double_press"
+                )
+
+                SettingsStatusActionRow(
+                    title = if (state.isStealthHiddenAll) "Floating Pill Hidden (Stealth Active)" else "1-Tap Hide All (Panic Switch)",
+                    subtitle = if (state.isStealthHiddenAll) {
+                        "Zero UI on screen · Tap here or 'Show Pill' in notifications to restore"
+                    } else {
+                        "Instantly hides the pill from screen while keeping Volume-Key & Notification solve ready"
+                    },
+                    statusText = if (state.isStealthHiddenAll) "Show Pill" else "Hide All",
+                    isReady = state.isStealthHiddenAll,
+                    icon = if (state.isStealthHiddenAll) Icons.Filled.Visibility else Icons.Filled.Shield,
+                    testTag = "btn_panic_hide_all",
+                    onClick = onToggleStealthHideAll
+                )
+
+                LivingSwitchRow(
                     title = "Quick Notification Controls",
-                    subtitle = "Shows Solve & Stop buttons in your notification bar while active.",
+                    subtitle = "Shows Solve Now, Hide All & Stop buttons in your notification shade.",
                     checked = state.advQuickTileNotifEnabled,
                     onCheckedChange = onToggleAdvQuickTileNotif,
                     icon = Icons.Filled.NotificationsActive,
@@ -1155,6 +1222,8 @@ private fun SettingsThemeControlCard(
         ThemeLayoutArchetype.EDITORIAL_MONOGRAPH -> 18.dp
         ThemeLayoutArchetype.KINETIC_DECK -> 18.dp
         ThemeLayoutArchetype.IOS_LIQUID_LIGHT -> 24.dp
+        ThemeLayoutArchetype.GLASS_PRISM -> 20.dp
+        ThemeLayoutArchetype.CRIMSON_STUDIO -> 20.dp
         ThemeLayoutArchetype.CLASSIC_PRISM -> themeSpec.cornerRadiusDp.coerceIn(8, 28).dp
     }
     val accentColor = parseHexColorOr(activeSpec.accentPrimaryHex, palette.accentSky)
@@ -1165,7 +1234,7 @@ private fun SettingsThemeControlCard(
         parseHexColorOr(activeSpec.inkPrimaryHex, palette.inkPrimary)
     )
     val quickThemes = remember {
-        listOf(NORMAL_DEFAULT_THEME, com.omnisolve.overlay.ui.theme.IOS_LIQUID_LIGHT_THEME) + SIGNATURE_ATELIER_THEMES
+        com.omnisolve.overlay.ui.theme.CURATED_PRISM_THEMES
     }
     val useMono = archetype == ThemeLayoutArchetype.TELEMETRY_HUD
     val useSerif = archetype == ThemeLayoutArchetype.EDITORIAL_MONOGRAPH
@@ -1701,6 +1770,8 @@ private fun SettingsAccordionCard(
         ThemeLayoutArchetype.EDITORIAL_MONOGRAPH -> 0.dp
         ThemeLayoutArchetype.KINETIC_DECK -> 18.dp
         ThemeLayoutArchetype.IOS_LIQUID_LIGHT -> 22.dp
+        ThemeLayoutArchetype.GLASS_PRISM -> 20.dp
+        ThemeLayoutArchetype.CRIMSON_STUDIO -> 20.dp
         ThemeLayoutArchetype.CLASSIC_PRISM -> themeSpec.cornerRadiusDp.coerceIn(8, 26).dp
     }
     val titleFont = when (archetype) {
@@ -1970,3 +2041,126 @@ private fun LocalApiKeyField(
         )
     }
 }
+
+@Composable
+private fun SettingsQuickTile(
+    label: String,
+    status: String,
+    active: Boolean,
+    icon: ImageVector,
+    testTag: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val palette = LocalWhiteGlassPalette.current
+    val isDark = palette.isDarkObsidian
+    val tileShape = RoundedCornerShape(18.dp)
+    val iconShape = RoundedCornerShape(11.dp)
+    val accentColor = if (active) palette.accentSky else palette.inkPrimary
+    val tileGrad = when {
+        isDark && active -> listOf(Color(0xFF231317), Color(0xFF140D10))
+        isDark -> listOf(Color(0xFF191B23), Color(0xFF111218))
+        active -> listOf(palette.glassTintedSky, palette.glassStrong)
+        else -> listOf(palette.glassStrong, palette.glassMedium)
+    }
+    val iconWellGrad = when {
+        isDark && active -> listOf(Color(0xFF3A151B), Color(0xFF240D11))
+        isDark -> listOf(Color(0xFF262934), Color(0xFF191B23))
+        active -> listOf(palette.accentSky.copy(alpha = 0.18f), palette.accentSky.copy(alpha = 0.10f))
+        else -> listOf(palette.glassSubtle, palette.glassMedium)
+    }
+
+    Column(
+        modifier = modifier
+            .heightIn(min = 96.dp)
+            .shadow(
+                elevation = if (active) (if (isDark) 10.dp else 5.dp) else (if (isDark) 7.dp else 3.dp),
+                shape = tileShape,
+                ambientColor = Color.Black.copy(alpha = if (isDark) 0.90f else 0.14f),
+                spotColor = if (active) palette.accentSky.copy(alpha = if (isDark) 0.45f else 0.22f)
+                else Color.Black.copy(alpha = if (isDark) 0.85f else 0.12f)
+            )
+            .clip(tileShape)
+            .background(Brush.verticalGradient(tileGrad))
+            .drawBehind {
+                val w = size.width
+                val h = size.height
+                drawLine(
+                    brush = Brush.horizontalGradient(
+                        listOf(
+                            Color.Transparent,
+                            Color.White.copy(alpha = if (isDark) (if (active) 0.18f else 0.10f) else 0.72f),
+                            Color.Transparent
+                        )
+                    ),
+                    start = Offset(w * 0.14f, 1.dp.toPx()),
+                    end = Offset(w * 0.86f, 1.dp.toPx()),
+                    strokeWidth = 1.1.dp.toPx(),
+                    cap = StrokeCap.Round
+                )
+                val curl = Path().apply {
+                    moveTo(w * 0.48f, h)
+                    cubicTo(w * 0.60f, h * 0.72f, w * 0.82f, h * 0.84f, w, h * 0.54f)
+                }
+                drawPath(
+                    path = curl,
+                    color = accentColor.copy(alpha = if (active) 0.34f else 0.12f),
+                    style = Stroke(width = 1.2.dp.toPx(), cap = StrokeCap.Round)
+                )
+            }
+            .border(
+                width = 1.dp,
+                color = if (active) palette.accentSky.copy(alpha = 0.65f) else palette.cardHairlineBorder,
+                shape = tileShape
+            )
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(11.dp)
+            .testTag(testTag),
+        verticalArrangement = Arrangement.SpaceBetween
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(34.dp)
+                    .shadow(if (isDark) 6.dp else 2.dp, iconShape, ambientColor = Color.Black, spotColor = Color.Black)
+                    .clip(iconShape)
+                    .background(Brush.verticalGradient(iconWellGrad))
+                    .border(
+                        1.dp,
+                        if (active) palette.accentSkyBright.copy(alpha = 0.65f) else palette.cardHairlineBorder,
+                        iconShape
+                    )
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = if (active) palette.accentSkyBright else palette.inkPrimary,
+                    modifier = Modifier.size(17.dp)
+                )
+            }
+            Text(
+                text = status,
+                color = if (active) palette.accentSkyBright else palette.inkSecondary,
+                fontSize = 8.5.sp,
+                fontWeight = FontWeight.ExtraBold,
+                letterSpacing = 0.6.sp,
+                maxLines = 1
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = label,
+            color = palette.inkPrimary,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+

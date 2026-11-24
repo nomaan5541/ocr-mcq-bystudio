@@ -33,6 +33,7 @@ import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -71,6 +72,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Notifications
@@ -100,6 +102,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
@@ -148,6 +151,7 @@ import com.omnisolve.overlay.ui.physics.SpringPhysicsConfig
 import com.omnisolve.overlay.ui.physics.livingGlassSurface
 import com.omnisolve.overlay.ui.physics.rememberSystemReducedMotion
 import com.omnisolve.overlay.ui.screens.HomeScreen
+import com.omnisolve.overlay.ui.screens.LiveClassRoomScreen
 import com.omnisolve.overlay.ui.screens.SettingsScreen
 import com.omnisolve.overlay.ui.theme.LocalPrismThemeSpec
 import com.omnisolve.overlay.ui.theme.LocalWhiteGlassPalette
@@ -175,6 +179,8 @@ class MainActivity : AppCompatActivity() {
         const val PREF_KEY_INSTANT_TRIGGER = "PREF_INSTANT_TRIGGER"
         const val PREF_KEY_HUD_STYLE = "PREF_HUD_STYLE"
         const val PREF_KEY_CAMOUFLAGE = "PREF_CAMOUFLAGE"
+        const val PREF_KEY_VOLUME_DOUBLE_PRESS = "PREF_VOLUME_DOUBLE_PRESS"
+        const val PREF_KEY_STEALTH_HIDE_ALL = "PREF_STEALTH_HIDE_ALL"
         const val PREF_KEY_HAPTIC = "PREF_HAPTIC"
         const val PREF_KEY_ANTI_CHEAT = "PREF_ANTI_CHEAT"
         const val PREF_KEY_EXTRACTION_ENGINE = "PREF_EXTRACTION_ENGINE"
@@ -822,6 +828,25 @@ class MainActivity : AppCompatActivity() {
                     viewModel.showBannerMessage("Google Form link received · Extracting questions...")
                 }
 
+                is SharedPayload.SharedQuizWebUrl -> {
+                    viewModel.selectTab(AppTab.Home)
+                    viewModel.openHomeSubScreen(HomeSubScreen.GOOGLE_FORMS_SOLVE)
+                    viewModel.updateGoogleFormUrl(sharedPayload.url)
+                    runCatching {
+                        startActivity(GoogleFormsWebActivity.createIntent(this, sharedPayload.url))
+                    }
+                    val platform = com.omnisolve.overlay.api.GoogleFormsSolverEngine.detectQuizPlatformLabel(sharedPayload.url)
+                    viewModel.showBannerMessage("Opening $platform in Universal Quiz Browser...")
+                }
+
+                is SharedPayload.SharedLiveRoomCode -> {
+                    viewModel.selectTab(AppTab.Home)
+                    viewModel.openHomeSubScreen(HomeSubScreen.LIVE_CLASS_ROOM)
+                    viewModel.joinLiveClassRoom(sharedPayload.roomCode)
+                    val formatted = com.omnisolve.overlay.data.LiveClassRoomRepository.formatRoomCode(sharedPayload.roomCode)
+                    viewModel.showBannerMessage("Joining Live Class Room $formatted...")
+                }
+
                 is SharedPayload.SharedQuestionText -> {
                     viewModel.selectTab(AppTab.Home)
                     viewModel.openHomeSubScreen(HomeSubScreen.MAIN)
@@ -998,49 +1023,61 @@ private fun MainInstantApp(
             containerColor = Color.Transparent,
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
             topBar = {
-                WhiteGlassTopHeader(
-                    isOverlayRunning = state.isOverlayRunning,
-                    isNotifPinned = state.customPinConfig.isPinned || state.isGoogleFormPinned,
-                    selectedTab = state.selectedTab,
-                    homeSubScreen = state.homeSubScreen,
-                    onBackFromSubScreen = {
-                        viewModel.openHomeSubScreen(HomeSubScreen.MAIN)
-                    },
-                    onToggleSettings = {
-                        isPlusTreeOpen = false
-                        onSelectTab(
-                            if (state.selectedTab == AppTab.Settings) AppTab.Home else AppTab.Settings
-                        )
-                    },
-                    onOpenThemes = {
-                        isPlusTreeOpen = false
-                        onSelectTab(AppTab.Home)
-                        viewModel.openHomeSubScreen(HomeSubScreen.THEME_STUDIO)
-                    },
-                    onShowNotifications = {
-                        isPlusTreeOpen = false
-                        onSelectTab(AppTab.Home)
-                        viewModel.openHomeSubScreen(HomeSubScreen.NOTIFICATION_STUDIO)
-                    }
-                )
+                if (state.selectedTab != AppTab.Stats) {
+                    WhiteGlassTopHeader(
+                        isOverlayRunning = state.isOverlayRunning,
+                        isNotifPinned = state.customPinConfig.isPinned || state.isGoogleFormPinned,
+                        selectedTab = state.selectedTab,
+                        homeSubScreen = state.homeSubScreen,
+                        onBackFromSubScreen = {
+                            viewModel.openHomeSubScreen(HomeSubScreen.MAIN)
+                        },
+                        onToggleSettings = {
+                            isPlusTreeOpen = false
+                            onSelectTab(
+                                if (state.selectedTab == AppTab.Settings) AppTab.Home else AppTab.Settings
+                            )
+                        },
+                        onOpenThemes = {
+                            isPlusTreeOpen = false
+                            onSelectTab(AppTab.Home)
+                            viewModel.openHomeSubScreen(HomeSubScreen.THEME_STUDIO)
+                        },
+                        onShowNotifications = {
+                            isPlusTreeOpen = false
+                            onSelectTab(AppTab.Home)
+                            viewModel.openHomeSubScreen(HomeSubScreen.NOTIFICATION_STUDIO)
+                        }
+                    )
+                }
             },
             bottomBar = {
-                // Keep Home | + | Settings visible on BOTH Home AND Settings so returning Home is always 1 tap away
+                // Keep Home | Rooms | Browser (Curved Hub) | Settings visible across top-level tabs
                 if (!state.advSplitScreenRailEnabled &&
-                    state.homeSubScreen == HomeSubScreen.MAIN
+                    (state.selectedTab != AppTab.Home || state.homeSubScreen == HomeSubScreen.MAIN)
                 ) {
+                    val navCtx = androidx.compose.ui.platform.LocalContext.current
                     LiquidMorphBottomDock(
-                        selectedTab = if (state.selectedTab == AppTab.Stats) AppTab.Home else state.selectedTab,
+                        selectedTab = state.selectedTab,
                         onSelectTab = { targetTab ->
-                            if (targetTab == AppTab.Stats) {
-                                isPlusTreeOpen = !isPlusTreeOpen
-                            } else {
-                                isPlusTreeOpen = false
-                                onSelectTab(targetTab)
-                            }
+                            isPlusTreeOpen = false
+                            onSelectTab(targetTab)
+                        },
+                        onOpenBrowser = {
+                            isPlusTreeOpen = false
+                            val lastUrl = com.omnisolve.overlay.api.GoogleFormsSessionStore.getLastUrl(navCtx)
+                                .ifBlank { "https://docs.google.com/forms" }
+                            navCtx.startActivity(GoogleFormsWebActivity.createIntent(navCtx, lastUrl))
+                        },
+                        isOverlayRunning = state.isOverlayRunning,
+                        onToggleOverlay = {
+                            isPlusTreeOpen = false
+                            onToggleOverlay()
                         },
                         isPlusMenuOpen = isPlusTreeOpen,
-                        onTogglePlusMenu = { isPlusTreeOpen = !isPlusTreeOpen }
+                        onTogglePlusMenu = {
+                            isPlusTreeOpen = !isPlusTreeOpen
+                        }
                     )
                 }
             }
@@ -1051,15 +1088,18 @@ private fun MainInstantApp(
                     .padding(top = innerPadding.calculateTopPadding())
             ) {
                 if (state.advSplitScreenRailEnabled) {
+                    val railCtx = androidx.compose.ui.platform.LocalContext.current
                     CompactSplitScreenSideRail(
-                        selectedTab = if (state.selectedTab == AppTab.Stats) AppTab.Home else state.selectedTab,
+                        selectedTab = state.selectedTab,
                         onSelectTab = { targetTab ->
-                            if (targetTab == AppTab.Stats) {
-                                isPlusTreeOpen = !isPlusTreeOpen
-                            } else {
-                                isPlusTreeOpen = false
-                                onSelectTab(targetTab)
-                            }
+                            isPlusTreeOpen = false
+                            onSelectTab(targetTab)
+                        },
+                        onOpenBrowser = {
+                            isPlusTreeOpen = false
+                            val lastUrl = com.omnisolve.overlay.api.GoogleFormsSessionStore.getLastUrl(railCtx)
+                                .ifBlank { "https://docs.google.com/forms" }
+                            railCtx.startActivity(GoogleFormsWebActivity.createIntent(railCtx, lastUrl))
                         }
                     )
                 }
@@ -1076,10 +1116,9 @@ private fun MainInstantApp(
                     val reducedMotion = LocalReducedMotion.current
                     val activeArchetype = LocalPrismThemeSpec.current.layoutArchetype
 
-                    // Zero-jank GPU-composited directional screen shift between Home <-> Settings
-                    val effectiveTab = if (state.selectedTab == AppTab.Stats) AppTab.Home else state.selectedTab
+                    // Zero-jank GPU-composited directional screen shift between Home <-> Rooms <-> Settings
                     AnimatedContent(
-                        targetState = effectiveTab,
+                        targetState = state.selectedTab,
                         transitionSpec = {
                             val movingForward = targetState.ordinal >= initialState.ordinal
                             com.omnisolve.overlay.ui.physics.MotionTokens.tabTransitionFor(
@@ -1091,11 +1130,12 @@ private fun MainInstantApp(
                         label = "theme_aware_tab_screen_shift"
                     ) { activeTab ->
                     when (activeTab) {
-                        AppTab.Home, AppTab.Stats -> HomeScreen(
+                        AppTab.Home -> HomeScreen(
                             state = state,
                             listState = homeListState,
                             onToggleOverlay = onToggleOverlay,
                             onRequestOverlayPermission = onRequestOverlayPermission,
+                            onOpenRoomsTab = { onSelectTab(AppTab.Stats) },
                             onSelectSolverMethod = { method ->
                                 viewModel.selectSolverMethod(
                                     method = method,
@@ -1270,6 +1310,38 @@ private fun MainInstantApp(
                             onSelectThemeAppearanceOverride = { mode ->
                                 viewModel.setThemeColorAppearanceOverride(mode, onSyncRunningService)
                             },
+                            onCreateLiveClassRoom = viewModel::createLiveClassRoom,
+                            onJoinLiveClassRoom = viewModel::joinLiveClassRoom,
+                            onApproveLiveRoomMember = viewModel::approveLiveRoomMember,
+                            onRejectOrRemoveLiveRoomMember = viewModel::rejectOrRemoveLiveRoomMember,
+                            onUpdateLiveRoomLockedUrl = viewModel::updateLiveRoomLockedUrl,
+                            onLeaveLiveClassRoom = viewModel::leaveLiveClassRoom,
+                            onEndLiveClassRoom = viewModel::endLiveClassRoom,
+                            onToggleLiveClassRoomAutoSync = viewModel::toggleLiveClassRoomAutoSync,
+                            onVoteLiveRoomConfirm = { answerId -> viewModel.voteLiveRoomAnswer(answerId, confirm = true) },
+                            onVoteLiveRoomDispute = { answerId -> viewModel.voteLiveRoomAnswer(answerId, confirm = false) },
+                            onVerifyLiveRoomAnswerWithAi = viewModel::verifyLiveRoomAnswerWithAi,
+                            modifier = contentMod
+                        )
+
+                        AppTab.Stats -> LiveClassRoomScreen(
+                            state = state,
+                            onBackToHome = { onSelectTab(AppTab.Home) },
+                            onSignInGoogle = onSignInGoogle,
+                            onCreateRoom = viewModel::createLiveClassRoom,
+                            onJoinRoom = viewModel::joinLiveClassRoom,
+                            onApproveMember = viewModel::approveLiveRoomMember,
+                            onRejectOrRemoveMember = viewModel::rejectOrRemoveLiveRoomMember,
+                            onUpdateLockedQuizUrl = viewModel::updateLiveRoomLockedUrl,
+                            onLeaveRoom = viewModel::leaveLiveClassRoom,
+                            onEndRoom = viewModel::endLiveClassRoom,
+                            onToggleAutoSync = viewModel::toggleLiveClassRoomAutoSync,
+                            onVoteConfirm = { answerId -> viewModel.voteLiveRoomAnswer(answerId, confirm = true) },
+                            onVoteDispute = { answerId -> viewModel.voteLiveRoomAnswer(answerId, confirm = false) },
+                            onAiVerifyAnswer = viewModel::verifyLiveRoomAnswerWithAi,
+                            onShowBannerMessage = viewModel::showBannerMessage,
+                            showBackButton = false,
+                            applyStatusBarPadding = true,
                             modifier = contentMod
                         )
 
@@ -1339,6 +1411,12 @@ private fun MainInstantApp(
                             onTestVibration = onTestVibration,
                             onToggleInstantDetect = { enabled ->
                                 viewModel.setInstantTrigger(enabled, onSyncRunningService)
+                            },
+                            onToggleVolumeDoublePress = { enabled ->
+                                viewModel.setVolumeDoublePressEnabled(enabled)
+                            },
+                            onToggleStealthHideAll = {
+                                viewModel.toggleStealthHideAll()
                             },
                             onSolvePractice = viewModel::solvePracticeQuestion,
                             onNextPractice = viewModel::nextSampleQuestion,
@@ -1607,7 +1685,12 @@ private fun MainInstantApp(
                             }
                         },
                         onToggleFloatingPill = onToggleOverlay,
-                        isOverlayRunning = state.isOverlayRunning
+                        isOverlayRunning = state.isOverlayRunning,
+                        onOpenLiveClassRoom = {
+                            isPlusTreeOpen = false
+                            onSelectTab(AppTab.Stats)
+                        },
+                        activeLiveRoomCode = state.activeLiveClassRoom?.formattedCode()
                     )
                 }
             }
@@ -2166,6 +2249,8 @@ private fun WhiteGlassTopHeader(
         ThemeLayoutArchetype.TELEMETRY_HUD -> RoundedCornerShape(8.dp)
         ThemeLayoutArchetype.KINETIC_DECK -> RoundedCornerShape(14.dp)
         ThemeLayoutArchetype.IOS_LIQUID_LIGHT,
+        ThemeLayoutArchetype.GLASS_PRISM,
+        ThemeLayoutArchetype.CRIMSON_STUDIO,
         ThemeLayoutArchetype.EDITORIAL_MONOGRAPH,
         ThemeLayoutArchetype.CLASSIC_PRISM -> CircleShape
     }
@@ -2368,24 +2453,24 @@ private fun WhiteGlassTopHeader(
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(if (isKineticBar) 42.dp else 46.dp)
+                                .size(if (isKineticBar) 40.dp else 44.dp)
                                 .shadow(
-                                    elevation = 4.dp,
-                                    shape = RoundedCornerShape(if (isHud) 8.dp else headerBtnCorner),
-                                    ambientColor = Color.Black,
-                                    spotColor = palette.accentSky.copy(alpha = 0.33f)
+                                    elevation = 6.dp,
+                                    shape = RoundedCornerShape(if (isHud) 8.dp else 13.dp),
+                                    ambientColor = if (palette.isDarkObsidian) Color.Black else Color(0xFF1B6EF3).copy(alpha = 0.28f),
+                                    spotColor = palette.accentSky.copy(alpha = 0.38f)
                                 )
-                                .clip(RoundedCornerShape(if (isHud) 8.dp else headerBtnCorner))
-                                .background(palette.canvasTop)
+                                .clip(RoundedCornerShape(if (isHud) 8.dp else 13.dp))
+                                .background(if (palette.isDarkObsidian) Color(0xFF120B0E) else Color.White)
                                 .border(
-                                    width = 1.dp,
-                                    color = palette.accentSky.copy(alpha = 0.55f),
-                                    shape = RoundedCornerShape(if (isHud) 8.dp else headerBtnCorner)
+                                    width = 1.1.dp,
+                                    color = if (palette.isDarkObsidian) palette.accentSky.copy(alpha = 0.55f) else Color.White.copy(alpha = 0.9f),
+                                    shape = RoundedCornerShape(if (isHud) 8.dp else 13.dp)
                                 ),
                             contentAlignment = Alignment.Center
                         ) {
                             RedPrismLogoMark(
-                                modifier = Modifier.size(if (isKineticBar) 26.dp else 30.dp),
+                                modifier = Modifier.fillMaxSize(),
                                 animated = true
                             )
                         }
@@ -2399,16 +2484,37 @@ private fun WhiteGlassTopHeader(
                             ) {
                                 Text(
                                     text = when {
-                                        isHud -> "PRISM // HUD"
-                                        isAtelier -> "Prism Atelier"
-                                        else -> "Prism Solver"
+                                        isHud -> androidx.compose.ui.text.AnnotatedString("PRISM // HUD")
+                                        isAtelier -> androidx.compose.ui.text.AnnotatedString("Prism Atelier")
+                                        !palette.isDarkObsidian -> androidx.compose.ui.text.buildAnnotatedString {
+                                            append("Prism ")
+                                            pushStyle(
+                                                androidx.compose.ui.text.SpanStyle(
+                                                    color = palette.accentSky,
+                                                    fontWeight = FontWeight.ExtraBold
+                                                )
+                                            )
+                                            append("Solver")
+                                            pop()
+                                        }
+                                        else -> androidx.compose.ui.text.buildAnnotatedString {
+                                            append("Prism ")
+                                            pushStyle(
+                                                androidx.compose.ui.text.SpanStyle(
+                                                    color = palette.accentSky,
+                                                    fontWeight = FontWeight.ExtraBold
+                                                )
+                                            )
+                                            append("Solver")
+                                            pop()
+                                        }
                                     },
                                     style = MaterialTheme.typography.headlineSmall.copy(
-                                        fontSize = if (isHud) 17.5.sp else 19.5.sp,
+                                        fontSize = if (isHud) 17.5.sp else 20.sp,
                                         fontFamily = if (isHud) FontFamily.Monospace else FontFamily.Default,
-                                        fontWeight = FontWeight.Bold,
+                                        fontWeight = FontWeight.ExtraBold,
                                         color = palette.inkPrimary,
-                                        letterSpacing = if (isHud) 0.6.sp else (-0.3).sp
+                                        letterSpacing = if (isHud) 0.6.sp else (-0.4).sp
                                     ),
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
@@ -2443,10 +2549,10 @@ private fun WhiteGlassTopHeader(
                                     } else {
                                         "${themeSpec.layoutArchetype.shortBadge} • ${themeSpec.name}"
                                     }
-                                    else -> "Screen & quiz study helper"
+                                    else -> "Screen & Quiz Study Helper"
                                 },
                                 style = MaterialTheme.typography.bodySmall.copy(
-                                    fontSize = if (isHud) 10.5.sp else 12.sp,
+                                    fontSize = if (isHud) 10.5.sp else 11.5.sp,
                                     fontFamily = if (isHud) FontFamily.Monospace else FontFamily.Default,
                                     fontWeight = FontWeight.Normal,
                                     color = palette.inkSecondary
@@ -2459,7 +2565,18 @@ private fun WhiteGlassTopHeader(
 
                     Spacer(modifier = Modifier.width(8.dp))
 
-                    // Right: Status Button + Settings Gear Button
+                    // Right: Refined Notification Icon + Settings Shortcut
+                    val isLightLiquidHeader = !palette.isDarkObsidian
+                    val actionBgColor = when {
+                        isLightLiquidHeader -> Color(0xE8FFFFFF)
+                        isKineticBar -> palette.canvasTop
+                        else -> palette.glassStrong
+                    }
+                    val actionBorderColor = if (isLightLiquidHeader) {
+                        Color(0xFFC2DAFF)
+                    } else {
+                        palette.cardHairlineBorder
+                    }
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -2468,10 +2585,10 @@ private fun WhiteGlassTopHeader(
                             modifier = Modifier
                                 .size(48.dp)
                                 .clip(actionShape)
-                                .background(if (isKineticBar) palette.canvasTop else palette.glassStrong)
+                                .background(actionBgColor)
                                 .border(
                                     1.dp,
-                                    if (isNotifPinned) palette.accentMint.copy(alpha = 0.6f) else palette.cardHairlineBorder,
+                                    if (isNotifPinned) palette.accentSky.copy(alpha = 0.65f) else actionBorderColor,
                                     actionShape
                                 )
                                 .clickable(role = Role.Button, onClick = onShowNotifications)
@@ -2481,9 +2598,19 @@ private fun WhiteGlassTopHeader(
                             Icon(
                                 imageVector = if (isOverlayRunning || isNotifPinned) Icons.Filled.NotificationsActive else Icons.Filled.Notifications,
                                 contentDescription = "Notifications",
-                                tint = if (isNotifPinned || isOverlayRunning) palette.accentMint else palette.inkPrimary,
+                                tint = if (isNotifPinned || isOverlayRunning) palette.accentSky else palette.inkPrimary,
                                 modifier = Modifier.size(19.dp)
                             )
+                            if (isNotifPinned || isOverlayRunning) {
+                                Box(
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .padding(top = 10.dp, end = 10.dp)
+                                        .size(7.dp)
+                                        .clip(CircleShape)
+                                        .background(palette.accentSky)
+                                )
+                            }
                         }
 
                         // Settings Button (preserving testTag("btn_header_account"))
@@ -2491,8 +2618,8 @@ private fun WhiteGlassTopHeader(
                             modifier = Modifier
                                 .size(48.dp)
                                 .clip(actionShape)
-                                .background(if (isKineticBar) palette.canvasTop else palette.glassStrong)
-                                .border(1.dp, palette.cardHairlineBorder, actionShape)
+                                .background(actionBgColor)
+                                .border(1.dp, actionBorderColor, actionShape)
                                 .clickable(role = Role.Button, onClick = onToggleSettings)
                                 .testTag("btn_header_account"),
                             contentAlignment = Alignment.Center

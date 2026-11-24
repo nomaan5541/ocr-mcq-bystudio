@@ -69,6 +69,21 @@
                 <data android:scheme="https" android:host="docs.google.com" android:pathPrefix="/forms" />
                 <data android:scheme="http" android:host="docs.google.com" android:pathPrefix="/forms" />
             </intent-filter>
+            <!-- Microsoft Forms Direct Link Opening ("Open with Prism") -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="forms.office.com" />
+                <data android:scheme="https" android:host="forms.cloud.microsoft" />
+            </intent-filter>
+            <!-- Prism Live Class Room Invite Deep Link (prism://room/K7M29Q) -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="prism" android:host="room" />
+            </intent-filter>
             <!-- Android Share-Sheet Direct Answer Key: Photos from WhatsApp / Telegram / Gallery -->
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
@@ -95,12 +110,40 @@
             android:exported="false"
             android:theme="@style/Theme.OmniSolveOverlay" />
 
-        <!-- Interactive Google Forms WebView Browser (Sign-In, Multi-Page & Auto-Fill) -->
+        <!-- Interactive Universal Smart Quiz Browser (Open Any Link With Prism, Sign-In, OCR & Auto-Fill) -->
         <activity
             android:name=".GoogleFormsWebActivity"
-            android:exported="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:roundIcon="@mipmap/ic_launcher_round"
+            android:label="Prism Browser"
+            android:launchMode="singleTask"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|density"
-            android:theme="@style/Theme.OmniSolveOverlay" />
+            android:windowSoftInputMode="adjustResize"
+            android:theme="@style/Theme.OmniSolveOverlay">
+            <intent-filter android:label="Prism Browser">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="http" />
+                <data android:scheme="https" />
+            </intent-filter>
+            <intent-filter android:label="Prism Browser">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="http" />
+                <data android:scheme="https" />
+                <data android:mimeType="text/html" />
+                <data android:mimeType="text/plain" />
+                <data android:mimeType="application/xhtml+xml" />
+            </intent-filter>
+            <intent-filter android:label="Open in Prism Browser">
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+        </activity>
 
         <!-- Foreground Service for Overlay WindowManager & Screen Capture -->
         <service

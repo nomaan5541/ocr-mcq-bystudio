@@ -257,8 +257,10 @@ fun GoogleFormsSolveScreen(
         onShowBannerMessage("Unpinned Google Forms notification")
     }
 
-    fun launchInteractiveFormsBrowser() {
-        val targetUrl = state.googleFormUrlInput.trim().ifBlank { "https://docs.google.com/forms" }
+    fun launchInteractiveFormsBrowser(urlOverride: String? = null) {
+        val raw = (urlOverride ?: state.googleFormUrlInput).trim()
+        val normalized = GoogleFormsSolverEngine.normalizeUniversalQuizUrl(raw)
+        val targetUrl = normalized.ifBlank { "https://docs.google.com/forms" }
         webBrowserLauncher.launch(GoogleFormsWebActivity.createIntent(context, targetUrl))
     }
 
@@ -461,7 +463,7 @@ fun GoogleFormsSolveScreen(
                         verticalArrangement = Arrangement.spacedBy(2.dp)
                     ) {
                         Text(
-                            text = "Google Forms",
+                            text = "Universal Quiz Browser",
                             style = MaterialTheme.typography.titleLarge.copy(
                                 color = palette.inkPrimary,
                                 fontWeight = FontWeight.Bold,
@@ -470,7 +472,7 @@ fun GoogleFormsSolveScreen(
                             )
                         )
                         Text(
-                            text = "Same class link solves instantly, even with shuffled options",
+                            text = "Google Forms, Microsoft Forms, Moodle, NPTEL, Testbook & any quiz site",
                             style = MaterialTheme.typography.bodySmall.copy(
                                 color = palette.inkSecondary,
                                 fontSize = 11.5.sp
@@ -509,7 +511,7 @@ fun GoogleFormsSolveScreen(
                         .testTag("input_google_form_url"),
                     placeholder = {
                         Text(
-                            text = "forms.gle/... or docs.google.com/forms/...",
+                            text = "Paste any quiz URL (Google/MS Forms, Moodle...)",
                             color = palette.inkSecondary.copy(alpha = 0.65f),
                             fontSize = 13.sp,
                             maxLines = 1,
@@ -519,7 +521,7 @@ fun GoogleFormsSolveScreen(
                     leadingIcon = {
                         Icon(
                             imageVector = Icons.Filled.Link,
-                            contentDescription = "Google Forms Link",
+                            contentDescription = "Quiz Link",
                             tint = if (state.googleFormUrlInput.isNotBlank()) palette.accentSky else palette.inkSecondary,
                             modifier = Modifier.size(19.dp)
                         )
@@ -532,10 +534,15 @@ fun GoogleFormsSolveScreen(
                                     .minimumInteractiveComponentSize()
                                     .clickable(role = Role.Button) {
                                         val pasted = readClipboardText(context)
-                                        val cleaned = GoogleFormsSolverEngine.extractGoogleFormUrl(pasted)
-                                        if (cleaned.isNotBlank()) {
-                                            onUpdateUrl(cleaned)
+                                        val cleanedForm = GoogleFormsSolverEngine.extractGoogleFormUrl(pasted)
+                                        val cleanedUniversal = GoogleFormsSolverEngine.normalizeUniversalQuizUrl(pasted)
+                                        if (cleanedForm.isNotBlank()) {
+                                            onUpdateUrl(cleanedForm)
                                             onShowBannerMessage("Pasted Google Form link")
+                                        } else if (cleanedUniversal.isNotBlank()) {
+                                            onUpdateUrl(cleanedUniversal)
+                                            val siteLabel = GoogleFormsSolverEngine.detectQuizPlatformLabel(cleanedUniversal)
+                                            onShowBannerMessage("Pasted $siteLabel link")
                                         } else if (pasted.isNotBlank()) {
                                             onUpdateUrl(pasted.trim())
                                             onShowBannerMessage("Pasted text from clipboard")
@@ -727,7 +734,7 @@ fun GoogleFormsSolveScreen(
                         )
                         Spacer(Modifier.width(7.dp))
                         Text(
-                            text = "Form Browser",
+                            text = "Open Quiz Browser",
                             style = MaterialTheme.typography.labelMedium.copy(
                                 color = palette.inkPrimary,
                                 fontWeight = FontWeight.SemiBold,
@@ -779,6 +786,40 @@ fun GoogleFormsSolveScreen(
                                 .size(16.dp)
                                 .graphicsLayer { rotationZ = optionsChevronRotation }
                         )
+                    }
+                }
+
+                // 1-Tap Quick Quiz Sites Rail (Google Forms, Microsoft Forms, Testbook, Sanfoundry, NPTEL, Moodle...)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
+                        .testTag("btn_open_universal_quiz_browser"),
+                    horizontalArrangement = Arrangement.spacedBy(7.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    GoogleFormsSolverEngine.UNIVERSAL_QUICK_QUIZ_SITES.forEach { (siteLabel, siteUrl) ->
+                        Box(
+                            modifier = Modifier
+                                .clip(CircleShape)
+                                .background(palette.canvasBottom)
+                                .border(1.dp, palette.cardHairlineBorder, CircleShape)
+                                .clickable(role = Role.Button) {
+                                    onUpdateUrl(siteUrl)
+                                    launchInteractiveFormsBrowser(siteUrl)
+                                }
+                                .padding(horizontal = 11.dp, vertical = 6.dp)
+                        ) {
+                            Text(
+                                text = siteLabel,
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    color = palette.inkPrimary,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 11.sp
+                                ),
+                                maxLines = 1
+                            )
+                        }
                     }
                 }
 

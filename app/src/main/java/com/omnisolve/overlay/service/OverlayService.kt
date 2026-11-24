@@ -171,7 +171,18 @@ class OverlayService : Service() {
 
         const val ACTION_NOTIF_SOLVE_NOW = "com.omnisolve.overlay.ACTION_NOTIF_SOLVE_NOW"
         const val ACTION_NOTIF_TOGGLE_STEALTH = "com.omnisolve.overlay.ACTION_NOTIF_TOGGLE_STEALTH"
+        const val ACTION_NOTIF_TOGGLE_HIDE_ALL = "com.omnisolve.overlay.ACTION_NOTIF_TOGGLE_HIDE_ALL"
         const val ACTION_NOTIF_STOP = "com.omnisolve.overlay.ACTION_NOTIF_STOP"
+
+        fun isOverlayHidden(): Boolean = instance?.isStealthHiddenAll == true
+
+        fun setOverlayHiddenFromUi(hidden: Boolean): Boolean {
+            val svc = instance ?: return false
+            svc.mainHandler.post {
+                svc.setOverlayHidden(hidden)
+            }
+            return true
+        }
         const val ACTION_PIN_FORMS_KEY = "com.omnisolve.overlay.ACTION_PIN_FORMS_KEY"
         const val ACTION_UNPIN_FORMS_KEY = "com.omnisolve.overlay.ACTION_UNPIN_FORMS_KEY"
         const val EXTRA_FORMS_COMPACT_KEY = "EXTRA_FORMS_COMPACT_KEY"
@@ -753,9 +764,13 @@ class OverlayService : Service() {
 
     private var latestScreenTextBlocks: List<Pair<String, Rect>> = emptyList()
 
-    // Hardware volume button fallback receiver
+    // Hardware volume double-press stealth trigger & 1-tap Hide All panic state
     private var volumeReceiver: BroadcastReceiver? = null
-    private var lastVolumeTriggerTime = 0L
+    private var lastVolumePressTimeMs = 0L
+    private var lastVolumeSolveFireMs = 0L
+    @Volatile
+    private var isStealthHiddenAll = false
+    private var lastSilentNotificationAnswer: String? = null
 
     // ─── Lifecycle ────────────────────────────────────────────────────────────
 
@@ -815,24 +830,71 @@ class OverlayService : Service() {
         }
     }
 
+    private fun setOverlayHidden(hidden: Boolean) {
+        isStealthHiddenAll = hidden
+        try {
+            getSharedPreferences("OmniSolvePrefs", Context.MODE_PRIVATE)
+                .edit()
+                .putBoolean(MainActivity.PREF_KEY_STEALTH_HIDE_ALL, hidden)
+                .apply()
+        } catch (_: Exception) {}
+
+        bubbleView?.let { pill ->
+            pill.animate().cancel()
+            pill.visibility = if (hidden) View.GONE else View.VISIBLE
+            if (!hidden) {
+                pill.alpha = (customOpacityPct.coerceIn(20, 100) / 100f)
+            }
+        }
+        if (hidden) {
+            if (isWindowVisible) {
+                geminiWindowView?.visibility = View.GONE
+                isWindowVisible = false
+            }
+            cropOverlayView?.visibility = View.GONE
+        }
+        refreshOngoingNotification()
+    }
+
     private fun registerVolumeButtonReceiver() {
         if (volumeReceiver != null) return
         volumeReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
-                if (intent?.action == "android.media.VOLUME_CHANGED_ACTION") {
-                    val now = System.currentTimeMillis()
-                    if (now - lastVolumeTriggerTime > 1500) { // 1.5s debounce
-                        lastVolumeTriggerTime = now
-                        Log.d(TAG, "Hardware volume change detected via broadcast receiver")
-                        triggerSolveFromHardware()
+                if (intent?.action != "android.media.VOLUME_CHANGED_ACTION") return
+                val prefs = try {
+                    getSharedPreferences("OmniSolvePrefs", Context.MODE_PRIVATE)
+                } catch (_: Exception) {
+                    null
+                }
+                // Only fire when the user explicitly enabled Double-Press Volume Trigger in Settings
+                val doublePressEnabled = prefs?.getBoolean(MainActivity.PREF_KEY_VOLUME_DOUBLE_PRESS, false) ?: false
+                if (!doublePressEnabled) return
+
+                val newVol = intent.getIntExtra("android.media.EXTRA_VOLUME_STREAM_VALUE", -1)
+                val oldVol = intent.getIntExtra("android.media.EXTRA_VOLUME_STREAM_PREV_VALUE", -1)
+                // Prefer Volume Down presses (or same-level press at 0 volume) so turning volume UP never misfires
+                if (newVol >= 0 && oldVol >= 0 && newVol > oldVol) return
+
+                val now = System.currentTimeMillis()
+                if (now - lastVolumeSolveFireMs < 2200L) return
+
+                if (now - lastVolumePressTimeMs in 80L..680L) {
+                    lastVolumePressTimeMs = 0L
+                    lastVolumeSolveFireMs = now
+                    Log.d(TAG, "Double-press Volume Down stealth trigger fired")
+                    if (isHapticFeedbackEnabled) {
+                        triggerHapticFeedback("A")
                     }
+                    triggerSolveFromHardware()
+                } else {
+                    lastVolumePressTimeMs = now
                 }
             }
         }
         try {
             val filter = IntentFilter("android.media.VOLUME_CHANGED_ACTION")
             registerReceiver(volumeReceiver, filter)
-            Log.d(TAG, "Registered volume button fallback receiver")
+            Log.d(TAG, "Registered double-press volume stealth receiver")
         } catch (e: Exception) {
             Log.w(TAG, "Could not register volume receiver: ${e.message}")
         }
@@ -856,6 +918,16 @@ class OverlayService : Service() {
             ACTION_NOTIF_SOLVE_NOW -> {
                 if (isForegroundStarted) {
                     onUserTapSolve()
+                } else {
+                    stopSelf()
+                }
+                return START_NOT_STICKY
+            }
+            ACTION_NOTIF_TOGGLE_HIDE_ALL -> {
+                if (isForegroundStarted) {
+                    mainHandler.post {
+                        setOverlayHidden(!isStealthHiddenAll)
+                    }
                 } else {
                     stopSelf()
                 }
@@ -4764,6 +4836,15 @@ class OverlayService : Service() {
                     animateAnswerPop(tvAnswerDisplay)
                     animateAnswerPop(tvWindowAnswerBadge)
                     triggerHapticFeedback(normalized)
+                    if (isStealthHiddenAll) {
+                        val wordHint = latestAnswerModel?.shortAnswer?.trim().orEmpty()
+                        lastSilentNotificationAnswer = if (wordHint.isNotBlank() && !wordHint.equals(normalized, ignoreCase = true)) {
+                            "Answer: $normalized · $wordHint"
+                        } else {
+                            "Answer: $normalized"
+                        }
+                        refreshOngoingNotification()
+                    }
                 }
                 wakeAndScheduleIdleFade()
             }
@@ -5169,40 +5250,46 @@ class OverlayService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        val contentTitle = when {
+            isStealthHiddenAll && !lastSilentNotificationAnswer.isNullOrBlank() -> lastSilentNotificationAnswer!!
+            isStealthHiddenAll -> "Prism Hidden (Stealth Ready)"
+            else -> "Prism Solver Active"
+        }
+        val contentText = when {
+            isStealthHiddenAll -> "Pill is hidden. Double-press Volume Down or tap Solve Now."
+            isCamouflageEnabled -> "Charging disguise ready. Tap the pill to solve."
+            else -> "Ready on screen. Tap pill or Hide All anytime."
+        }
+
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Prism Solver Active")
-            .setContentText(
-                if (isCamouflageEnabled) "Charging disguise ready. Tap the pill to solve."
-                else "Ready on screen. Tap the top pill to solve."
-            )
+            .setContentTitle(contentTitle)
+            .setContentText(contentText)
             .setSmallIcon(R.drawable.ic_prism_orb)
             .setContentIntent(openAppIntent)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setOngoing(true)
 
-        if (isAdvEnabled(MainActivity.PREF_KEY_ADV_QUICK_TILE_NOTIF)) {
-            val solvePi = PendingIntent.getService(
-                this,
-                101,
-                Intent(this, OverlayService::class.java).apply { action = ACTION_NOTIF_SOLVE_NOW },
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-            val stealthPi = PendingIntent.getService(
-                this,
-                102,
-                Intent(this, OverlayService::class.java).apply { action = ACTION_NOTIF_TOGGLE_STEALTH },
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-            val stopPi = PendingIntent.getService(
-                this,
-                103,
-                Intent(this, OverlayService::class.java).apply { action = ACTION_NOTIF_STOP },
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-            builder.addAction(0, "Solve Now", solvePi)
-            builder.addAction(0, if (isCamouflageEnabled) "ABCD" else "Stealth", stealthPi)
-            builder.addAction(0, "Stop", stopPi)
-        }
+        val solvePi = PendingIntent.getService(
+            this,
+            101,
+            Intent(this, OverlayService::class.java).apply { action = ACTION_NOTIF_SOLVE_NOW },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val hideAllPi = PendingIntent.getService(
+            this,
+            104,
+            Intent(this, OverlayService::class.java).apply { action = ACTION_NOTIF_TOGGLE_HIDE_ALL },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val stopPi = PendingIntent.getService(
+            this,
+            103,
+            Intent(this, OverlayService::class.java).apply { action = ACTION_NOTIF_STOP },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        builder.addAction(0, "Solve Now", solvePi)
+        builder.addAction(0, if (isStealthHiddenAll) "Show Pill" else "Hide All", hideAllPi)
+        builder.addAction(0, "Stop", stopPi)
 
         return builder.build()
     }

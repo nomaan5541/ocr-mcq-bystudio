@@ -5,7 +5,8 @@
     <!-- Header & Navigation -->
     <string name="header_subtitle">Screen &amp; Quiz Study Helper</string>
     <string name="nav_home">Home</string>
-    <string name="nav_stats">Add</string>
+    <string name="nav_stats">Rooms</string>
+    <string name="nav_browser">Browser</string>
     <string name="nav_settings">Settings</string>
 
     <!-- Home Screen -->

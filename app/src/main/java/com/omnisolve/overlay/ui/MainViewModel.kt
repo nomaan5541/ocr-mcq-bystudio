@@ -18,6 +18,7 @@ import com.google.firebase.FirebaseApp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseAuthRecentLoginRequiredException
 import com.google.firebase.auth.auth
+import com.google.firebase.firestore.FirebaseFirestoreException
 import com.omnisolve.overlay.MainActivity
 import com.omnisolve.overlay.api.CircleToSearchEngine
 import com.omnisolve.overlay.api.FormSolveException
@@ -42,6 +43,9 @@ import com.omnisolve.overlay.capture.OcrEngine
 import com.omnisolve.overlay.data.DailyUsageSnapshot
 import com.omnisolve.overlay.data.FirebaseTelemetryRepository
 import com.omnisolve.overlay.data.GoogleAuthManager
+import com.omnisolve.overlay.data.LiveClassRoom
+import com.omnisolve.overlay.data.LiveClassRoomRepository
+import com.omnisolve.overlay.data.LiveRoomAnswer
 import com.omnisolve.overlay.data.LocalThemeRepository
 import com.omnisolve.overlay.data.SettingsDataStoreRepository
 import com.omnisolve.overlay.data.SolvedQuestionRecord
@@ -128,7 +132,8 @@ enum class HomeSubScreen(val title: String, val subtitle: String) {
     MAIN("Prism Solver", "MCQ, Math & Forms screen helper"),
     ANSWER_MODELS("Solving Speed & Style", "Smart Auto, Double-Check Accuracy, or Math Vision"),
     DYNAMIC_ISLAND_STUDIO("Floating Pill Look", "Pick pill size, look & transparency"),
-    GOOGLE_FORMS_SOLVE("Google Forms Solve", "Paste a quiz link to get answers & auto-fill"),
+    GOOGLE_FORMS_SOLVE("Quiz Browser & Forms", "Google Forms, Microsoft Forms, Moodle & any quiz site"),
+    LIVE_CLASS_ROOM("Live Class Room", "Sync live quiz answers with classmates"),
     NOTIFICATION_STUDIO("Notification Studio", "Pin answer strips & quick alerts"),
     THEME_STUDIO("Themes", "Switch themes & layouts"),
     EXPORT_QA("History & Offline Cache", "Browse saved answers offline or export study sheets"),
@@ -216,6 +221,8 @@ data class MainUiState(
     val dfDiagramVisionEnabled: Boolean = false,
     val dfQuickCropEnabled: Boolean = false,
     val dfSwipeMethodLoopEnabled: Boolean = true,
+    val volumeDoublePressEnabled: Boolean = false,
+    val isStealthHiddenAll: Boolean = false,
 
     // Dynamic Island Studio Extended Customization
     val islandAccentTheme: String = com.omnisolve.overlay.ui.DynamicIslandBorderDrawable.ACCENT_CRIMSON,
@@ -249,6 +256,17 @@ data class MainUiState(
     val googleFormResult: GoogleFormSolveResult? = null,
     val isGoogleFormPinned: Boolean = false,
     val isFormsKeyPinnedOnIsland: Boolean = false,
+
+    // Prism Live Class Rooms (Real-Time Discord-Style Multiplayer Quiz Sync)
+    val activeLiveClassRoom: LiveClassRoom? = null,
+    val liveClassRoomMembers: List<com.omnisolve.overlay.data.LiveRoomMember> = emptyList(),
+    val myLiveRoomMemberStatus: String? = null,
+    val liveClassRoomAnswers: List<LiveRoomAnswer> = emptyList(),
+    val liveClassRoomAutoSync: Boolean = true,
+    val isLiveClassRoomBusy: Boolean = false,
+    val liveClassRoomError: String? = null,
+    val liveClassRoomVotedIds: Set<String> = emptySet(),
+    val liveClassRoomVerifyingAnswerId: String? = null,
 
     // Prism Ask Universal Gemini Studio (Give anything: text, photo, or PDF)
     val universalMessages: List<UniversalChatMessage> = emptyList(),
@@ -326,6 +344,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var universalSolveJob: Job? = null
     private var telemetryProfileJob: Job? = null
     private var telemetryLogsJob: Job? = null
+    private var liveRoomObserverJob: Job? = null
+    private var liveRoomMembersJob: Job? = null
+    private var liveRoomAnswersJob: Job? = null
     private var appSessionRequestsCount: Long = 0L
     private val sharedOcrEngine: com.omnisolve.overlay.capture.OcrEngine by lazy {
         com.omnisolve.overlay.capture.OcrEngine()
@@ -407,6 +428,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         persistWarmCacheSnapshotAsync()
         _uiState.value.firebaseUserId?.takeIf { it.isNotBlank() }?.let { uid ->
             restoreSolvedHistoryFromCloudIfNeeded(uid)
+            restoreSavedLiveClassRoomIfActive()
         }
     }
 
@@ -563,8 +585,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         UserUsageLimitManager.getSnapshot(ctx, user.uid)
                     }
                     startCloudTelemetryObservers(user.uid)
+                    restoreSavedLiveClassRoomIfActive()
                 } else {
                     stopCloudTelemetryObservers()
+                    stopLiveClassRoomObservers()
                     F1MasterEngine.onAccountSignedOut()
                     UserUsageLimitManager.getSnapshot(ctx, "")
                     prefs.edit()
@@ -583,7 +607,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         displayMode = if (signedIn) cur.displayMode else MainActivity.MODE_STEALTH,
                         cloudActivityProfile = if (signedIn) cur.cloudActivityProfile else null,
                         recentCloudRequestLogs = if (signedIn) cur.recentCloudRequestLogs else emptyList(),
-                        cloudTelemetryError = if (signedIn) cur.cloudTelemetryError else null
+                        cloudTelemetryError = if (signedIn) cur.cloudTelemetryError else null,
+                        activeLiveClassRoom = if (signedIn) cur.activeLiveClassRoom else null,
+                        liveClassRoomMembers = if (signedIn) cur.liveClassRoomMembers else emptyList(),
+                        myLiveRoomMemberStatus = if (signedIn) cur.myLiveRoomMemberStatus else null,
+                        liveClassRoomAnswers = if (signedIn) cur.liveClassRoomAnswers else emptyList(),
+                        liveClassRoomError = if (signedIn) cur.liveClassRoomError else null,
+                        liveClassRoomVotedIds = if (signedIn) cur.liveClassRoomVotedIds else emptySet(),
+                        liveClassRoomVerifyingAnswerId = if (signedIn) cur.liveClassRoomVerifyingAnswerId else null
                     )
                 }
                 persistWarmCacheSnapshotAsync()
@@ -819,6 +850,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     override fun onCleared() {
         super.onCleared()
         stopCloudTelemetryObservers()
+        stopLiveClassRoomObservers()
         try {
             sharedOcrEngine.close()
         } catch (_: Exception) {
@@ -959,6 +991,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             autoCopyClipboard = prefs.getBoolean(MainActivity.PREF_KEY_AUTO_COPY_CLIPBOARD, false),
             hapticEnabled = prefs.getBoolean(MainActivity.PREF_KEY_HAPTIC, true),
             batteryCamouflage = prefs.getBoolean(MainActivity.PREF_KEY_CAMOUFLAGE, false),
+            volumeDoublePressEnabled = prefs.getBoolean(MainActivity.PREF_KEY_VOLUME_DOUBLE_PRESS, false),
+            isStealthHiddenAll = OverlayService.isOverlayHidden(),
             companionSyncEnabled = prefs.getBoolean(MainActivity.PREF_KEY_COMPANION_SYNC_ENABLED, false),
             companionHost = prefs.getString(MainActivity.PREF_KEY_COMPANION_HOST, "192.168.1.100") ?: "192.168.1.100",
             companionPort = prefs.getInt(MainActivity.PREF_KEY_COMPANION_PORT, 59124),
@@ -1013,6 +1047,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             googleFormsModel = normalizedFormsModel,
             googleFormResult = GoogleFormsSessionStore.getLastResult(getApplication()),
             isGoogleFormPinned = GoogleFormsNotificationHelper.isNotificationPinned(getApplication()),
+            liveClassRoomAutoSync = LiveClassRoomRepository.isAutoSyncEnabled(getApplication()),
             onboardingGuideCompleted = prefs.getBoolean("PREF_ONBOARDING_GUIDE_SEEN", false),
             showOnboardingGuide = false,
             customPinConfig = PrismEngagementNotificationManager.loadCustomPinConfig(getApplication()),
@@ -1180,6 +1215,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         cloudActivityProfile = null,
                         recentCloudRequestLogs = emptyList(),
                         cloudTelemetryError = null,
+                        activeLiveClassRoom = null,
+                        liveClassRoomMembers = emptyList(),
+                        myLiveRoomMemberStatus = null,
+                        liveClassRoomAnswers = emptyList(),
+                        liveClassRoomVotedIds = emptySet(),
+                        liveClassRoomError = null,
                         signInPromptDismissedForOcrOnly = false,
                         solverMethod = SolverMethod.BACKGROUND_GEMINI,
                         displayMode = MainActivity.MODE_STEALTH
@@ -1583,6 +1624,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             else "Answer format: Option ABCD"
         )
         onSyncService()
+    }
+
+    fun setVolumeDoublePressEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(MainActivity.PREF_KEY_VOLUME_DOUBLE_PRESS, enabled).apply()
+        _uiState.update { it.copy(volumeDoublePressEnabled = enabled) }
+        showBannerMessage(
+            if (enabled) "Stealth trigger on: double-press Volume Down to solve silently"
+            else "Double-press Volume Down trigger turned off"
+        )
+    }
+
+    fun toggleStealthHideAll() {
+        if (!OverlayService.isServiceRunning()) {
+            showBannerMessage("Start the Floating Helper first to hide or show the pill")
+            return
+        }
+        val nextHidden = !OverlayService.isOverlayHidden()
+        OverlayService.setOverlayHiddenFromUi(nextHidden)
+        _uiState.update { it.copy(isStealthHiddenAll = nextHidden) }
+        showBannerMessage(
+            if (nextHidden) "Pill hidden! Double-press Volume Down or pull down notifications to solve"
+            else "Floating pill restored on screen"
+        )
     }
 
     fun updateCompanionConnection(
@@ -2467,6 +2531,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val finalResult = GoogleFormsSolverEngine.combineSolvedResults(existing, solvedBatch)
         GoogleFormsSessionStore.saveResult(appContext, finalResult)
 
+        if (_uiState.value.activeLiveClassRoom != null && _uiState.value.liveClassRoomAutoSync) {
+            val platformSource = GoogleFormsSolverEngine.detectQuizPlatformLabel(finalResult.resolvedUrl)
+            viewModelScope.launch(Dispatchers.IO) {
+                runCatching {
+                    LiveClassRoomRepository.publishQuizResultToRoom(
+                        context = appContext,
+                        result = finalResult,
+                        sourceLabel = platformSource
+                    )
+                }
+            }
+        }
+
         val updatedCount = _uiState.value.solvedCount + solvedBatch.items.size
         prefs.edit().putInt("PREF_SOLVED_COUNT", updatedCount).apply()
         appSessionRequestsCount++
@@ -3175,17 +3252,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         val cur = _uiState.value
+        // Reset conflicting color override when picking an explicit light or studio dark flagship preset
+        val resolvedAppearanceOverride = if (
+            !spec.isDark ||
+            spec.themeId == com.omnisolve.overlay.ui.theme.GLASS_PRISM_THEME.themeId ||
+            spec.themeId == com.omnisolve.overlay.ui.theme.CRIMSON_STUDIO_THEME.themeId
+        ) {
+            ThemeColorAppearance.AUTO
+        } else {
+            cur.themeColorAppearanceOverride
+        }
         val nextEffective = computeEffectiveSpec(
             preferLocalDefault = false,
             selectedPresetId = spec.themeId,
             animationOverride = cur.themeAnimationOverride,
-            appearanceOverride = cur.themeColorAppearanceOverride
+            appearanceOverride = resolvedAppearanceOverride
         )
         persistIslandCustomHexForTheme(nextEffective)
         _uiState.update {
             it.copy(
                 preferLocalDefaultTheme = false,
                 selectedThemePresetId = spec.themeId,
+                themeColorAppearanceOverride = resolvedAppearanceOverride,
                 effectiveThemeSpec = nextEffective
             )
         }
@@ -3193,18 +3281,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             preferLocalDefault = false,
             selectedPresetId = spec.themeId,
             animationIntensityOverride = cur.themeAnimationOverride,
-            colorAppearanceOverride = cur.themeColorAppearanceOverride
+            colorAppearanceOverride = resolvedAppearanceOverride
         )
         launchDataStoreWrite {
             settingsDataStore.updateThemeSettings(
                 preferLocalDefault = false,
                 selectedPresetId = spec.themeId,
                 animationIntensityOverride = cur.themeAnimationOverride,
-                colorAppearanceOverride = cur.themeColorAppearanceOverride
+                colorAppearanceOverride = resolvedAppearanceOverride
             )
         }
         onSyncService()
-        showBannerMessage("Applied offline theme: ${spec.name}")
+        showBannerMessage("Applied theme: ${spec.name}")
     }
 
     fun revertToNormalDefaultTheme(onSyncService: () -> Unit = {}) {
@@ -3648,6 +3736,402 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             } finally {
                 universalSolveJob = null
                 _uiState.update { it.copy(isUniversalSolving = false) }
+            }
+        }
+    }
+
+    // ── PRISM LIVE CLASS ROOMS (REAL-TIME MULTIPLAYER QUIZ SYNC) ──────────────
+
+    private fun stopLiveClassRoomObservers() {
+        liveRoomObserverJob?.cancel()
+        liveRoomObserverJob = null
+        liveRoomMembersJob?.cancel()
+        liveRoomMembersJob = null
+        liveRoomAnswersJob?.cancel()
+        liveRoomAnswersJob = null
+    }
+
+    private fun startLiveClassRoomObservers(roomCode: String) {
+        stopLiveClassRoomObservers()
+        val ctx = getApplication<Application>()
+        val cleanCode = LiveClassRoomRepository.normalizeRoomCode(roomCode)
+        if (!LiveClassRoomRepository.isValidRoomCode(cleanCode)) return
+
+        liveRoomObserverJob = viewModelScope.launch {
+            LiveClassRoomRepository.observeRoom(ctx, cleanCode)
+                .catch { error ->
+                    val fsErr = generateSequence(error) { it.cause }
+                        .filterIsInstance<FirebaseFirestoreException>()
+                        .firstOrNull()
+                    if (error is CancellationException && fsErr == null) throw error
+                    _uiState.update {
+                        it.copy(
+                            liveClassRoomError = fsErr?.message?.takeIf { m -> m.isNotBlank() }
+                                ?: "Live room connection paused. Check internet connection."
+                        )
+                    }
+                }
+                .collect { room ->
+                    if (room == null || !room.active || room.isExpired()) {
+                        LiveClassRoomRepository.saveActiveRoomCode(ctx, null)
+                        stopLiveClassRoomObservers()
+                        _uiState.update {
+                            it.copy(
+                                activeLiveClassRoom = null,
+                                liveClassRoomMembers = emptyList(),
+                                myLiveRoomMemberStatus = null,
+                                liveClassRoomAnswers = emptyList(),
+                                liveClassRoomError = if (room != null && !room.active) {
+                                    "The host ended this Live Class Room."
+                                } else null
+                            )
+                        }
+                    } else {
+                        _uiState.update {
+                            val myUid = it.firebaseUserId
+                            val computedStatus = if (!myUid.isNullOrBlank() && room.hostUid == myUid) {
+                                com.omnisolve.overlay.data.LiveRoomMember.STATUS_APPROVED
+                            } else {
+                                it.myLiveRoomMemberStatus
+                            }
+                            it.copy(
+                                activeLiveClassRoom = room,
+                                myLiveRoomMemberStatus = computedStatus,
+                                liveClassRoomError = null
+                            )
+                        }
+                    }
+                }
+        }
+
+        liveRoomMembersJob = viewModelScope.launch {
+            LiveClassRoomRepository.observeMembers(ctx, cleanCode)
+                .catch { error ->
+                    val fsErr = generateSequence(error) { it.cause }
+                        .filterIsInstance<FirebaseFirestoreException>()
+                        .firstOrNull()
+                    if (error is CancellationException && fsErr == null) throw error
+                }
+                .collect { members ->
+                    val curRoom = _uiState.value.activeLiveClassRoom
+                    val myUid = _uiState.value.firebaseUserId
+                    val isHost = curRoom != null && !myUid.isNullOrBlank() && curRoom.hostUid == myUid
+                    val myRecord = members.firstOrNull { it.uid == myUid }
+                    val prevStatus = _uiState.value.myLiveRoomMemberStatus
+                    if (!isHost && !myUid.isNullOrBlank() && myRecord == null && prevStatus != null && members.isNotEmpty()) {
+                        // Host declined or removed this member
+                        LiveClassRoomRepository.saveActiveRoomCode(ctx, null)
+                        stopLiveClassRoomObservers()
+                        _uiState.update {
+                            it.copy(
+                                activeLiveClassRoom = null,
+                                liveClassRoomMembers = emptyList(),
+                                myLiveRoomMemberStatus = null,
+                                liveClassRoomAnswers = emptyList(),
+                                liveClassRoomError = "Your join request was declined or you were removed by the host."
+                            )
+                        }
+                        return@collect
+                    }
+                    val nextStatus = when {
+                        isHost -> com.omnisolve.overlay.data.LiveRoomMember.STATUS_APPROVED
+                        myRecord != null -> myRecord.status
+                        else -> prevStatus
+                    }
+                    if (!isHost && prevStatus == com.omnisolve.overlay.data.LiveRoomMember.STATUS_PENDING &&
+                        nextStatus == com.omnisolve.overlay.data.LiveRoomMember.STATUS_APPROVED
+                    ) {
+                        showBannerMessage("Host approved you! Welcome to the room.")
+                    }
+                    _uiState.update {
+                        it.copy(
+                            liveClassRoomMembers = members,
+                            myLiveRoomMemberStatus = nextStatus
+                        )
+                    }
+                }
+        }
+
+        liveRoomAnswersJob = viewModelScope.launch {
+            LiveClassRoomRepository.observeAnswers(ctx, cleanCode)
+                .catch { error ->
+                    val fsErr = generateSequence(error) { it.cause }
+                        .filterIsInstance<FirebaseFirestoreException>()
+                        .firstOrNull()
+                    if (error is CancellationException && fsErr == null) throw error
+                    _uiState.update {
+                        it.copy(
+                            liveClassRoomError = fsErr?.message?.takeIf { m -> m.isNotBlank() }
+                                ?: "Could not sync room answers right now."
+                        )
+                    }
+                }
+                .collect { answers ->
+                    _uiState.update {
+                        it.copy(
+                            liveClassRoomAnswers = answers,
+                            liveClassRoomError = null
+                        )
+                    }
+                }
+        }
+    }
+
+    private fun restoreSavedLiveClassRoomIfActive() {
+        val ctx = getApplication<Application>()
+        val savedCode = LiveClassRoomRepository.getSavedActiveRoomCode(ctx) ?: return
+        if (FirebaseApp.getApps(ctx).isEmpty()) return
+        if (_uiState.value.activeLiveClassRoom?.roomCode == savedCode && liveRoomObserverJob?.isActive == true) {
+            return
+        }
+        viewModelScope.launch {
+            val res = LiveClassRoomRepository.requestJoinRoom(ctx, savedCode)
+            res.onSuccess { outcome ->
+                _uiState.update {
+                    it.copy(
+                        activeLiveClassRoom = outcome.room,
+                        myLiveRoomMemberStatus = outcome.memberStatus,
+                        liveClassRoomVotedIds = LiveClassRoomRepository.getVotedAnswerIds(ctx, outcome.room.roomCode),
+                        liveClassRoomError = null
+                    )
+                }
+                startLiveClassRoomObservers(outcome.room.roomCode)
+            }.onFailure {
+                LiveClassRoomRepository.saveActiveRoomCode(ctx, null)
+            }
+        }
+    }
+
+    fun createLiveClassRoom(roomName: String, subject: SubjectMode, initialQuizUrl: String = "") {
+        val ctx = getApplication<Application>()
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLiveClassRoomBusy = true, liveClassRoomError = null) }
+            val result = LiveClassRoomRepository.createRoom(ctx, roomName, subject, initialQuizUrl)
+            result.onSuccess { room ->
+                _uiState.update {
+                    it.copy(
+                        isLiveClassRoomBusy = false,
+                        activeLiveClassRoom = room,
+                        liveClassRoomMembers = emptyList(),
+                        myLiveRoomMemberStatus = com.omnisolve.overlay.data.LiveRoomMember.STATUS_APPROVED,
+                        liveClassRoomAnswers = emptyList(),
+                        liveClassRoomVotedIds = emptySet(),
+                        liveClassRoomError = null
+                    )
+                }
+                startLiveClassRoomObservers(room.roomCode)
+                showBannerMessage("Live Room created · Code ${room.formattedCode()}")
+            }.onFailure { err ->
+                _uiState.update {
+                    it.copy(
+                        isLiveClassRoomBusy = false,
+                        liveClassRoomError = err.message ?: "Could not create room. Please try again."
+                    )
+                }
+            }
+        }
+    }
+
+    fun joinLiveClassRoom(rawCode: String) {
+        val ctx = getApplication<Application>()
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLiveClassRoomBusy = true, liveClassRoomError = null) }
+            val result = LiveClassRoomRepository.requestJoinRoom(ctx, rawCode)
+            result.onSuccess { outcome ->
+                _uiState.update {
+                    it.copy(
+                        isLiveClassRoomBusy = false,
+                        activeLiveClassRoom = outcome.room,
+                        myLiveRoomMemberStatus = outcome.memberStatus,
+                        liveClassRoomVotedIds = LiveClassRoomRepository.getVotedAnswerIds(ctx, outcome.room.roomCode),
+                        liveClassRoomError = null
+                    )
+                }
+                startLiveClassRoomObservers(outcome.room.roomCode)
+                if (outcome.memberStatus == com.omnisolve.overlay.data.LiveRoomMember.STATUS_APPROVED) {
+                    showBannerMessage("Joined ${outcome.room.roomName} (${outcome.room.formattedCode()})")
+                } else {
+                    showBannerMessage("Join request sent · Waiting for ${outcome.room.hostName} to approve")
+                }
+            }.onFailure { err ->
+                _uiState.update {
+                    it.copy(
+                        isLiveClassRoomBusy = false,
+                        liveClassRoomError = err.message ?: "Could not join room. Check the 6-character code."
+                    )
+                }
+            }
+        }
+    }
+
+    fun approveLiveRoomMember(targetUid: String) {
+        val ctx = getApplication<Application>()
+        val room = _uiState.value.activeLiveClassRoom ?: return
+        val approvedCount = _uiState.value.liveClassRoomMembers.count {
+            it.status == com.omnisolve.overlay.data.LiveRoomMember.STATUS_APPROVED
+        }.coerceAtLeast(1)
+        viewModelScope.launch {
+            val res = LiveClassRoomRepository.approveMember(ctx, room.roomCode, targetUid, approvedCount)
+            res.onSuccess {
+                showBannerMessage("Approved classmate into room")
+            }.onFailure { err ->
+                _uiState.update { it.copy(liveClassRoomError = err.message ?: "Could not approve member.") }
+            }
+        }
+    }
+
+    fun rejectOrRemoveLiveRoomMember(targetUid: String, wasApproved: Boolean) {
+        val ctx = getApplication<Application>()
+        val room = _uiState.value.activeLiveClassRoom ?: return
+        val approvedCount = _uiState.value.liveClassRoomMembers.count {
+            it.status == com.omnisolve.overlay.data.LiveRoomMember.STATUS_APPROVED
+        }.coerceAtLeast(1)
+        viewModelScope.launch {
+            val res = LiveClassRoomRepository.rejectOrRemoveMember(
+                context = ctx,
+                roomCode = room.roomCode,
+                targetUid = targetUid,
+                wasApproved = wasApproved,
+                currentApprovedCount = approvedCount
+            )
+            res.onSuccess {
+                showBannerMessage(if (wasApproved) "Removed member from room" else "Declined join request")
+            }.onFailure { err ->
+                _uiState.update { it.copy(liveClassRoomError = err.message ?: "Could not update member.") }
+            }
+        }
+    }
+
+    fun updateLiveRoomLockedUrl(rawUrl: String) {
+        val ctx = getApplication<Application>()
+        val room = _uiState.value.activeLiveClassRoom ?: return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLiveClassRoomBusy = true, liveClassRoomError = null) }
+            val res = LiveClassRoomRepository.updateLockedQuizUrl(ctx, room.roomCode, rawUrl)
+            res.onSuccess { normalized ->
+                _uiState.update {
+                    it.copy(
+                        isLiveClassRoomBusy = false,
+                        activeLiveClassRoom = it.activeLiveClassRoom?.copy(quizUrl = normalized)
+                    )
+                }
+                showBannerMessage("Locked exam link updated for everyone in the room")
+            }.onFailure { err ->
+                _uiState.update {
+                    it.copy(
+                        isLiveClassRoomBusy = false,
+                        liveClassRoomError = err.message ?: "Could not lock exam link."
+                    )
+                }
+            }
+        }
+    }
+
+    fun leaveLiveClassRoom() {
+        val ctx = getApplication<Application>()
+        val activeCode = _uiState.value.activeLiveClassRoom?.roomCode
+        stopLiveClassRoomObservers()
+        viewModelScope.launch {
+            LiveClassRoomRepository.leaveRoom(ctx, activeCode)
+        }
+        _uiState.update {
+            it.copy(
+                activeLiveClassRoom = null,
+                liveClassRoomMembers = emptyList(),
+                myLiveRoomMemberStatus = null,
+                liveClassRoomAnswers = emptyList(),
+                liveClassRoomVotedIds = emptySet(),
+                liveClassRoomError = null
+            )
+        }
+        showBannerMessage("Left Live Class Room")
+    }
+
+    fun endLiveClassRoom() {
+        val ctx = getApplication<Application>()
+        val activeCode = _uiState.value.activeLiveClassRoom?.roomCode ?: return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLiveClassRoomBusy = true, liveClassRoomError = null) }
+            val res = LiveClassRoomRepository.endRoom(ctx, activeCode)
+            res.onSuccess {
+                stopLiveClassRoomObservers()
+                _uiState.update {
+                    it.copy(
+                        isLiveClassRoomBusy = false,
+                        activeLiveClassRoom = null,
+                        liveClassRoomMembers = emptyList(),
+                        myLiveRoomMemberStatus = null,
+                        liveClassRoomAnswers = emptyList(),
+                        liveClassRoomVotedIds = emptySet(),
+                        liveClassRoomError = null
+                    )
+                }
+                showBannerMessage("Ended Live Class Room")
+            }.onFailure { err ->
+                _uiState.update {
+                    it.copy(
+                        isLiveClassRoomBusy = false,
+                        liveClassRoomError = err.message ?: "Could not end room."
+                    )
+                }
+            }
+        }
+    }
+
+    fun toggleLiveClassRoomAutoSync(enabled: Boolean) {
+        val ctx = getApplication<Application>()
+        LiveClassRoomRepository.setAutoSyncEnabled(ctx, enabled)
+        _uiState.update { it.copy(liveClassRoomAutoSync = enabled) }
+        showBannerMessage(
+            if (enabled) "Auto-Sync ON · Your solved answers broadcast live to the room"
+            else "Auto-Sync paused · Answers won't auto-push until you re-enable"
+        )
+    }
+
+    fun voteLiveRoomAnswer(answerId: String, confirm: Boolean) {
+        val ctx = getApplication<Application>()
+        val roomCode = _uiState.value.activeLiveClassRoom?.roomCode ?: return
+        if (answerId in _uiState.value.liveClassRoomVotedIds) return
+        viewModelScope.launch {
+            val res = LiveClassRoomRepository.voteAnswer(ctx, roomCode, answerId, confirm)
+            res.onSuccess {
+                _uiState.update {
+                    it.copy(liveClassRoomVotedIds = LiveClassRoomRepository.getVotedAnswerIds(ctx, roomCode))
+                }
+            }.onFailure { err ->
+                showBannerMessage(err.message ?: "Could not save vote")
+            }
+        }
+    }
+
+    fun verifyLiveRoomAnswerWithAi(answer: LiveRoomAnswer) {
+        val ctx = getApplication<Application>()
+        val room = _uiState.value.activeLiveClassRoom ?: return
+        if (_uiState.value.liveClassRoomVerifyingAnswerId != null) return
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    liveClassRoomVerifyingAnswerId = answer.id,
+                    liveClassRoomError = null
+                )
+            }
+            val subj = SubjectMode.fromId(room.subject)
+            val res = LiveClassRoomRepository.verifyAnswerWithAiTieBreaker(
+                context = ctx,
+                roomCode = room.roomCode,
+                answer = answer,
+                subjectMode = subj
+            )
+            res.onSuccess { verified ->
+                _uiState.update { it.copy(liveClassRoomVerifyingAnswerId = null) }
+                showBannerMessage("AI Verified Q${verified.questionNumber}: ${verified.shortAnswer.ifBlank { verified.answerBadge }}")
+            }.onFailure { err ->
+                _uiState.update {
+                    it.copy(
+                        liveClassRoomVerifyingAnswerId = null,
+                        liveClassRoomError = err.message ?: "AI verification failed. Please retry."
+                    )
+                }
             }
         }
     }

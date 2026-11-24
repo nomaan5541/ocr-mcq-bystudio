@@ -15,6 +15,7 @@ import com.omnisolve.overlay.api.OnlineConsensusRaceEngine
 import com.omnisolve.overlay.api.PrismAiSolverEngine
 import com.omnisolve.overlay.cache.PersistentQuizCacheManager
 import com.omnisolve.overlay.cache.SolveResultCache
+import com.omnisolve.overlay.data.LiveClassRoomRepository
 import com.omnisolve.overlay.data.SolvedQuestionRecord
 import com.omnisolve.overlay.data.SolvedQuestionRepository
 import com.omnisolve.overlay.data.local.OfflineStudyHistoryRepository
@@ -910,6 +911,24 @@ class OverlaySolveOrchestrator(
             }
         } catch (e: Exception) {
             Log.w(TAG, "Cloud history save skipped: ${e.message}")
+        }
+
+        // 3. Auto-Sync to active Live Class Room (if joined and Auto-Sync enabled)
+        try {
+            if (FirebaseApp.getApps(appContext).isNotEmpty() &&
+                !Firebase.auth.currentUser?.uid.isNullOrBlank()
+            ) {
+                withContext(Dispatchers.IO) {
+                    LiveClassRoomRepository.publishSingleAnswerIfActive(
+                        context = appContext,
+                        questionText = questionPreview,
+                        answer = modelToSave.copy(subject = subjectId),
+                        sourceLabel = "Floating Pill"
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Live Class Room auto-sync skipped: ${e.message}")
         }
     }
 }

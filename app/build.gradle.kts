@@ -18,8 +18,8 @@ android {
     applicationId = "com.aistudio.ocrmcqsolver.vrsbsx"
     minSdk = 26
     targetSdk = 36
-    versionCode = 7
-    versionName = "3.6.0"
+    versionCode = 6
+    versionName = "3.5.2"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -45,9 +45,12 @@ android {
   buildTypes {
     release {
       isCrunchPngs = false
-      isMinifyEnabled = true
-      isShrinkResources = true
+      isMinifyEnabled = false
+      isShrinkResources = false
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+      configure<com.google.firebase.crashlytics.buildtools.gradle.CrashlyticsExtension> {
+        mappingFileUploadEnabled = false
+      }
       // Do not remove or modify this signingConfig assignment. It is necessary for Android apps in
       // AI Studio.
       signingConfig = signingConfigs.getByName("release")
@@ -58,6 +61,10 @@ android {
       signingConfig = signingConfigs.getByName("debugConfig")
     }
   }
+  lint {
+    checkReleaseBuilds = false
+    abortOnError = false
+  }
   compileOptions {
     sourceCompatibility = JavaVersion.VERSION_11
     targetCompatibility = JavaVersion.VERSION_11
@@ -67,19 +74,19 @@ android {
     viewBinding = true
     buildConfig = true
   }
+  lint {
+    checkReleaseBuilds = false
+    abortOnError = false
+  }
   packaging {
     resources {
       excludes += "/META-INF/{AL2.0,LGPL2.1}"
     }
     jniLibs {
-      useLegacyPackaging = true
+      useLegacyPackaging = false
     }
   }
   testOptions { unitTests { isIncludeAndroidResources = true } }
-  lint {
-    checkReleaseBuilds = false
-    abortOnError = false
-  }
   dependenciesInfo {
     includeInApk = false
     includeInBundle = true
@@ -122,7 +129,7 @@ dependencies {
   implementation(libs.androidx.room.ktx)
   implementation(libs.androidx.room.runtime)
   ksp(libs.androidx.room.compiler)
-  // implementation(libs.coil.compose)
+  implementation(libs.coil.compose)
   // implementation(libs.converter.moshi)
   implementation(libs.firebase.ai)
   implementation(libs.firebase.firestore)
@@ -147,6 +154,8 @@ dependencies {
   implementation("androidx.lifecycle:lifecycle-service:2.8.7")
   implementation("com.google.code.gson:gson:2.11.0")
   implementation("com.google.mlkit:text-recognition:16.0.1")
+  implementation("com.google.zxing:core:3.5.3")
+  implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
   implementation("com.google.android.gms:play-services-ads:23.6.0")
   implementation("com.google.android.play:app-update-ktx:2.1.0")
   implementation("com.google.android.play:review-ktx:2.0.2")

@@ -126,6 +126,8 @@ object MotionTokens {
             ThemeLayoutArchetype.EDITORIAL_MONOGRAPH -> spring(dampingRatio = 0.92f, stiffness = 460f)
             ThemeLayoutArchetype.KINETIC_DECK -> spring(dampingRatio = 0.76f, stiffness = 740f)
             ThemeLayoutArchetype.IOS_LIQUID_LIGHT -> spring(dampingRatio = 0.82f, stiffness = 500f)
+            ThemeLayoutArchetype.GLASS_PRISM -> spring(dampingRatio = 0.78f, stiffness = 540f)
+            ThemeLayoutArchetype.CRIMSON_STUDIO -> spring(dampingRatio = 0.76f, stiffness = 560f)
             ThemeLayoutArchetype.CLASSIC_PRISM -> spring(dampingRatio = 0.84f, stiffness = 580f)
         }
     }
@@ -136,6 +138,8 @@ object MotionTokens {
         ThemeLayoutArchetype.EDITORIAL_MONOGRAPH -> 0.982f
         ThemeLayoutArchetype.KINETIC_DECK -> 0.955f
         ThemeLayoutArchetype.IOS_LIQUID_LIGHT -> 0.968f
+        ThemeLayoutArchetype.GLASS_PRISM -> 0.962f
+        ThemeLayoutArchetype.CRIMSON_STUDIO -> 0.966f
         ThemeLayoutArchetype.CLASSIC_PRISM -> 0.965f
     }
 
@@ -196,6 +200,8 @@ object MotionTokens {
                     ) + fadeOut(tween(145)))
             }
             ThemeLayoutArchetype.IOS_LIQUID_LIGHT,
+            ThemeLayoutArchetype.GLASS_PRISM,
+            ThemeLayoutArchetype.CRIMSON_STUDIO,
             ThemeLayoutArchetype.CLASSIC_PRISM -> {
                 if (movingForward) {
                     // Forward push: new screen glides in from right, previous shifts gently left
@@ -625,6 +631,42 @@ fun LiquidAtmosphericBackdrop(
                             }
                             SurfaceEffectStyle.AMBIENT_GLOW -> {
                                 drawCircle(brush = ambientBrush, center = ambientCenter, radius = ambientRadius)
+                                val shift = (phase - 0.5f) * size.width * 0.08f
+                                val ribbon1 = androidx.compose.ui.graphics.Path().apply {
+                                    moveTo(-size.width * 0.1f, size.height * 0.14f + shift * 0.4f)
+                                    cubicTo(
+                                        size.width * 0.25f, size.height * 0.02f - shift,
+                                        size.width * 0.65f, size.height * 0.26f + shift,
+                                        size.width * 1.1f, size.height * 0.12f
+                                    )
+                                }
+                                drawPath(
+                                    path = ribbon1,
+                                    brush = Brush.horizontalGradient(
+                                        listOf(Color.Transparent, accent.copy(alpha = 0.24f), accentBright.copy(alpha = 0.14f), Color.Transparent)
+                                    ),
+                                    style = Stroke(width = 34.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
+                                )
+                                drawPath(
+                                    path = ribbon1,
+                                    color = accentBright.copy(alpha = 0.22f),
+                                    style = Stroke(width = 1.4.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
+                                )
+                                val ribbon2 = androidx.compose.ui.graphics.Path().apply {
+                                    moveTo(-size.width * 0.08f, size.height * 0.62f)
+                                    cubicTo(
+                                        size.width * 0.32f, size.height * 0.52f + shift,
+                                        size.width * 0.68f, size.height * 0.74f - shift,
+                                        size.width * 1.12f, size.height * 0.56f
+                                    )
+                                }
+                                drawPath(
+                                    path = ribbon2,
+                                    brush = Brush.horizontalGradient(
+                                        listOf(Color.Transparent, accent.copy(alpha = 0.16f), Color.Transparent)
+                                    ),
+                                    style = Stroke(width = 46.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
+                                )
                             }
                             SurfaceEffectStyle.HUD_RINGS -> {
                                 val hudCenter = Offset(size.width * 0.88f, size.height * 0.14f)
@@ -704,6 +746,27 @@ fun LiquidAtmosphericBackdrop(
                             }
                             SurfaceEffectStyle.AURORA_VEIL -> {
                                 drawCircle(brush = auroraBrush, center = auroraCenter, radius = auroraRadius)
+                                val wave = (phase - 0.5f) * size.width * 0.10f
+                                val studioRibbon = androidx.compose.ui.graphics.Path().apply {
+                                    moveTo(-size.width * 0.1f, size.height * 0.22f)
+                                    cubicTo(
+                                        size.width * 0.30f, size.height * 0.08f + wave,
+                                        size.width * 0.65f, size.height * 0.34f - wave,
+                                        size.width * 1.12f, size.height * 0.18f
+                                    )
+                                }
+                                drawPath(
+                                    path = studioRibbon,
+                                    brush = Brush.horizontalGradient(
+                                        listOf(Color.Transparent, accent.copy(alpha = 0.30f), Color(0xFF4F2880).copy(alpha = 0.18f), Color.Transparent)
+                                    ),
+                                    style = Stroke(width = 48.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
+                                )
+                                drawPath(
+                                    path = studioRibbon,
+                                    color = accentBright.copy(alpha = 0.26f),
+                                    style = Stroke(width = 1.5.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
+                                )
                             }
                             SurfaceEffectStyle.CARBON_WEAVE -> {
                                 val spacing = 22.dp.toPx()
@@ -718,8 +781,117 @@ fun LiquidAtmosphericBackdrop(
                                     offset += spacing
                                 }
                             }
-                            SurfaceEffectStyle.LIQUID_SPECULAR -> {
+                            SurfaceEffectStyle.LIQUID_SPECULAR,
+                            SurfaceEffectStyle.IOS_LIQUID_GLASS -> {
+                                // Animated curly white & royal-blue liquid silk ribbons + floating glossy droplets
+                                drawCircle(brush = iosOrb1Brush, center = iosOrb1Center, radius = iosOrb1Radius)
+                                drawCircle(brush = iosOrb2Brush, center = iosOrb2Center, radius = iosOrb2Radius)
                                 drawCircle(brush = shineBrush, center = shineCenter, radius = shineRadius)
+
+                                val drift = (phase - 0.5f) * size.width * 0.09f
+                                val curlTop = androidx.compose.ui.graphics.Path().apply {
+                                    moveTo(size.width * 0.56f, -size.height * 0.04f)
+                                    cubicTo(
+                                        size.width * 0.38f + drift, size.height * 0.14f,
+                                        size.width * 1.06f, size.height * 0.20f - drift * 0.6f,
+                                        size.width * 0.96f, size.height * 0.36f
+                                    )
+                                }
+                                drawPath(
+                                    path = curlTop,
+                                    brush = Brush.linearGradient(
+                                        colors = listOf(
+                                            Color.White.copy(alpha = 0.64f),
+                                            Color(0xFF8EC5FF).copy(alpha = 0.34f),
+                                            Color(0xFF1B6EF3).copy(alpha = 0.18f)
+                                        )
+                                    ),
+                                    style = Stroke(width = 62.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
+                                )
+                                drawPath(
+                                    path = curlTop,
+                                    color = Color.White.copy(alpha = 0.80f),
+                                    style = Stroke(width = 2.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
+                                )
+
+                                val curlMid = androidx.compose.ui.graphics.Path().apply {
+                                    moveTo(-size.width * 0.12f, size.height * 0.34f + drift * 0.5f)
+                                    cubicTo(
+                                        size.width * 0.24f, size.height * 0.44f - drift,
+                                        size.width * 0.68f, size.height * 0.28f + drift,
+                                        size.width * 1.14f, size.height * 0.48f
+                                    )
+                                }
+                                drawPath(
+                                    path = curlMid,
+                                    brush = Brush.horizontalGradient(
+                                        colors = listOf(
+                                            Color(0xFF5FA8FF).copy(alpha = 0.26f),
+                                            Color.White.copy(alpha = 0.58f),
+                                            Color(0xFF9ACBFF).copy(alpha = 0.32f),
+                                            Color(0xFF1B6EF3).copy(alpha = 0.18f)
+                                        )
+                                    ),
+                                    style = Stroke(width = 56.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
+                                )
+                                drawPath(
+                                    path = curlMid,
+                                    color = Color.White.copy(alpha = 0.72f),
+                                    style = Stroke(width = 1.6.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
+                                )
+
+                                val curlBottom = androidx.compose.ui.graphics.Path().apply {
+                                    moveTo(-size.width * 0.08f, size.height * 0.80f - drift * 0.5f)
+                                    cubicTo(
+                                        size.width * 0.30f, size.height * 0.68f + drift,
+                                        size.width * 0.72f, size.height * 0.90f - drift,
+                                        size.width * 1.12f, size.height * 0.76f
+                                    )
+                                }
+                                drawPath(
+                                    path = curlBottom,
+                                    brush = Brush.horizontalGradient(
+                                        colors = listOf(
+                                            Color(0xFF1B6EF3).copy(alpha = 0.22f),
+                                            Color(0xFF8BC4FF).copy(alpha = 0.32f),
+                                            Color.White.copy(alpha = 0.56f)
+                                        )
+                                    ),
+                                    style = Stroke(width = 70.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
+                                )
+                                drawPath(
+                                    path = curlBottom,
+                                    color = Color.White.copy(alpha = 0.68f),
+                                    style = Stroke(width = 1.5.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
+                                )
+
+                                // Floating glossy liquid glass droplets
+                                val drop1 = Offset(size.width * 0.64f, size.height * 0.10f + drift * 0.35f)
+                                drawCircle(
+                                    brush = Brush.radialGradient(
+                                        listOf(Color.White.copy(alpha = 0.92f), Color(0xFF7CB8FF).copy(alpha = 0.50f), Color(0xFF1B6EF3).copy(alpha = 0.14f)),
+                                        center = drop1 - Offset(2.dp.toPx(), 2.dp.toPx()),
+                                        radius = 10.dp.toPx()
+                                    ),
+                                    radius = 6.dp.toPx(),
+                                    center = drop1
+                                )
+                                val drop2 = Offset(size.width * 0.93f, size.height * 0.25f - drift * 0.45f)
+                                drawCircle(
+                                    brush = Brush.radialGradient(
+                                        listOf(Color.White.copy(alpha = 0.95f), Color(0xFF5FA8FF).copy(alpha = 0.55f), Color(0xFF1B6EF3).copy(alpha = 0.18f)),
+                                        center = drop2 - Offset(2.dp.toPx(), 2.dp.toPx()),
+                                        radius = 12.dp.toPx()
+                                    ),
+                                    radius = 7.5.dp.toPx(),
+                                    center = drop2
+                                )
+                                drawLine(
+                                    color = Color.White.copy(alpha = 0.78f),
+                                    start = Offset(0f, 0.5.dp.toPx()),
+                                    end = Offset(size.width, 0.5.dp.toPx()),
+                                    strokeWidth = 1.dp.toPx()
+                                )
                             }
                             SurfaceEffectStyle.LAB_RETICLE -> {
                                 val cx = size.width * 0.86f
@@ -731,16 +903,6 @@ fun LiquidAtmosphericBackdrop(
                                 val dx = cos(angle) * radius
                                 val dy = sin(angle) * radius
                                 drawLine(color = accentBright.copy(alpha = 0.24f), start = Offset(cx - dx, cy - dy), end = Offset(cx + dx, cy + dy), strokeWidth = 1.dp.toPx())
-                            }
-                            SurfaceEffectStyle.IOS_LIQUID_GLASS -> {
-                                drawCircle(brush = iosOrb1Brush, center = iosOrb1Center, radius = iosOrb1Radius)
-                                drawCircle(brush = iosOrb2Brush, center = iosOrb2Center, radius = iosOrb2Radius)
-                                drawLine(
-                                    color = Color.White.copy(alpha = 0.72f),
-                                    start = Offset(0f, 0.5.dp.toPx()),
-                                    end = Offset(size.width, 0.5.dp.toPx()),
-                                    strokeWidth = 1.dp.toPx()
-                                )
                             }
                         }
                     }
@@ -779,6 +941,8 @@ fun ScrollRevealSection(
             ThemeLayoutArchetype.KINETIC_DECK -> 185
             ThemeLayoutArchetype.EDITORIAL_MONOGRAPH -> 240
             ThemeLayoutArchetype.IOS_LIQUID_LIGHT -> 230
+            ThemeLayoutArchetype.GLASS_PRISM -> 215
+            ThemeLayoutArchetype.CRIMSON_STUDIO -> 210
             ThemeLayoutArchetype.ATELIER_BENTO -> 195
             ThemeLayoutArchetype.CLASSIC_PRISM -> 205
         }

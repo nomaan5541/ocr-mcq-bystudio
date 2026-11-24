@@ -4,6 +4,7 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -16,6 +17,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -30,9 +32,12 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
@@ -52,7 +57,10 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.PathNode
@@ -115,18 +123,22 @@ enum class AppTab(
     val testTag: String
 ) {
     Home(R.string.nav_home, Icons.Filled.Home, Icons.Outlined.Home, "nav_tab_home"),
-    Stats(R.string.nav_stats, Icons.Filled.Add, Icons.Filled.Add, "nav_tab_stats"),
+    Stats(R.string.nav_stats, Icons.Filled.Groups, Icons.Outlined.Groups, "nav_tab_stats"),
     Settings(R.string.nav_settings, Icons.Filled.Settings, Icons.Outlined.Settings, "nav_tab_settings")
 }
 
 /**
- * Prism Crimson Floating Navigation Pill Dock:
- * Left = Home, Center = Animated `+` Tree Launcher (rotates 45deg to X when open), Right = Settings.
+ * Prism Floating Sculpted Glass Navigation Dock:
+ * [Home] [Rooms]  (Elevated Center Red Prism Orb -> Floating Helper)  [Browser] [Settings]
+ * Respects edge-to-edge navigation bar safe areas and 48dp minimum touch targets.
  */
 @Composable
 fun LiquidMorphBottomDock(
     selectedTab: AppTab,
     onSelectTab: (AppTab) -> Unit,
+    onOpenBrowser: () -> Unit = {},
+    isOverlayRunning: Boolean = false,
+    onToggleOverlay: () -> Unit = {},
     isPlusMenuOpen: Boolean = false,
     onTogglePlusMenu: (() -> Unit)? = null,
     modifier: Modifier = Modifier
@@ -136,431 +148,442 @@ fun LiquidMorphBottomDock(
     val reducedMotion = LocalReducedMotion.current
     val springCfg = LocalSpringPhysics.current
     val archetype = themeSpec.layoutArchetype
-    val tabs = AppTab.entries
-    val selectedIndex = tabs.indexOf(selectedTab).coerceAtLeast(0)
 
-    val isFlushAtelier = archetype == ThemeLayoutArchetype.ATELIER_BENTO
     val isTelemetryHud = archetype == ThemeLayoutArchetype.TELEMETRY_HUD
-    val isEditorial = archetype == ThemeLayoutArchetype.EDITORIAL_MONOGRAPH
-    val isKineticDeck = archetype == ThemeLayoutArchetype.KINETIC_DECK
+    val isCrimsonStudio = archetype == ThemeLayoutArchetype.CRIMSON_STUDIO
+    val isLight = !palette.isDarkObsidian ||
+        archetype == ThemeLayoutArchetype.IOS_LIQUID_LIGHT ||
+        archetype == ThemeLayoutArchetype.GLASS_PRISM
+    val centerActionClick = onTogglePlusMenu ?: onToggleOverlay
+
+    // 5-slot geometry: [0: Home] [1: Rooms] [2: Center Prism Orb -> Quick Actions] [3: Browser] [4: Settings]
+    val selectedVisualSlot = when (selectedTab) {
+        AppTab.Home -> 0
+        AppTab.Stats -> 1
+        AppTab.Settings -> 4
+    }
 
     val dockCorner = when (archetype) {
-        ThemeLayoutArchetype.ATELIER_BENTO -> 0.dp
-        ThemeLayoutArchetype.TELEMETRY_HUD -> 10.dp
-        ThemeLayoutArchetype.EDITORIAL_MONOGRAPH -> 999.dp
-        ThemeLayoutArchetype.KINETIC_DECK -> 18.dp
-        ThemeLayoutArchetype.IOS_LIQUID_LIGHT -> 999.dp
-        ThemeLayoutArchetype.CLASSIC_PRISM -> PrismCurves.dockCorner(themeSpec)
+        ThemeLayoutArchetype.ATELIER_BENTO -> 20.dp
+        ThemeLayoutArchetype.TELEMETRY_HUD -> 14.dp
+        else -> 24.dp
     }
-    val pillCorner = when (archetype) {
-        ThemeLayoutArchetype.ATELIER_BENTO -> 10.dp
-        ThemeLayoutArchetype.TELEMETRY_HUD -> 7.dp
-        ThemeLayoutArchetype.EDITORIAL_MONOGRAPH -> 999.dp
-        ThemeLayoutArchetype.KINETIC_DECK -> 13.dp
-        ThemeLayoutArchetype.IOS_LIQUID_LIGHT -> 999.dp
-        ThemeLayoutArchetype.CLASSIC_PRISM -> PrismCurves.dockPillCorner(themeSpec)
-    }
-    val outerHorizontalPadding = when (archetype) {
-        ThemeLayoutArchetype.ATELIER_BENTO -> 0.dp
-        ThemeLayoutArchetype.EDITORIAL_MONOGRAPH -> 22.dp
-        else -> 16.dp
-    }
-    val outerVerticalPadding = if (isFlushAtelier) 0.dp else 10.dp
+    val pillCorner = if (isLight) 999.dp else 20.dp
+
+    val lightBlueAccent = Color(0xFF1B6EF3)
+    val lightBlueSoft = Color(0xFF4F9CFF)
 
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .then(
-                if (isFlushAtelier) {
-                    Modifier.background(palette.glassStrong)
-                } else {
-                    Modifier
-                }
-            )
             .navigationBarsPadding(),
         contentAlignment = Alignment.BottomCenter
     ) {
-        Box(
+        BoxWithConstraints(
             modifier = Modifier
                 .fillMaxWidth()
-                .widthIn(max = if (isFlushAtelier) 900.dp else 600.dp)
-                .padding(horizontal = outerHorizontalPadding, vertical = outerVerticalPadding),
-            contentAlignment = Alignment.Center
+                .widthIn(max = 560.dp)
+                .padding(horizontal = 14.dp, vertical = 6.dp)
+                .height(70.dp)
+                .testTag("bottom_navigation_dock"),
+            contentAlignment = Alignment.BottomCenter
         ) {
-            BoxWithConstraints(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 60.dp)
-                    .then(
-                        if (isFlushAtelier) {
-                            Modifier
-                                .background(palette.glassStrong)
-                                .border(
-                                    width = 1.dp,
-                                    color = palette.cardHairlineBorder,
-                                    shape = RoundedCornerShape(0.dp)
-                                )
-                        } else {
-                            Modifier
-                                .shadow(
-                                    elevation = if (palette.isDarkObsidian) 10.dp else 5.dp,
-                                    shape = RoundedCornerShape(dockCorner),
-                                    ambientColor = Color.Black.copy(alpha = if (palette.isDarkObsidian) 0.9f else 0.16f),
-                                    spotColor = palette.accentSky.copy(alpha = if (palette.isDarkObsidian) 0.28f else 0.14f)
-                                )
-                                .clip(RoundedCornerShape(dockCorner))
-                                .background(if (isEditorial) palette.glassStrong.copy(alpha = 0.95f) else palette.glassStrong)
-                                .border(
-                                    width = if (isTelemetryHud) 1.2.dp else (themeSpec.borderWidthTenths / 10f).dp,
-                                    color = if (isTelemetryHud) palette.accentSky.copy(alpha = 0.45f) else palette.cardHairlineBorder,
-                                    shape = RoundedCornerShape(dockCorner)
-                                )
-                        }
+            val totalWidth = maxWidth
+            val density = LocalDensity.current
+            val pillShape = RoundedCornerShape(pillCorner)
+            val barHeight = 56.dp
+            val crestRise = 14.dp
+
+            // Compact sculpted floating glass dock with smooth concave notch cradling the center Prism orb
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val w = size.width
+                val h = size.height
+                val topY = crestRise.toPx()
+                val cr = dockCorner.toPx().coerceAtMost((h - topY) * 0.49f)
+                val cx = w * 0.5f
+                val cradleHalf = 31.dp.toPx()
+                val dipDepth = 12.dp.toPx()
+
+                val dockPath = Path().apply {
+                    moveTo(cr, topY)
+                    lineTo(cx - cradleHalf - 13.dp.toPx(), topY)
+                    cubicTo(
+                        cx - cradleHalf + 2.dp.toPx(), topY,
+                        cx - cradleHalf * 0.66f, topY + dipDepth,
+                        cx, topY + dipDepth
                     )
-                    .padding(horizontal = if (isFlushAtelier) 10.dp else 6.dp, vertical = 6.dp)
-                    .testTag("bottom_navigation_dock")
-            ) {
-                val tabWidth = maxWidth / tabs.size
-                val isCompactTab = tabWidth < 104.dp || isEditorial || isFlushAtelier
-                val density = LocalDensity.current
-                val tabWidthPx = with(density) { tabWidth.toPx() }
-                val indicatorOffsetPxState = animateFloatAsState(
-                    targetValue = tabWidthPx * selectedIndex,
-                    animationSpec = MotionTokens.dockSpringFor(archetype, reducedMotion, springCfg),
-                    label = "dock_liquid_pill_offset_px"
+                    cubicTo(
+                        cx + cradleHalf * 0.66f, topY + dipDepth,
+                        cx + cradleHalf - 2.dp.toPx(), topY,
+                        cx + cradleHalf + 13.dp.toPx(), topY
+                    )
+                    lineTo(w - cr, topY)
+                    quadraticTo(w, topY, w, topY + cr)
+                    lineTo(w, h - cr)
+                    quadraticTo(w, h, w - cr, h)
+                    lineTo(cr, h)
+                    quadraticTo(0f, h, 0f, h - cr)
+                    lineTo(0f, topY + cr)
+                    quadraticTo(0f, topY, cr, topY)
+                    close()
+                }
+
+                // Grounded soft shadow
+                drawPath(
+                    path = dockPath,
+                    color = if (isLight) Color(0xFF1A438A).copy(alpha = 0.12f) else Color.Black.copy(alpha = 0.55f)
                 )
-                val pillShape = RoundedCornerShape(pillCorner)
+                // Main theme-pure glass fill (pure white-blue liquid glass vs deep obsidian crimson)
+                drawPath(
+                    path = dockPath,
+                    brush = Brush.verticalGradient(
+                        colors = if (isLight) {
+                            listOf(
+                                Color(0xFFFAFDFE).copy(alpha = 0.94f),
+                                Color(0xFFE7F0FF).copy(alpha = 0.92f)
+                            )
+                        } else {
+                            listOf(
+                                Color(0xFF151720).copy(alpha = 0.96f),
+                                Color(0xFF0A0B10).copy(alpha = 0.98f)
+                            )
+                        },
+                        startY = topY,
+                        endY = h
+                    )
+                )
+                // Specular glass rim tracing the silhouette
+                drawPath(
+                    path = dockPath,
+                    brush = Brush.verticalGradient(
+                        colors = if (isLight) {
+                            listOf(
+                                Color.White.copy(alpha = 0.95f),
+                                lightBlueAccent.copy(alpha = 0.24f)
+                            )
+                        } else {
+                            listOf(
+                                Color.White.copy(alpha = if (isCrimsonStudio) 0.22f else 0.17f),
+                                PrismTokens.PrimaryRed.copy(alpha = 0.28f)
+                            )
+                        },
+                        startY = topY,
+                        endY = h
+                    ),
+                    style = Stroke(width = 1.05.dp.toPx(), cap = StrokeCap.Round)
+                )
+            }
 
-                Box(modifier = Modifier.fillMaxWidth()) {
-                    // Architectural sliding active indicator running 100% on GPU graphicsLayer
-                    Box(modifier = Modifier.matchParentSize()) {
-                        when (archetype) {
-                            ThemeLayoutArchetype.ATELIER_BENTO -> {
-                                // Razor-thin sliding architectural top accent rail
-                                Box(
-                                    modifier = Modifier
-                                        .graphicsLayer { translationX = indicatorOffsetPxState.value }
-                                        .width(tabWidth)
-                                        .fillMaxHeight()
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .align(Alignment.TopCenter)
-                                            .width((tabWidth * 0.48f).coerceIn(24.dp, 68.dp))
-                                            .height(2.5.dp)
-                                            .clip(CircleShape)
-                                            .background(palette.accentSky)
-                                    )
-                                }
-                            }
+            // Sliding Active Indicator inside the compact 56dp bar
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .height(barHeight)
+                    .padding(horizontal = 4.dp, vertical = 4.dp)
+            ) {
+                val indicatorW = (totalWidth - 8.dp) / 5f
+                val indicatorPx = with(density) { indicatorW.toPx() }
+                val activeOffset by animateFloatAsState(
+                    targetValue = indicatorPx * selectedVisualSlot,
+                    animationSpec = MotionTokens.dockSpringFor(archetype, reducedMotion, springCfg),
+                    label = "dock_active_pill_x"
+                )
 
-                            ThemeLayoutArchetype.TELEMETRY_HUD -> {
-                                // Beveled HUD highlight block with top avionics notch
-                                Box(
-                                    modifier = Modifier
-                                        .graphicsLayer { translationX = indicatorOffsetPxState.value }
-                                        .width(tabWidth)
-                                        .fillMaxHeight()
-                                        .padding(horizontal = 2.dp)
-                                        .clip(pillShape)
-                                        .background(palette.glassTintedSky)
-                                        .border(1.dp, palette.accentSky, pillShape)
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .align(Alignment.TopCenter)
-                                            .padding(top = 3.dp)
-                                            .width(18.dp)
-                                            .height(2.dp)
-                                            .background(palette.accentSkyBright)
-                                    )
-                                }
-                            }
-
-                            ThemeLayoutArchetype.EDITORIAL_MONOGRAPH -> {
-                                // Whisper-quiet editorial bottom dot indicator
-                                Box(
-                                    modifier = Modifier
-                                        .graphicsLayer { translationX = indicatorOffsetPxState.value }
-                                        .width(tabWidth)
-                                        .fillMaxHeight()
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .align(Alignment.BottomCenter)
-                                            .padding(bottom = 2.dp)
-                                            .size(5.dp)
-                                            .clip(CircleShape)
-                                            .background(palette.accentSky)
-                                    )
-                                }
-                            }
-
-                            ThemeLayoutArchetype.KINETIC_DECK -> {
-                                // Elevated recessed titanium hardware keycap indicator
-                                Box(
-                                    modifier = Modifier
-                                        .graphicsLayer { translationX = indicatorOffsetPxState.value }
-                                        .width(tabWidth)
-                                        .fillMaxHeight()
-                                        .padding(horizontal = 2.dp)
-                                        .clip(pillShape)
-                                        .background(palette.canvasTop)
-                                        .border(1.3.dp, palette.accentSky, pillShape)
+                Box(
+                    modifier = Modifier
+                        .graphicsLayer { translationX = activeOffset }
+                        .width(indicatorW)
+                        .fillMaxHeight()
+                        .padding(horizontal = 2.dp),
+                    contentAlignment = Alignment.BottomCenter
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(pillShape)
+                            .background(
+                                Brush.radialGradient(
+                                    colors = if (isLight) {
+                                        listOf(
+                                            lightBlueSoft.copy(alpha = 0.26f),
+                                            lightBlueAccent.copy(alpha = 0.08f)
+                                        )
+                                    } else {
+                                        listOf(
+                                            PrismTokens.PrimaryRed.copy(alpha = 0.50f),
+                                            PrismTokens.DeepRed.copy(alpha = 0.20f),
+                                            Color.Transparent
+                                        )
+                                    }
                                 )
-                            }
+                            )
+                            .border(
+                                width = 0.85.dp,
+                                color = if (isLight) lightBlueAccent.copy(alpha = 0.34f) else PrismTokens.AccentRed.copy(alpha = 0.38f),
+                                shape = pillShape
+                            )
+                    )
+                    // Crisp theme-matched active bottom underline bar
+                    Box(
+                        modifier = Modifier
+                            .padding(bottom = 1.dp)
+                            .width(20.dp)
+                            .height(2.dp)
+                            .clip(CircleShape)
+                            .background(if (isLight) lightBlueAccent else PrismTokens.AccentRed)
+                    )
+                }
+            }
 
-                            ThemeLayoutArchetype.IOS_LIQUID_LIGHT -> {
-                                // Apple iOS 26 Liquid Glass frosted sliding capsule indicator
-                                Box(
-                                    modifier = Modifier
-                                        .graphicsLayer { translationX = indicatorOffsetPxState.value }
-                                        .width(tabWidth)
-                                        .fillMaxHeight()
-                                        .padding(horizontal = 3.dp, vertical = 2.dp)
-                                        .clip(CircleShape)
-                                        .background(
-                                            Brush.verticalGradient(
-                                                listOf(
-                                                    palette.accentSky.copy(alpha = 0.16f),
-                                                    palette.accentSky.copy(alpha = 0.09f)
-                                                )
-                                            )
-                                        )
-                                        .border(
-                                            width = 0.9.dp,
-                                            color = palette.accentSky.copy(alpha = 0.32f),
-                                            shape = CircleShape
-                                        )
-                                        .liquidSheenSweep(
-                                            enabled = true,
-                                            tint = Color.White,
-                                            maxAlpha = 0.35f,
-                                            durationMs = 2600
-                                        )
+            // 5-Slot Interactive Row: [Home] [Rooms] [Center Prism Orb -> Quick Actions] [Browser] [Settings]
+            val selectedFgColor = if (isLight) lightBlueAccent else PrismTokens.TextPrimary
+            val inactiveFgColor = if (isLight) Color(0xFF475569) else PrismTokens.TextSecondary
+            val labelFont = if (isTelemetryHud) FontFamily.Monospace else FontFamily.Default
+
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 4.dp),
+                verticalAlignment = Alignment.Bottom
+            ) {
+                // Slot 0: Home
+                DockNavSlot(
+                    tab = AppTab.Home,
+                    isSelected = selectedTab == AppTab.Home,
+                    selectedFgColor = selectedFgColor,
+                    inactiveFgColor = inactiveFgColor,
+                    labelFont = labelFont,
+                    isTelemetryHud = isTelemetryHud,
+                    pillShape = pillShape,
+                    onClick = { onSelectTab(AppTab.Home) },
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(barHeight)
+                )
+
+                // Slot 1: Rooms
+                DockNavSlot(
+                    tab = AppTab.Stats,
+                    isSelected = selectedTab == AppTab.Stats,
+                    selectedFgColor = selectedFgColor,
+                    inactiveFgColor = inactiveFgColor,
+                    labelFont = labelFont,
+                    isTelemetryHud = isTelemetryHud,
+                    pillShape = pillShape,
+                    onClick = { onSelectTab(AppTab.Stats) },
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(barHeight)
+                )
+
+                // Slot 2: Elevated Center Prism Quick-Action Orb (Replaces Floating + FAB)
+                val orbInteraction = remember { MutableInteractionSource() }
+                val orbScale by animateFloatAsState(
+                    targetValue = if (isPlusMenuOpen && !reducedMotion) 1.07f else 1f,
+                    animationSpec = spring(dampingRatio = 0.7f, stiffness = 460f),
+                    label = "center_prism_orb_scale"
+                )
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .padding(bottom = 10.dp),
+                    contentAlignment = Alignment.TopCenter
+                ) {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .size(50.dp)
+                            .minimumInteractiveComponentSize()
+                            .scale(orbScale)
+                            .liquidPressScale(orbInteraction, pressedScale = 0.90f)
+                            .shadow(
+                                elevation = if (isLight) 10.dp else 14.dp,
+                                shape = CircleShape,
+                                ambientColor = if (isLight) lightBlueAccent.copy(alpha = 0.42f) else PrismTokens.PrimaryRed.copy(alpha = 0.55f),
+                                spotColor = if (isLight) lightBlueAccent.copy(alpha = 0.55f) else PrismTokens.PrimaryRed.copy(alpha = 0.80f)
+                            )
+                            .clip(CircleShape)
+                            .background(
+                                Brush.radialGradient(
+                                    colors = if (isLight) {
+                                        if (isPlusMenuOpen) {
+                                            listOf(lightBlueSoft, lightBlueAccent)
+                                        } else {
+                                            listOf(Color.White, Color(0xFFE6F0FF), Color(0xFFD2E5FF))
+                                        }
+                                    } else {
+                                        if (isPlusMenuOpen) {
+                                            listOf(Color(0xFF282B36), Color(0xFF14161D))
+                                        } else {
+                                            listOf(Color(0xFF240B10), Color(0xFF0E0A0E), Color(0xFF07080B))
+                                        }
+                                    }
                                 )
-                            }
-
-                            ThemeLayoutArchetype.CLASSIC_PRISM -> {
-                                // Original Gliding Crimson Liquid Glass Pill
-                                Box(
-                                    modifier = Modifier
-                                        .graphicsLayer { translationX = indicatorOffsetPxState.value }
-                                        .width(tabWidth)
-                                        .fillMaxHeight()
-                                        .padding(horizontal = 2.dp)
-                                        .clip(pillShape)
-                                        .background(
-                                            Brush.verticalGradient(
-                                                listOf(
-                                                    palette.accentSkyBright,
-                                                    palette.accentSky
-                                                )
-                                            )
+                            )
+                            .border(
+                                width = 1.5.dp,
+                                brush = Brush.verticalGradient(
+                                    colors = if (isLight) {
+                                        listOf(Color.White, lightBlueAccent.copy(alpha = 0.65f))
+                                    } else {
+                                        listOf(
+                                            if (isPlusMenuOpen) Color.White.copy(alpha = 0.55f) else PrismTokens.AccentRed,
+                                            PrismTokens.PrimaryRed.copy(alpha = 0.55f)
                                         )
-                                        .liquidSheenSweep(
-                                            enabled = true,
-                                            tint = Color.White,
-                                            maxAlpha = 0.20f,
-                                            durationMs = 2800
-                                        )
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .align(Alignment.BottomCenter)
-                                            .padding(bottom = 4.dp)
-                                            .width(24.dp)
-                                            .height(2.5.dp)
-                                            .clip(CircleShape)
-                                            .background(palette.onAccentInk.copy(alpha = 0.65f))
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                                    }
+                                ),
+                                shape = CircleShape
+                            )
+                            .clickable(
+                                interactionSource = orbInteraction,
+                                indication = ripple(bounded = false, color = if (isLight) lightBlueAccent else PrismTokens.AccentRed),
+                                role = Role.Button,
+                                onClick = centerActionClick
+                            )
+                            .testTag("nav_center_prism_action")
                     ) {
-                        tabs.forEachIndexed { index, tab ->
-                            val isCenterPlus = tab == AppTab.Stats
-                            val isSelected = if (isCenterPlus) isPlusMenuOpen else (tab == selectedTab)
-                            val interactionSource = remember(tab) { MutableInteractionSource() }
-
-                            if (isCenterPlus) {
-                                val plusRotation by animateFloatAsState(
-                                    targetValue = if (isPlusMenuOpen && !reducedMotion) 45f else if (isPlusMenuOpen) 45f else 0f,
-                                    animationSpec = MotionTokens.tactilePress(reducedMotion, springCfg),
-                                    label = "dock_plus_rotation"
-                                )
-                                val plusBg by animateColorAsState(
-                                    targetValue = if (isPlusMenuOpen) palette.inkPrimary else palette.accentSky,
-                                    animationSpec = spring(stiffness = 620f),
-                                    label = "dock_plus_bg"
-                                )
-                                val plusTint by animateColorAsState(
-                                    targetValue = if (isPlusMenuOpen) Color(0xFF0A0A0C) else palette.onAccentInk,
-                                    animationSpec = spring(stiffness = 620f),
-                                    label = "dock_plus_tint"
-                                )
-
-                                Box(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .heightIn(min = 48.dp)
-                                        .minimumInteractiveComponentSize()
-                                        .liquidPressScale(interactionSource, pressedScale = 0.90f)
-                                        .clickable(
-                                            interactionSource = interactionSource,
-                                            indication = null,
-                                            role = Role.Button,
-                                            onClick = {
-                                                if (onTogglePlusMenu != null) {
-                                                    onTogglePlusMenu()
-                                                } else {
-                                                    onSelectTab(tab)
-                                                }
-                                            }
-                                        )
-                                        .testTag(tab.testTag),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(44.dp)
-                                            .clip(CircleShape)
-                                            .background(plusBg)
-                                            .border(
-                                                width = 1.dp,
-                                                color = if (isPlusMenuOpen) palette.cardHairlineBorder else palette.accentSkyBright.copy(alpha = 0.55f),
-                                                shape = CircleShape
-                                            ),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Filled.Add,
-                                            contentDescription = if (isPlusMenuOpen) "Close quick options" else "Open quick solve options",
-                                            tint = plusTint,
-                                            modifier = Modifier
-                                                .size(23.dp)
-                                                .graphicsLayer { rotationZ = plusRotation }
-                                        )
-                                    }
-                                }
-                            } else {
-                                val selectedFgColor = when (archetype) {
-                                    ThemeLayoutArchetype.CLASSIC_PRISM -> palette.onAccentInk
-                                    ThemeLayoutArchetype.IOS_LIQUID_LIGHT -> palette.accentSky
-                                    ThemeLayoutArchetype.ATELIER_BENTO,
-                                    ThemeLayoutArchetype.EDITORIAL_MONOGRAPH,
-                                    ThemeLayoutArchetype.TELEMETRY_HUD,
-                                    ThemeLayoutArchetype.KINETIC_DECK -> palette.accentSkyBright
-                                }
-                                val tabTextColor by animateColorAsState(
-                                    targetValue = if (isSelected) selectedFgColor else palette.inkSecondary,
-                                    animationSpec = spring(stiffness = 600f),
-                                    label = "navText_${tab.name}"
-                                )
-                                val iconScale by animateFloatAsState(
-                                    targetValue = if (isSelected && !reducedMotion) 1.12f else 1.0f,
-                                    animationSpec = MotionTokens.tactilePress(reducedMotion, springCfg),
-                                    label = "navIconScale_${tab.name}"
-                                )
-                                val rawLabel = stringResource(tab.labelRes)
-                                val displayLabel = if (isTelemetryHud) rawLabel.uppercase() else rawLabel
-                                val labelFont = when (archetype) {
-                                    ThemeLayoutArchetype.TELEMETRY_HUD -> FontFamily.Monospace
-                                    ThemeLayoutArchetype.EDITORIAL_MONOGRAPH -> FontFamily.Serif
-                                    else -> FontFamily.Default
-                                }
-
-                                if (isCompactTab) {
-                                    Column(
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .heightIn(min = 48.dp)
-                                            .minimumInteractiveComponentSize()
-                                            .liquidPressScale(interactionSource, pressedScale = 0.94f)
-                                            .clip(pillShape)
-                                            .selectable(
-                                                selected = isSelected,
-                                                interactionSource = interactionSource,
-                                                indication = ripple(color = palette.accentSky),
-                                                onClick = { onSelectTab(tab) },
-                                                role = Role.Tab
-                                            )
-                                            .padding(vertical = 6.dp, horizontal = 4.dp)
-                                            .testTag(tab.testTag),
-                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                        verticalArrangement = Arrangement.Center
-                                    ) {
-                                        Icon(
-                                            imageVector = if (isSelected) tab.selectedIcon else tab.unselectedIcon,
-                                            contentDescription = rawLabel,
-                                            tint = tabTextColor,
-                                            modifier = Modifier
-                                                .size(18.dp)
-                                                .scale(iconScale)
-                                        )
-                                        Spacer(modifier = Modifier.height(2.dp))
-                                        Text(
-                                            text = displayLabel,
-                                            style = MaterialTheme.typography.labelSmall.copy(fontFamily = labelFont),
-                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                            fontSize = if (isTelemetryHud) 10.sp else 11.sp,
-                                            color = tabTextColor,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                    }
-                                } else {
-                                    Row(
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .heightIn(min = 48.dp)
-                                            .minimumInteractiveComponentSize()
-                                            .liquidPressScale(interactionSource, pressedScale = 0.94f)
-                                            .clip(pillShape)
-                                            .selectable(
-                                                selected = isSelected,
-                                                interactionSource = interactionSource,
-                                                indication = ripple(color = palette.accentSky),
-                                                onClick = { onSelectTab(tab) },
-                                                role = Role.Tab
-                                            )
-                                            .padding(horizontal = 6.dp, vertical = 10.dp)
-                                            .testTag(tab.testTag),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.Center
-                                    ) {
-                                        Icon(
-                                            imageVector = if (isSelected) tab.selectedIcon else tab.unselectedIcon,
-                                            contentDescription = rawLabel,
-                                            tint = tabTextColor,
-                                            modifier = Modifier
-                                                .size(19.dp)
-                                                .scale(iconScale)
-                                        )
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Text(
-                                            text = displayLabel,
-                                            style = MaterialTheme.typography.labelLarge.copy(fontFamily = labelFont),
-                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                            fontSize = if (isTelemetryHud) 12.sp else 13.5.sp,
-                                            color = tabTextColor,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                    }
-                                }
-                            }
+                        if (isPlusMenuOpen) {
+                            Icon(
+                                imageVector = Icons.Filled.Close,
+                                contentDescription = "Close quick actions",
+                                tint = Color.White,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        } else {
+                            RedPrismLogoMark(
+                                modifier = Modifier
+                                    .size(34.dp)
+                                    .clip(CircleShape),
+                                animated = !reducedMotion
+                            )
                         }
                     }
                 }
+
+                // Slot 3: Browser
+                val browserInteraction = remember { MutableInteractionSource() }
+                val browserLabel = stringResource(R.string.nav_browser)
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(barHeight)
+                        .minimumInteractiveComponentSize()
+                        .liquidPressScale(browserInteraction, pressedScale = 0.94f)
+                        .clip(pillShape)
+                        .clickable(
+                            interactionSource = browserInteraction,
+                            indication = ripple(color = if (isLight) lightBlueAccent else palette.accentSky),
+                            role = Role.Button,
+                            onClick = onOpenBrowser
+                        )
+                        .padding(vertical = 4.dp, horizontal = 2.dp)
+                        .testTag("nav_tab_browser"),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Language,
+                        contentDescription = browserLabel,
+                        tint = inactiveFgColor,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = if (isTelemetryHud) browserLabel.uppercase() else browserLabel,
+                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = labelFont),
+                        fontWeight = FontWeight.Medium,
+                        fontSize = if (isTelemetryHud) 9.sp else 10.sp,
+                        color = inactiveFgColor,
+                        maxLines = 1,
+                        softWrap = false
+                    )
+                }
+
+                // Slot 4: Settings
+                DockNavSlot(
+                    tab = AppTab.Settings,
+                    isSelected = selectedTab == AppTab.Settings,
+                    selectedFgColor = selectedFgColor,
+                    inactiveFgColor = inactiveFgColor,
+                    labelFont = labelFont,
+                    isTelemetryHud = isTelemetryHud,
+                    pillShape = pillShape,
+                    onClick = { onSelectTab(AppTab.Settings) },
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(barHeight)
+                )
             }
         }
+    }
+}
+
+@Composable
+private fun DockNavSlot(
+    tab: AppTab,
+    isSelected: Boolean,
+    selectedFgColor: Color,
+    inactiveFgColor: Color,
+    labelFont: FontFamily,
+    isTelemetryHud: Boolean,
+    pillShape: RoundedCornerShape,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val palette = LocalWhiteGlassPalette.current
+    val reducedMotion = LocalReducedMotion.current
+    val springCfg = LocalSpringPhysics.current
+    val interactionSource = remember(tab) { MutableInteractionSource() }
+    val tabTextColor by animateColorAsState(
+        targetValue = if (isSelected) selectedFgColor else inactiveFgColor,
+        animationSpec = spring(stiffness = 600f),
+        label = "navText_${tab.name}"
+    )
+    val iconScale by animateFloatAsState(
+        targetValue = if (isSelected && !reducedMotion) 1.10f else 1.0f,
+        animationSpec = MotionTokens.tactilePress(reducedMotion, springCfg),
+        label = "navIconScale_${tab.name}"
+    )
+    val rawLabel = stringResource(tab.labelRes)
+    val displayLabel = if (isTelemetryHud) rawLabel.uppercase() else rawLabel
+
+    Column(
+        modifier = modifier
+            .minimumInteractiveComponentSize()
+            .liquidPressScale(interactionSource, pressedScale = 0.94f)
+            .clip(pillShape)
+            .selectable(
+                selected = isSelected,
+                interactionSource = interactionSource,
+                indication = ripple(color = palette.accentSky),
+                onClick = onClick,
+                role = Role.Tab
+            )
+            .padding(vertical = 4.dp, horizontal = 2.dp)
+            .testTag(tab.testTag),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            imageVector = if (isSelected) tab.selectedIcon else tab.unselectedIcon,
+            contentDescription = rawLabel,
+            tint = tabTextColor,
+            modifier = Modifier
+                .size(18.dp)
+                .scale(iconScale)
+        )
+        Spacer(modifier = Modifier.height(2.dp))
+        Text(
+            text = displayLabel,
+            style = MaterialTheme.typography.labelSmall.copy(fontFamily = labelFont),
+            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+            fontSize = if (isTelemetryHud) 9.sp else 10.sp,
+            color = tabTextColor,
+            maxLines = 1,
+            softWrap = false
+        )
     }
 }
 
@@ -571,10 +594,10 @@ fun LiquidMorphBottomDock(
 fun CompactSplitScreenSideRail(
     selectedTab: AppTab,
     onSelectTab: (AppTab) -> Unit,
+    onOpenBrowser: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val palette = LocalWhiteGlassPalette.current
-    val tabs = AppTab.entries
 
     Column(
         modifier = modifier
@@ -588,43 +611,86 @@ fun CompactSplitScreenSideRail(
             .padding(vertical = 12.dp, horizontal = 6.dp)
             .testTag("side_navigation_rail"),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.Top)
+        verticalArrangement = Arrangement.spacedBy(10.dp, Alignment.Top)
     ) {
-        tabs.forEach { tab ->
-            val isSelected = tab == selectedTab
-            val selectedBg = palette.accentSky
-            val selectedFg = palette.onAccentInk
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .minimumInteractiveComponentSize()
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(if (isSelected) selectedBg else Color.Transparent)
-                    .selectable(
-                        selected = isSelected,
-                        onClick = { onSelectTab(tab) },
-                        role = Role.Tab
-                    )
-                    .padding(vertical = 10.dp, horizontal = 4.dp)
-                    .testTag(tab.testTag),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Icon(
-                    imageVector = if (isSelected) tab.selectedIcon else tab.unselectedIcon,
-                    contentDescription = stringResource(tab.labelRes),
-                    tint = if (isSelected) selectedFg else palette.inkMuted,
-                    modifier = Modifier.size(22.dp)
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = stringResource(tab.labelRes),
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = if (isSelected) selectedFg else palette.inkPrimary,
-                    maxLines = 1
-                )
-            }
+        listOf(AppTab.Home, AppTab.Stats).forEach { tab ->
+            SideRailItem(
+                label = stringResource(tab.labelRes),
+                icon = if (tab == selectedTab) tab.selectedIcon else tab.unselectedIcon,
+                selected = tab == selectedTab,
+                testTag = tab.testTag,
+                onClick = { onSelectTab(tab) }
+            )
         }
+        SideRailItem(
+            label = stringResource(R.string.nav_browser),
+            icon = Icons.Filled.Language,
+            selected = false,
+            highlighted = true,
+            testTag = "nav_tab_browser_rail",
+            onClick = onOpenBrowser
+        )
+        SideRailItem(
+            label = stringResource(AppTab.Settings.labelRes),
+            icon = if (selectedTab == AppTab.Settings) AppTab.Settings.selectedIcon else AppTab.Settings.unselectedIcon,
+            selected = selectedTab == AppTab.Settings,
+            testTag = AppTab.Settings.testTag,
+            onClick = { onSelectTab(AppTab.Settings) }
+        )
+    }
+}
+
+@Composable
+private fun SideRailItem(
+    label: String,
+    icon: ImageVector,
+    selected: Boolean,
+    highlighted: Boolean = false,
+    testTag: String,
+    onClick: () -> Unit
+) {
+    val palette = LocalWhiteGlassPalette.current
+    val bg = when {
+        selected -> palette.accentSky
+        highlighted -> palette.glassTintedSky
+        else -> Color.Transparent
+    }
+    val fg = when {
+        selected -> palette.onAccentInk
+        highlighted -> palette.accentSkyBright
+        else -> palette.inkPrimary
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .minimumInteractiveComponentSize()
+            .clip(RoundedCornerShape(16.dp))
+            .background(bg)
+            .selectable(
+                selected = selected,
+                onClick = onClick,
+                role = Role.Tab
+            )
+            .padding(vertical = 9.dp, horizontal = 3.dp)
+            .testTag(testTag),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = label,
+            tint = if (selected || highlighted) fg else palette.inkMuted,
+            modifier = Modifier.size(21.dp)
+        )
+        Spacer(modifier = Modifier.height(3.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold,
+            fontSize = 10.sp,
+            color = fg,
+            maxLines = 1,
+            softWrap = false
+        )
     }
 }
 

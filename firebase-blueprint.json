@@ -350,6 +350,430 @@
         "confidence",
         "createdAt"
       ]
+    },
+    "UserDailyUsage": {
+      "title": "UserDailyUsage",
+      "description": "Monotonic per-user UTC daily usage counters enforcing fair daily limits across Screen Solves, Ask AI Text, Photo Solves, PDF Solves, and Google Forms. Clients must submit FieldValue.serverTimestamp() for createdAt and updatedAt.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Authenticated Firebase UID of the account owner."
+        },
+        "dateKey": {
+          "type": "string",
+          "description": "UTC date key in YYYY-MM-DD format."
+        },
+        "overlayMcqCount": {
+          "type": "integer",
+          "description": "Cloud screen MCQ solves consumed today (0..1000)."
+        },
+        "askTextCount": {
+          "type": "integer",
+          "description": "Ask AI text prompts consumed today (0..1000)."
+        },
+        "askPhotoCount": {
+          "type": "integer",
+          "description": "Ask AI multimodal photo solves consumed today (0..1000)."
+        },
+        "askPdfCount": {
+          "type": "integer",
+          "description": "Ask AI PDF document solves consumed today (0..1000)."
+        },
+        "googleFormsCount": {
+          "type": "integer",
+          "description": "Google Forms batch solves consumed today (0..1000)."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Immutable creation timestamp set via FieldValue.serverTimestamp()."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last increment timestamp set via FieldValue.serverTimestamp()."
+        }
+      },
+      "required": [
+        "userId",
+        "dateKey",
+        "overlayMcqCount",
+        "askTextCount",
+        "askPhotoCount",
+        "askPdfCount",
+        "googleFormsCount",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "DeviceGuard": {
+      "title": "DeviceGuard",
+      "description": "Hardware-bound anti-abuse and shared daily quota guard keyed by salted SHA-256 of ANDROID_ID. Prevents credit-hopping via Google account switching or account deletion/recreation, with monotonic strikeCount and irreversible ban enforcement.",
+      "type": "object",
+      "properties": {
+        "deviceHash": {
+          "type": "string",
+          "description": "64-character lowercase hex SHA-256 hash of salted ANDROID_ID."
+        },
+        "dateKey": {
+          "type": "string",
+          "description": "Active UTC date key in YYYY-MM-DD format."
+        },
+        "lastUid": {
+          "type": "string",
+          "description": "Most recent authenticated Firebase UID active on this device."
+        },
+        "seenUidCountToday": {
+          "type": "integer",
+          "description": "Number of distinct UIDs seen on this device today (1..100)."
+        },
+        "overlayMcqCount": {
+          "type": "integer",
+          "description": "Device-wide Screen Solve cloud uses today (0..1000)."
+        },
+        "askTextCount": {
+          "type": "integer",
+          "description": "Device-wide quick follow-up text uses today (0..1000)."
+        },
+        "askPhotoCount": {
+          "type": "integer",
+          "description": "Device-wide Photo Answer Key uses today (0..1000)."
+        },
+        "askPdfCount": {
+          "type": "integer",
+          "description": "Device-wide PDF Answer Key uses today (0..1000)."
+        },
+        "googleFormsCount": {
+          "type": "integer",
+          "description": "Device-wide Google Forms batch solves today (0..1000)."
+        },
+        "strikeCount": {
+          "type": "integer",
+          "description": "Monotonic fair-use abuse strike counter (0..10). Strike 1 = warning, Strike 2+ = device restriction."
+        },
+        "banned": {
+          "type": "boolean",
+          "description": "Irreversible device restriction flag once repeated credit-bypass abuse is detected."
+        },
+        "lastStrikeReason": {
+          "type": "string",
+          "description": "Human-readable reason for the latest fair-use warning or restriction (0..240 characters)."
+        },
+        "lastDeletedAccountAtMs": {
+          "type": "integer",
+          "description": "Epoch milliseconds of the last account deletion on this device after consuming credits."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Immutable creation timestamp set via FieldValue.serverTimestamp()."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last modification timestamp set via FieldValue.serverTimestamp()."
+        }
+      },
+      "required": [
+        "deviceHash",
+        "dateKey",
+        "lastUid",
+        "seenUidCountToday",
+        "overlayMcqCount",
+        "askTextCount",
+        "askPhotoCount",
+        "askPdfCount",
+        "googleFormsCount",
+        "strikeCount",
+        "banned",
+        "lastStrikeReason",
+        "lastDeletedAccountAtMs",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "SharedFormSolution": {
+      "title": "SharedFormSolution",
+      "description": "Shared jumble-proof Google Forms answer cache keyed by 64-char SHA-256 of canonical Form ID/URL. Stores canonical question stems and winning option text(s) so classmates with shuffled questions or shuffled option orders get instant answers without burning AI credits, while allowing single-question re-solve corrections to heal the cache via monotonic revision increments.",
+      "type": "object",
+      "properties": {
+        "formHash": {
+          "type": "string",
+          "description": "64-character lowercase hex SHA-256 hash of canonical Google Form ID or URL."
+        },
+        "formTitle": {
+          "type": "string",
+          "description": "Sanitized Google Form title (0..200 characters)."
+        },
+        "createdByUid": {
+          "type": "string",
+          "description": "Immutable Firebase UID of the first user who cached this form."
+        },
+        "updatedByUid": {
+          "type": "string",
+          "description": "Firebase UID of the most recent user who merged new pages or re-verified a question."
+        },
+        "questionCount": {
+          "type": "integer",
+          "description": "Total number of cached questions stored in entriesJson (1..200)."
+        },
+        "revision": {
+          "type": "integer",
+          "description": "Monotonic cache revision counter incremented whenever a question is added or re-verified (1..10000)."
+        },
+        "entriesJson": {
+          "type": "string",
+          "description": "Compact serialized JSON array of jumble-proof question stem + winning option text entries (2..90000 characters)."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Immutable server timestamp when this form was first cached."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of the latest merge or single-question re-solve correction."
+        }
+      },
+      "required": [
+        "formHash",
+        "formTitle",
+        "createdByUid",
+        "updatedByUid",
+        "questionCount",
+        "revision",
+        "entriesJson",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "LiveClassRoom": {
+      "title": "LiveClassRoom",
+      "description": "Real-time Discord-style multiplayer study room keyed by a 6-character uppercase alphanumeric invite code. Strictly capped at 40 members with host-only approval, host-locked quiz URL, and 24-hour auto-expiry. Clients must submit FieldValue.serverTimestamp() for createdAt and updatedAt.",
+      "type": "object",
+      "properties": {
+        "roomCode": {
+          "type": "string",
+          "description": "6-character uppercase alphanumeric invite code (e.g. 'K7M29Q')."
+        },
+        "roomName": {
+          "type": "string",
+          "description": "Display title of the study room (1..80 characters)."
+        },
+        "subject": {
+          "type": "string",
+          "enum": ["GENERAL", "MATH", "SCIENCE", "CODING", "MEDICAL", "LAW"],
+          "description": "Subject bucket for the live study room."
+        },
+        "hostUid": {
+          "type": "string",
+          "description": "Immutable Firebase UID of the author/host who created the room."
+        },
+        "hostName": {
+          "type": "string",
+          "description": "Sanitized display name of the room creator (1..60 characters)."
+        },
+        "hostPhotoUrl": {
+          "type": "string",
+          "description": "Optional public profile photo URL of the host (0..500 characters)."
+        },
+        "quizUrl": {
+          "type": "string",
+          "description": "Host-locked exam or quiz URL (0..2048 characters). Only the room host can set or modify this URL."
+        },
+        "maxMembers": {
+          "type": "integer",
+          "description": "Hard member capacity for this live room (strictly 40)."
+        },
+        "memberCount": {
+          "type": "integer",
+          "description": "Count of host-approved classmates currently in this room (1..40)."
+        },
+        "questionCount": {
+          "type": "integer",
+          "description": "Total synced questions currently inside this room (0..200)."
+        },
+        "active": {
+          "type": "boolean",
+          "description": "True while the room is live; host can set false to close early."
+        },
+        "expiresAtMs": {
+          "type": "integer",
+          "description": "Epoch milliseconds (24 hours after creation) when this room automatically expires."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Immutable server timestamp when the room was created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of the latest host action or answer broadcast."
+        }
+      },
+      "required": [
+        "roomCode",
+        "roomName",
+        "subject",
+        "hostUid",
+        "hostName",
+        "hostPhotoUrl",
+        "quizUrl",
+        "maxMembers",
+        "memberCount",
+        "questionCount",
+        "active",
+        "expiresAtMs",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "LiveRoomMember": {
+      "title": "LiveRoomMember",
+      "description": "Privacy-safe room membership record storing ONLY displayName, photoUrl, role, and host-controlled approval status (pending/approved/rejected). No email, phone, or profile inspection data is stored.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Authenticated Firebase UID matching the document ID."
+        },
+        "roomCode": {
+          "type": "string",
+          "description": "Parent 6-character uppercase alphanumeric room code."
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Public display name shown in the room member list (1..60 characters)."
+        },
+        "photoUrl": {
+          "type": "string",
+          "description": "Public circular avatar URL shown in the room member list (0..500 characters)."
+        },
+        "role": {
+          "type": "string",
+          "enum": ["host", "member"],
+          "description": "Role inside the live room."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "approved", "rejected"],
+          "description": "Join approval state controlled exclusively by the room host."
+        },
+        "joinedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Immutable server timestamp when join was requested."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of latest approval or display update."
+        }
+      },
+      "required": [
+        "uid",
+        "roomCode",
+        "displayName",
+        "photoUrl",
+        "role",
+        "status",
+        "joinedAt",
+        "updatedAt"
+      ]
+    },
+    "LiveRoomAnswer": {
+      "title": "LiveRoomAnswer",
+      "description": "A live host-solved MCQ answer streamed simultaneously to all approved members in a LiveClassRoom. Stores exact shortAnswer text up to 600 chars for shuffled-option matching across classmates.",
+      "type": "object",
+      "properties": {
+        "roomCode": {
+          "type": "string",
+          "description": "Parent 6-character uppercase alphanumeric room code."
+        },
+        "questionNumber": {
+          "type": "integer",
+          "description": "Sequential question number inside the room (1..200)."
+        },
+        "questionText": {
+          "type": "string",
+          "description": "Extracted question prompt text (1..2000 characters)."
+        },
+        "optionsJson": {
+          "type": "string",
+          "description": "Serialized JSON array of option strings for jumble-safe matching (2..6000 characters)."
+        },
+        "answerBadge": {
+          "type": "string",
+          "description": "Concise winning option badge (1..40 characters)."
+        },
+        "shortAnswer": {
+          "type": "string",
+          "description": "Exact wording of the correct answer for shuffled-option display and DOM locating (0..600 characters)."
+        },
+        "explanation": {
+          "type": "string",
+          "description": "Concise 1-2 line explanation (0..1000 characters)."
+        },
+        "sourceLabel": {
+          "type": "string",
+          "description": "Source badge such as 'Host Solved', 'Quiz Browser', or 'AI Verified' (1..60 characters)."
+        },
+        "sharedByUid": {
+          "type": "string",
+          "description": "Immutable Firebase UID of the host who broadcast this answer."
+        },
+        "sharedByName": {
+          "type": "string",
+          "description": "Sanitized name of the host who shared this question (1..60 characters)."
+        },
+        "confirmCount": {
+          "type": "integer",
+          "description": "Number of classmate confirmations (0..500)."
+        },
+        "disputeCount": {
+          "type": "integer",
+          "description": "Number of classmate disputes (0..500)."
+        },
+        "verifiedByAi": {
+          "type": "boolean",
+          "description": "True when verified by the 1-tap AI tie-breaker."
+        },
+        "updatedByUid": {
+          "type": "string",
+          "description": "Firebase UID of the latest updater."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Immutable server timestamp when first synced."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of the latest update."
+        }
+      },
+      "required": [
+        "roomCode",
+        "questionNumber",
+        "questionText",
+        "optionsJson",
+        "answerBadge",
+        "shortAnswer",
+        "explanation",
+        "sourceLabel",
+        "sharedByUid",
+        "sharedByName",
+        "confirmCount",
+        "disputeCount",
+        "verifiedByAi",
+        "updatedByUid",
+        "createdAt",
+        "updatedAt"
+      ]
     }
   },
   "firestore": {
@@ -369,9 +793,33 @@
       "schema": "SolvedQuestion",
       "description": "Per-user private collection of solved questions, explanations, bookmarks, and mistake flashcards."
     },
+    "/users/{userId}/dailyUsage/{dateKey}": {
+      "schema": "UserDailyUsage",
+      "description": "Monotonic per-user daily feature usage counters (UTC day) preventing reinstall/clear-data quota bypass."
+    },
+    "/deviceGuards/{deviceHash}": {
+      "schema": "DeviceGuard",
+      "description": "Hardware-bound shared daily quota & monotonic 2-strike anti-abuse guard preventing account switching or delete/recreate credit farming."
+    },
     "/sharedQuizCache/{questionHash}": {
       "schema": "SharedQuizCache",
       "description": "Global verified question-hash answer cache enabling instant zero-AI-quota hits across users."
+    },
+    "/sharedFormSolutions/{formHash}": {
+      "schema": "SharedFormSolution",
+      "description": "Jumble-proof class-wide Google Form solution cache keyed by canonical form hash, enabling instant zero-AI solves and self-healing single-question re-solve updates."
+    },
+    "/liveClassRooms/{roomCode}": {
+      "schema": "LiveClassRoom",
+      "description": "Real-time Discord-style multiplayer class room (max 40 members, host-locked quiz URL, 24-hour auto-expiry)."
+    },
+    "/liveClassRooms/{roomCode}/members/{memberUid}": {
+      "schema": "LiveRoomMember",
+      "description": "Privacy-safe member list showing only displayName and photoUrl with host-only approval workflow."
+    },
+    "/liveClassRooms/{roomCode}/answers/{answerId}": {
+      "schema": "LiveRoomAnswer",
+      "description": "Real-time host-broadcast quiz answers inside a Live Class Room for shuffled-option-safe display."
     }
   }
 }

@@ -8,7 +8,7 @@ import com.omnisolve.overlay.BuildConfig
  * - AdMob App ID (AndroidManifest.xml): ca-app-pub-6628813367564084~2373198575
  * - Banner Ad Unit (Prism_Main_Banner): ca-app-pub-6628813367564084/4121394511
  * - Interstitial Ad Unit (Prism_Interstitial): ca-app-pub-6628813367564084/3509342389
- * - App Open Ad Unit (Prism_App_Open): ca-app-pub-6628813367564084/4997236766
+ * - App Open Ad Unit (Prism_App_Open): ca-app-pub-6628813367564084/9522024889
  * - app-ads.txt entry: google.com, pub-6628813367564084, DIRECT, f08c47fec0942fa0
  *
  * Uses official Google test Ad Unit IDs automatically in DEBUG builds to protect
@@ -16,7 +16,7 @@ import com.omnisolve.overlay.BuildConfig
  * verified live units in RELEASE builds.
  */
 object AdConfig {
-    /** Global master switch to enable/disable in-app ads (Disabled for Production/Testing Track) */
+    /** Global master switch to enable/disable in-app ads (disabled for clean launch; flip to true when ready) */
     const val ADS_ENABLED: Boolean = false
 
     private const val TEST_BANNER_ID = "ca-app-pub-3940256099942544/6300978111"
@@ -25,7 +25,7 @@ object AdConfig {
 
     private const val PROD_BANNER_ID = "ca-app-pub-6628813367564084/4121394511"
     private const val PROD_INTERSTITIAL_ID = "ca-app-pub-6628813367564084/3509342389"
-    private const val PROD_APP_OPEN_ID = "ca-app-pub-6628813367564084/4997236766"
+    private const val PROD_APP_OPEN_ID = "ca-app-pub-6628813367564084/9522024889"
 
     val BANNER_AD_UNIT_ID: String
         get() = if (BuildConfig.DEBUG) TEST_BANNER_ID else PROD_BANNER_ID

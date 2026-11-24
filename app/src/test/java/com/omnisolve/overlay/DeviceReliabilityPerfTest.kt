@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
@@ -29,6 +30,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToKey
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
@@ -70,10 +72,8 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
-import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [34])
 class DeviceReliabilityPerfTest {
 
     @get:Rule
@@ -1117,6 +1117,7 @@ class DeviceReliabilityPerfTest {
         var linkTapped = false
         var cameraTapped = false
         var floatingPillTapped = false
+        var liveRoomTapped = false
         composeTestRule.setContent {
             WhiteGlassTheme(themeSpec = NORMAL_DEFAULT_THEME) {
                 CompositionLocalProvider(
@@ -1132,7 +1133,8 @@ class DeviceReliabilityPerfTest {
                             onOpenFormLink = { linkTapped = true },
                             onPickCamera = { cameraTapped = true },
                             onToggleFloatingPill = { floatingPillTapped = true },
-                            isOverlayRunning = false
+                            isOverlayRunning = false,
+                            onOpenLiveClassRoom = { liveRoomTapped = true }
                         )
                     }
                 }
@@ -1142,12 +1144,146 @@ class DeviceReliabilityPerfTest {
         composeTestRule.onNodeWithTag("btn_plus_tree_camera").assertIsDisplayed().performClick()
         composeTestRule.onNodeWithTag("btn_plus_tree_photo").assertIsDisplayed().performClick()
         composeTestRule.onNodeWithTag("btn_plus_tree_pdf").assertIsDisplayed().performClick()
+        composeTestRule.onNodeWithTag("btn_plus_tree_live_room").assertIsDisplayed().performClick()
         composeTestRule.onNodeWithTag("btn_plus_tree_floating_pill").assertIsDisplayed().performClick()
-        assertTrue("Form Link tile must trigger onOpenFormLink", linkTapped)
+        assertTrue("Quiz Browser tile must trigger onOpenFormLink", linkTapped)
         assertTrue("Camera tile must trigger onPickCamera", cameraTapped)
         assertTrue("Photo tile must trigger onPickPhoto", photoTapped)
         assertTrue("PDF tile must trigger onPickPdf", pdfTapped)
+        assertTrue("Live Class Room capsule must trigger onOpenLiveClassRoom", liveRoomTapped)
         assertTrue("Floating Pill strip must trigger onToggleFloatingPill", floatingPillTapped)
+    }
+
+    @Test
+    fun testLiveClassRoomScreen_LobbyAndActiveRoomRenderCleanlyOnCompactWithLargeFontScale() {
+        val sampleRoom = com.omnisolve.overlay.data.LiveClassRoom(
+            roomCode = "K7M29Q",
+            roomName = "CSE-B Networks Quiz",
+            subject = com.omnisolve.overlay.model.SubjectMode.CODING.id,
+            hostUid = "uid_host",
+            hostName = "Alice",
+            memberCount = 12,
+            questionCount = 1,
+            active = true,
+            expiresAtMs = System.currentTimeMillis() + 12L * 3_600_000L
+        )
+        val sampleAnswer = com.omnisolve.overlay.data.LiveRoomAnswer(
+            id = "q_1",
+            roomCode = "K7M29Q",
+            questionNumber = 1,
+            questionText = "Which layer handles routing across networks?",
+            answerBadge = "C",
+            shortAnswer = "Network Layer",
+            explanation = "IP routing operates at OSI Layer 3.",
+            sourceLabel = "Microsoft Forms",
+            sharedByUid = "uid_host",
+            sharedByName = "Alice",
+            confirmCount = 4,
+            disputeCount = 1,
+            verifiedByAi = false,
+            updatedByUid = "uid_host"
+        )
+        val showActiveRoom = androidx.compose.runtime.mutableStateOf(false)
+        var confirmClicked = false
+        var disputeClicked = false
+        var aiVerifyClicked = false
+
+        val sampleMembers = listOf(
+            com.omnisolve.overlay.data.LiveRoomMember(
+                uid = "uid_host",
+                roomCode = "K7M29Q",
+                displayName = "Alice",
+                photoUrl = "",
+                role = com.omnisolve.overlay.data.LiveRoomMember.ROLE_HOST,
+                status = com.omnisolve.overlay.data.LiveRoomMember.STATUS_APPROVED
+            ),
+            com.omnisolve.overlay.data.LiveRoomMember(
+                uid = "uid_pending",
+                roomCode = "K7M29Q",
+                displayName = "Bob",
+                photoUrl = "",
+                role = com.omnisolve.overlay.data.LiveRoomMember.ROLE_MEMBER,
+                status = com.omnisolve.overlay.data.LiveRoomMember.STATUS_PENDING
+            )
+        )
+        var approvedUid: String? = null
+
+        composeTestRule.setContent {
+            WhiteGlassTheme(themeSpec = NORMAL_DEFAULT_THEME) {
+                CompositionLocalProvider(
+                    LocalDensity provides Density(density = 2.0f, fontScale = 1.30f),
+                    com.omnisolve.overlay.ui.physics.LocalReducedMotion provides true
+                ) {
+                    val state = MainUiState(
+                        firebaseUserId = "uid_host",
+                        activeLiveClassRoom = if (showActiveRoom.value) sampleRoom.copy(quizUrl = "https://forms.gle/demo") else null,
+                        liveClassRoomMembers = if (showActiveRoom.value) sampleMembers else emptyList(),
+                        myLiveRoomMemberStatus = if (showActiveRoom.value) com.omnisolve.overlay.data.LiveRoomMember.STATUS_APPROVED else null,
+                        liveClassRoomAnswers = if (showActiveRoom.value) listOf(sampleAnswer) else emptyList()
+                    )
+                    Box(modifier = Modifier.width(340.dp).height(420.dp)) {
+                        com.omnisolve.overlay.ui.screens.LiveClassRoomScreen(
+                            state = state,
+                            onBackToHome = {},
+                            onSignInGoogle = {},
+                            onCreateRoom = { _, _, _ -> },
+                            onJoinRoom = {},
+                            onApproveMember = { approvedUid = it },
+                            onRejectOrRemoveMember = { _, _ -> },
+                            onUpdateLockedQuizUrl = {},
+                            onLeaveRoom = {},
+                            onEndRoom = {},
+                            onToggleAutoSync = {},
+                            onVoteConfirm = { confirmClicked = true },
+                            onVoteDispute = { disputeClicked = true },
+                            onAiVerifyAnswer = { aiVerifyClicked = true },
+                            onShowBannerMessage = {}
+                        )
+                    }
+                }
+            }
+        }
+
+        // Verify Lobby state renders cleanly
+        composeTestRule.onNodeWithTag("input_live_room_code").assertExists()
+        composeTestRule.onNodeWithTag("btn_live_room_join").assertExists()
+        composeTestRule.onNodeWithTag("live_class_room_list")
+            .performScrollToKey("live_room_create_section")
+        composeTestRule.onNodeWithTag("btn_live_room_create").assertExists()
+
+        // Switch to Active Discord-style Room state and verify banner + locked exam browser + live answer card
+        composeTestRule.runOnIdle { showActiveRoom.value = true }
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("live_class_room_list")
+            .performScrollToKey("active_room_banner")
+        composeTestRule.onNodeWithTag("text_active_room_code").assertExists()
+        composeTestRule.onNodeWithTag("btn_live_room_share").assertExists()
+        composeTestRule.onNodeWithTag("live_class_room_list")
+            .performScrollToKey("live_room_locked_url_card")
+        composeTestRule.onNodeWithTag("btn_live_room_open_browser").assertExists()
+        composeTestRule.onNodeWithTag("live_class_room_list")
+            .performScrollToKey("q_1")
+        composeTestRule.onNodeWithTag("card_live_room_answer_1").assertExists()
+        composeTestRule.onNodeWithTag("btn_room_confirm_1").performClick()
+        composeTestRule.onNodeWithTag("btn_room_dispute_1").performClick()
+        composeTestRule.onNodeWithTag("btn_room_ai_verify_1").performClick()
+
+        assertTrue("Confirm button must fire callback", confirmClicked)
+        assertTrue("Dispute button must fire callback", disputeClicked)
+        assertTrue("AI Verify button must fire callback", aiVerifyClicked)
+
+        // Switch to # members channel and verify pending host approval + non-clickable member row
+        composeTestRule.onNodeWithTag("live_class_room_list")
+            .performScrollToKey("active_room_banner")
+        composeTestRule.onNodeWithTag("tab_room_channel_members").performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("live_class_room_list")
+            .performScrollToKey("pending_uid_pending")
+        composeTestRule.onNodeWithTag("btn_approve_member_uid_pending").performClick()
+        assertEquals("uid_pending", approvedUid)
+        composeTestRule.onNodeWithTag("live_class_room_list")
+            .performScrollToKey("member_uid_host")
+        composeTestRule.onNodeWithTag("member_row_uid_host").assertExists()
     }
 }
 

@@ -8,7 +8,9 @@ Everything inside the Android app is already wired and tested. This file lists *
 > - **Cloudflare Worker URL:** `https://mcq-mate.nomaankhannfs2.workers.dev`
 > - **Firestore Database ID:** `ai-studio-android-prismocr-23b5f3d4-3cc4-4f3d-beff-cb20ca94899a`
 > - **AdMob App ID:** `ca-app-pub-6628813367564084~2373198575`
-> - **AdMob Release Banner Unit ID:** `ca-app-pub-6628813367564084/4121394511`
+> - **AdMob Release Banner Unit ID (`Prism_Main_Banner`):** `ca-app-pub-6628813367564084/4121394511`
+> - **AdMob Release Interstitial Unit ID (`Prism_Interstitial`):** `ca-app-pub-6628813367564084/3509342389`
+> - **AdMob Release App Open Unit ID (`Prism_App_Open`):** `ca-app-pub-6628813367564084/4997236766`
 
 ---
 
@@ -326,9 +328,12 @@ Your app uses `RecaptchaAppCheckProviderFactory` in release builds with `recaptc
 
 ## 4. Google AdMob Monetization & `app-ads.txt`
 
-Your app already switches automatically:
-- **Debug builds:** Google Test Banner ID (`ca-app-pub-3940256099942544/6300978111`)
-- **Release builds:** Production Banner ID (`ca-app-pub-6628813367564084/4121394511`)
+Your app already switches automatically (`AdConfig.kt`):
+- **Debug builds:** Official Google Test IDs (Banner, Interstitial, App Open)
+- **Release builds:** Verified Production IDs:
+  - Banner (`Prism_Main_Banner`): `ca-app-pub-6628813367564084/4121394511`
+  - Interstitial (`Prism_Interstitial`): `ca-app-pub-6628813367564084/3509342389`
+  - App Open (`Prism_App_Open`): `ca-app-pub-6628813367564084/4997236766`
 
 ### Step 4.1 — Link App in AdMob & Host `app-ads.txt`
 1. Open **Google AdMob → Apps → App settings → Link to Google Play** once your Play Store listing is live.
@@ -337,7 +342,7 @@ Your app already switches automatically:
    google.com, pub-6628813367564084, DIRECT, f08c47fec0942fa0
    ```
 3. Add that exact developer website URL inside **Google Play Console → Store settings → Website**.
-4. *(Optional)* If you later enable Interstitial or App Open ads, replace `TEST_INTERSTITIAL_ID` / `TEST_APP_OPEN_ID` in `app/src/main/java/com/omnisolve/overlay/ads/AdConfig.kt` with your live AdMob unit IDs.
+4. AdMob App Open ads enforce a 4-hour freshness expiry and cooldowns (3 min Interstitial, 4 min App Open) in `AdManager.kt`, and ads never render over the floating Dynamic Island overlay.
 
 ---
 

@@ -591,10 +591,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     stopLiveClassRoomObservers()
                     F1MasterEngine.onAccountSignedOut()
                     UserUsageLimitManager.getSnapshot(ctx, "")
-                    prefs.edit()
-                        .putString(MainActivity.PREF_KEY_SOLVER_METHOD, SolverMethod.BACKGROUND_GEMINI.id)
-                        .putString(MainActivity.PREF_KEY_DISPLAY_MODE, MainActivity.MODE_STEALTH)
-                        .apply()
                 }
                 _uiState.update { cur ->
                     val signedIn = user != null
@@ -603,8 +599,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         firebaseUserName = user?.displayName,
                         firebaseUserEmail = user?.email,
                         signInPromptDismissedForOcrOnly = if (signedIn) false else cur.signInPromptDismissedForOcrOnly,
-                        solverMethod = if (signedIn) cur.solverMethod else SolverMethod.BACKGROUND_GEMINI,
-                        displayMode = if (signedIn) cur.displayMode else MainActivity.MODE_STEALTH,
                         cloudActivityProfile = if (signedIn) cur.cloudActivityProfile else null,
                         recentCloudRequestLogs = if (signedIn) cur.recentCloudRequestLogs else emptyList(),
                         cloudTelemetryError = if (signedIn) cur.cloudTelemetryError else null,
@@ -1094,17 +1088,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         val configuredKeys = MultiProviderApiSolver.getConfiguredProviders(ctx).size
-        val rawLatestMethod = SolverMethod.fromId(
+        val latestMethod = SolverMethod.fromId(
             prefs.getString(MainActivity.PREF_KEY_SOLVER_METHOD, _uiState.value.solverMethod.id)
         )
-        val latestMethod = if (currentUser == null && rawLatestMethod != SolverMethod.BACKGROUND_GEMINI) {
-            prefs.edit()
-                .putString(MainActivity.PREF_KEY_SOLVER_METHOD, SolverMethod.BACKGROUND_GEMINI.id)
-                .putString(MainActivity.PREF_KEY_DISPLAY_MODE, MainActivity.MODE_STEALTH)
-                .apply()
-            SolverMethod.BACKGROUND_GEMINI
+        val latestDisplayMode = if (latestMethod == SolverMethod.OVERLAPPING_GOOGLE) {
+            MainActivity.MODE_WINDOW
         } else {
-            rawLatestMethod
+            prefs.getString(MainActivity.PREF_KEY_DISPLAY_MODE, _uiState.value.displayMode)
+                ?: MainActivity.MODE_STEALTH
         }
         val latestSolveMode = QuestionSolveMode.fromId(
             prefs.getString(MainActivity.PREF_KEY_QUESTION_SOLVE_MODE, _uiState.value.questionSolveMode.id)
@@ -1126,7 +1117,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 firebaseUserEmail = currentUser?.email,
                 signInPromptDismissedForOcrOnly = if (currentUser != null) false else it.signInPromptDismissedForOcrOnly,
                 solverMethod = latestMethod,
-                displayMode = if (currentUser == null) MainActivity.MODE_STEALTH else it.displayMode,
+                displayMode = latestDisplayMode,
                 questionSolveMode = latestSolveMode,
                 customOpacityPct = latestOpacityPct,
                 configuredKeyCount = configuredKeys,
@@ -3247,24 +3238,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // ─── Dynamic Offline /unslop Theme Studio Engine ────────────────────────
 
     fun selectLocalThemePreset(spec: RemoteThemeSpec, onSyncService: () -> Unit = {}) {
-        if (spec.isNormalDefault) {
+        val canonicalSpec = findThemePresetById(spec.themeId)
+        if (canonicalSpec.isNormalDefault) {
             revertToNormalDefaultTheme(onSyncService)
             return
         }
         val cur = _uiState.value
-        // Reset conflicting color override when picking an explicit light or studio dark flagship preset
-        val resolvedAppearanceOverride = if (
-            !spec.isDark ||
-            spec.themeId == com.omnisolve.overlay.ui.theme.GLASS_PRISM_THEME.themeId ||
-            spec.themeId == com.omnisolve.overlay.ui.theme.CRIMSON_STUDIO_THEME.themeId
-        ) {
-            ThemeColorAppearance.AUTO
-        } else {
-            cur.themeColorAppearanceOverride
-        }
+        val resolvedAppearanceOverride = ThemeColorAppearance.AUTO
         val nextEffective = computeEffectiveSpec(
             preferLocalDefault = false,
-            selectedPresetId = spec.themeId,
+            selectedPresetId = canonicalSpec.themeId,
             animationOverride = cur.themeAnimationOverride,
             appearanceOverride = resolvedAppearanceOverride
         )
@@ -3272,27 +3255,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.update {
             it.copy(
                 preferLocalDefaultTheme = false,
-                selectedThemePresetId = spec.themeId,
+                selectedThemePresetId = canonicalSpec.themeId,
                 themeColorAppearanceOverride = resolvedAppearanceOverride,
                 effectiveThemeSpec = nextEffective
             )
         }
         themeRepository.savePreferences(
             preferLocalDefault = false,
-            selectedPresetId = spec.themeId,
+            selectedPresetId = canonicalSpec.themeId,
             animationIntensityOverride = cur.themeAnimationOverride,
             colorAppearanceOverride = resolvedAppearanceOverride
         )
         launchDataStoreWrite {
             settingsDataStore.updateThemeSettings(
                 preferLocalDefault = false,
-                selectedPresetId = spec.themeId,
+                selectedPresetId = canonicalSpec.themeId,
                 animationIntensityOverride = cur.themeAnimationOverride,
                 colorAppearanceOverride = resolvedAppearanceOverride
             )
         }
         onSyncService()
-        showBannerMessage("Applied theme: ${spec.name}")
+        showBannerMessage("Applied theme: ${canonicalSpec.name}")
     }
 
     fun revertToNormalDefaultTheme(onSyncService: () -> Unit = {}) {

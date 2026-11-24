@@ -68,7 +68,7 @@ object F1AuthGate {
                     errorMessage = "Google Sign-In required before solving."
                 )
             }
-            val tokenResult = withTimeoutOrNull(2_500L) {
+            val tokenResult = withTimeoutOrNull(5_000L) {
                 user.getIdToken(false).await()
             }
             val token = tokenResult?.token
@@ -77,8 +77,12 @@ object F1AuthGate {
                     isAuthenticated = false,
                     uid = user.uid,
                     email = user.email,
-                    isTokenExpired = true,
-                    errorMessage = "Your Google session expired. Please sign in again."
+                    isTokenExpired = tokenResult != null,
+                    errorMessage = if (tokenResult == null) {
+                        "Network is slow while verifying your Google session. Please check your connection and try again."
+                    } else {
+                        "Your Google session expired. Please sign in again."
+                    }
                 )
             }
             F1AuthCheckResult(
@@ -179,10 +183,10 @@ object F1MasterEngine {
 
     private fun defaultProviders(): List<F1ReasoningProvider> = listOf(
         FirebaseGeminiF1Provider,
-        CloudflareWorkersF1Provider,
-        ZeroAuthOnlineAiF1Provider,
         PersonalApiKeysF1Provider,
         DirectVisionF1Provider,
+        CloudflareWorkersF1Provider,
+        ZeroAuthOnlineAiF1Provider,
         GeminiWebViewF1Provider
     )
 
@@ -468,11 +472,11 @@ object F1MasterEngine {
             if (providerMap[F1ProviderId.FIREBASE_GEMINI]?.isEligible(context, boundRequest, classification) == true) {
                 add(F1ProviderId.FIREBASE_GEMINI)
             }
-            if (providerMap[F1ProviderId.CLOUDFLARE_WORKERS]?.isEligible(context, boundRequest, classification) == true) {
-                add(F1ProviderId.CLOUDFLARE_WORKERS)
-            }
             if (providerMap[F1ProviderId.PERSONAL_API_KEYS]?.isEligible(context, boundRequest, classification) == true) {
                 add(F1ProviderId.PERSONAL_API_KEYS)
+            }
+            if (providerMap[F1ProviderId.CLOUDFLARE_WORKERS]?.isEligible(context, boundRequest, classification) == true) {
+                add(F1ProviderId.CLOUDFLARE_WORKERS)
             }
             if (providerMap[F1ProviderId.ZERO_AUTH_ONLINE_AI]?.isEligible(context, boundRequest, classification) == true) {
                 add(F1ProviderId.ZERO_AUTH_ONLINE_AI)

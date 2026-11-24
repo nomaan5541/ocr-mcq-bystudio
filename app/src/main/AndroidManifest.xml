@@ -29,11 +29,6 @@
         android:enableOnBackInvokedCallback="true"
         tools:targetApi="36">
 
-        <!-- Google AdMob Application ID -->
-        <meta-data
-            android:name="com.google.android.gms.ads.APPLICATION_ID"
-            android:value="ca-app-pub-6628813367564084~2373198575" />
-
         <!-- Main Launcher Activity -->
         <activity
             android:name=".MainActivity"

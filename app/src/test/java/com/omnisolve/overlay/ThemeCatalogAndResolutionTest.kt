@@ -36,27 +36,25 @@ import org.robolectric.annotation.Config
 class ThemeCatalogAndResolutionTest {
 
     @Test
-    fun catalogHasExact4CuratedPrismThemesWithoutExtreme3dDefaults() {
+    fun catalogHasExact2CuratedPrismThemesWithoutExtreme3dDefaults() {
         assertTrue(NORMAL_DEFAULT_THEME.isNormalDefault)
         assertEquals(RemoteThemeSpec.DEFAULT_THEME_ID, NORMAL_DEFAULT_THEME.themeId)
         assertEquals(1, NORMAL_DEFAULT_THEME.themeNumber)
 
-        assertEquals(4, CURATED_PRISM_THEMES.size)
-        assertEquals(4, ALL_THEME_OPTIONS.size)
+        assertEquals(2, CURATED_PRISM_THEMES.size)
+        assertEquals(2, ALL_THEME_OPTIONS.size)
         assertEquals(NORMAL_DEFAULT_THEME, ALL_THEME_OPTIONS.first())
 
         val expectedIds = listOf(
             "default_prism_crimson",
-            "ios_liquid_light",
-            "glass_prism",
-            "crimson_studio"
+            "ios_liquid_light"
         )
         assertEquals(expectedIds, CURATED_PRISM_THEMES.map { it.themeId })
         assertEquals(expectedIds, FEATURED_THEME_IDS)
-        assertEquals(4, FEATURED_THEMES.size)
+        assertEquals(2, FEATURED_THEMES.size)
 
         val uniqueIds = ALL_THEME_OPTIONS.map { it.themeId }.toSet()
-        assertEquals(4, uniqueIds.size)
+        assertEquals(2, uniqueIds.size)
 
         // Zero presets default to EXTREME_3D
         assertTrue(
@@ -104,10 +102,10 @@ class ThemeCatalogAndResolutionTest {
     @Test
     fun lightAccentsProduceDarkContrastInkAndDarkAccentsProduceLightInk() {
         val redPrism = NORMAL_DEFAULT_THEME.toPalette()
-        val crimsonStudio = CRIMSON_STUDIO_THEME.toPalette()
+        val lightPrism = IOS_LIQUID_LIGHT_THEME.toPalette()
 
         assertEquals(Color(0xFFF8FAFC), redPrism.onAccentInk)
-        assertEquals(Color(0xFFF8FAFC), crimsonStudio.onAccentInk)
+        assertEquals(Color(0xFFF8FAFC), lightPrism.onAccentInk)
 
         assertEquals(Color(0xFF0A0C10), contrastOnColor(Color(0xFFF5F5F5)))
         assertEquals(Color(0xFFF8FAFC), contrastOnColor(Color(0xFFD71921)))
@@ -115,10 +113,10 @@ class ThemeCatalogAndResolutionTest {
     }
 
     @Test
-    fun resolveWithOverridesSupportsSignatureRedAdaptiveLightAndMotionTiers() {
-        val crimsonStudio = findThemePresetById("crimson_studio")
+    fun resolveWithOverridesSupportsSignatureRedOnDarkAndNeverBleedsRedOntoLight() {
+        val darkDefault = findThemePresetById("default_prism_crimson")
 
-        val signatureRed = crimsonStudio.resolveWithOverrides(
+        val signatureRed = darkDefault.resolveWithOverrides(
             systemIsDark = false,
             animationOverride = ThemeAnimationIntensity.SUBTLE,
             appearanceOverride = ThemeColorAppearance.DARK_SIGNATURE_RED
@@ -129,7 +127,17 @@ class ThemeCatalogAndResolutionTest {
         assertEquals(ThemeAnimationIntensity.SUBTLE, signatureRed.animationIntensity)
         assertEquals(0.35f, signatureRed.animationIntensity.motionFactor, 0.001f)
 
-        val adaptiveLight = crimsonStudio.resolveWithOverrides(
+        // Prism Light must NEVER get red bleed even if DARK_SIGNATURE_RED is requested
+        val lightGuard = IOS_LIQUID_LIGHT_THEME.resolveWithOverrides(
+            systemIsDark = false,
+            animationOverride = ThemeAnimationIntensity.INTERACTIVE,
+            appearanceOverride = ThemeColorAppearance.DARK_SIGNATURE_RED
+        )
+        assertFalse(lightGuard.isDark)
+        assertEquals("#1B6EF3", lightGuard.accentPrimaryHex)
+        assertEquals("#1B6EF3", lightGuard.islandAccentHex)
+
+        val adaptiveLight = darkDefault.resolveWithOverrides(
             systemIsDark = false,
             animationOverride = ThemeAnimationIntensity.EXTREME_3D,
             appearanceOverride = ThemeColorAppearance.ADAPTIVE_LIGHT_DARK
@@ -137,21 +145,17 @@ class ThemeCatalogAndResolutionTest {
         assertFalse(adaptiveLight.isDark)
         assertEquals("#F5F6FA", adaptiveLight.canvasTopHex)
         assertEquals("#101216", adaptiveLight.inkPrimaryHex)
-        assertEquals(crimsonStudio.accentPrimaryHex, adaptiveLight.accentPrimaryHex)
+        assertEquals(darkDefault.accentPrimaryHex, adaptiveLight.accentPrimaryHex)
         assertEquals(ThemeAnimationIntensity.EXTREME_3D, adaptiveLight.animationIntensity)
         assertEquals(1.45f, adaptiveLight.animationIntensity.motionFactor, 0.001f)
     }
 
     @Test
-    fun lightAndGlassPrismThemesArePureWhiteAndBlueAndAdsAreDisabled() {
+    fun lightThemeIsPureWhiteAndBlueAndAdsAreDisabled() {
         assertFalse("Prism Light must be a light theme", IOS_LIQUID_LIGHT_THEME.isDark)
         assertEquals("#1B6EF3", IOS_LIQUID_LIGHT_THEME.accentPrimaryHex)
 
-        assertFalse("Glass Prism must be a pure white & blue light glass theme", GLASS_PRISM_THEME.isDark)
-        assertEquals("#0A66FF", GLASS_PRISM_THEME.accentPrimaryHex)
-
         assertTrue("Default theme must stay Black & Red", NORMAL_DEFAULT_THEME.isDark)
-        assertTrue("Crimson Studio must stay Dark & Red", CRIMSON_STUDIO_THEME.isDark)
         assertFalse("Ads must be disabled for clean ad-free release", AdConfig.ADS_ENABLED)
     }
 
@@ -168,7 +172,7 @@ class ThemeCatalogAndResolutionTest {
 
         repo1.savePreferences(
             preferLocalDefault = false,
-            selectedPresetId = CRIMSON_STUDIO_THEME.themeId,
+            selectedPresetId = IOS_LIQUID_LIGHT_THEME.themeId,
             animationIntensityOverride = ThemeAnimationIntensity.EXTREME_3D,
             colorAppearanceOverride = ThemeColorAppearance.ADAPTIVE_LIGHT_DARK
         )
@@ -177,10 +181,10 @@ class ThemeCatalogAndResolutionTest {
         val repo2 = LocalThemeRepository(prefs)
         val loaded = repo2.loadPreferences()
         assertFalse(loaded.preferLocalDefault)
-        assertEquals(CRIMSON_STUDIO_THEME.themeId, loaded.selectedPresetId)
+        assertEquals(IOS_LIQUID_LIGHT_THEME.themeId, loaded.selectedPresetId)
         assertEquals(ThemeAnimationIntensity.EXTREME_3D, loaded.animationIntensityOverride)
         assertEquals(ThemeColorAppearance.ADAPTIVE_LIGHT_DARK, loaded.colorAppearanceOverride)
-        assertEquals(CRIMSON_STUDIO_THEME.themeId, resolveEffectiveBaseTheme(loaded).themeId)
+        assertEquals(IOS_LIQUID_LIGHT_THEME.themeId, resolveEffectiveBaseTheme(loaded).themeId)
 
         // Revert back to Normal Red Prism Default resets preset and overrides
         repo2.revertToNormalDefaultTheme()
@@ -197,16 +201,16 @@ class ThemeCatalogAndResolutionTest {
         assertEquals("#00E5FF", normalizeHex("  #00e5ff ", "#D71921"))
         assertEquals("#D71921", normalizeHex("not-a-color", "#D71921"))
         assertEquals(NORMAL_DEFAULT_THEME, findThemePresetById("non_existent_theme_id"))
-        // Legacy removed theme IDs safely fall back to Prism Default
+        // Legacy removed theme IDs safely migrate to the matching core theme
         assertEquals(NORMAL_DEFAULT_THEME, findThemePresetById("jarvis_ai"))
+        assertEquals(NORMAL_DEFAULT_THEME, findThemePresetById("crimson_studio"))
+        assertEquals(IOS_LIQUID_LIGHT_THEME, findThemePresetById("glass_prism"))
     }
 
     @Test
-    fun curatedLayoutArchetypesMatchAllFourShippedThemes() {
+    fun curatedLayoutArchetypesMatchBothCoreShippedThemes() {
         assertEquals(ThemeLayoutArchetype.CLASSIC_PRISM, NORMAL_DEFAULT_THEME.layoutArchetype)
         assertEquals(ThemeLayoutArchetype.IOS_LIQUID_LIGHT, IOS_LIQUID_LIGHT_THEME.layoutArchetype)
-        assertEquals(ThemeLayoutArchetype.GLASS_PRISM, GLASS_PRISM_THEME.layoutArchetype)
-        assertEquals(ThemeLayoutArchetype.CRIMSON_STUDIO, CRIMSON_STUDIO_THEME.layoutArchetype)
     }
 
     private fun resolveEffectiveBaseTheme(cache: LocalThemeSettingsCache): RemoteThemeSpec =

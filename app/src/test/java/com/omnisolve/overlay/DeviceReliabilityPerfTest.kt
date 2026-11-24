@@ -649,6 +649,7 @@ class DeviceReliabilityPerfTest {
 
         listOf(
             SolverMethod.TURBO_HYBRID,
+            SolverMethod.DIRECT_VISION,
             SolverMethod.FIREBASE_SERVER,
             SolverMethod.CIRCLE_TO_SEARCH
         ).forEach { unlockedMethod ->
@@ -657,14 +658,15 @@ class DeviceReliabilityPerfTest {
                 onSyncService = { syncCalls++ },
                 onRequireGoogleSignIn = { requireSignInCalls++ }
             )
+            vm.refreshSystemStatuses()
             assertEquals(
-                "Signed-out user must be able to pick $unlockedMethod freely with Workers AI",
+                "Selected solver method $unlockedMethod must persist across refreshSystemStatuses",
                 unlockedMethod,
                 vm.uiState.value.solverMethod
             )
         }
         assertEquals(0, requireSignInCalls)
-        assertEquals(3, syncCalls)
+        assertEquals(4, syncCalls)
 
         vm.selectSolverMethod(
             method = SolverMethod.BACKGROUND_GEMINI,
@@ -672,7 +674,7 @@ class DeviceReliabilityPerfTest {
             onRequireGoogleSignIn = { requireSignInCalls++ }
         )
         assertEquals(SolverMethod.BACKGROUND_GEMINI, vm.uiState.value.solverMethod)
-        assertEquals(4, syncCalls)
+        assertEquals(5, syncCalls)
         assertEquals(0, requireSignInCalls)
 
         vm.continueWithOcrOnly()
@@ -932,14 +934,13 @@ class DeviceReliabilityPerfTest {
             }
         }
         composeTestRule.onNodeWithTag("theme_studio_screen_list").assertIsDisplayed()
-        composeTestRule.onNodeWithTag("theme_live_preview_stage").assertIsDisplayed()
-        composeTestRule.onNodeWithTag("btn_stage_play_motion").assertIsDisplayed().performClick()
+        composeTestRule.onNodeWithTag("card_theme_default_prism").assertIsDisplayed()
         composeTestRule.onNodeWithTag("theme_studio_screen_list")
-            .performScrollToNode(hasTestTag("section_atelier_themes"))
-        composeTestRule.onNodeWithTag("card_atelier_atelier_prism_noir")
+            .performScrollToNode(hasTestTag("card_theme_ios_liquid_light"))
+        composeTestRule.onNodeWithTag("card_theme_ios_liquid_light")
             .assertIsDisplayed()
             .performClick()
-        assertEquals("atelier_prism_noir", selectedThemeId)
+        assertEquals("ios_liquid_light", selectedThemeId)
     }
 
     @Test
@@ -947,10 +948,7 @@ class DeviceReliabilityPerfTest {
     fun testHomeScreen_RearrangesCleanlyAcrossAllFiveThemeLayoutArchetypesOnCompact() {
         val archetypeSpecs = listOf(
             NORMAL_DEFAULT_THEME,
-            com.omnisolve.overlay.ui.theme.findThemePresetById("atelier_prism_noir"),
-            com.omnisolve.overlay.ui.theme.findThemePresetById("atelier_swiss_glacier"),
-            com.omnisolve.overlay.ui.theme.findThemePresetById("atelier_kyoto_amber"),
-            com.omnisolve.overlay.ui.theme.findThemePresetById("atelier_velvet_indigo")
+            com.omnisolve.overlay.ui.theme.IOS_LIQUID_LIGHT_THEME
         )
         val activeSpecState = androidx.compose.runtime.mutableStateOf(archetypeSpecs.first())
 
@@ -982,12 +980,19 @@ class DeviceReliabilityPerfTest {
                 activeSpecState.value = spec
             }
             composeTestRule.waitForIdle()
-            composeTestRule.onNodeWithTag("home_screen_list").assertIsDisplayed()
+            val listTag = if (spec.layoutArchetype == com.omnisolve.overlay.ui.theme.ThemeLayoutArchetype.IOS_LIQUID_LIGHT) {
+                "home_ios_liquid_light_layout"
+            } else {
+                "home_screen_list"
+            }
+            composeTestRule.onNodeWithTag(listTag).assertIsDisplayed()
+            composeTestRule.onNodeWithTag(listTag)
+                .performScrollToNode(hasTestTag("home_layout_${spec.layoutArchetype.id}"))
             composeTestRule.onNodeWithTag("home_layout_${spec.layoutArchetype.id}").assertIsDisplayed()
-            composeTestRule.onNodeWithTag("home_screen_list")
+            composeTestRule.onNodeWithTag(listTag)
                 .performScrollToNode(hasTestTag("btn_toggle_overlay"))
             composeTestRule.onNodeWithTag("btn_toggle_overlay").assertIsDisplayed()
-            composeTestRule.onNodeWithTag("home_screen_list")
+            composeTestRule.onNodeWithTag(listTag)
                 .performScrollToNode(hasTestTag("card_open_theme_studio"))
             composeTestRule.onNodeWithTag("card_open_theme_studio").assertIsDisplayed()
         }
@@ -1100,17 +1105,18 @@ class DeviceReliabilityPerfTest {
         composeTestRule.onNodeWithTag("settings_screen_list")
             .performScrollToNode(hasTestTag("card_settings_theme_control"))
         composeTestRule.onNodeWithTag("card_settings_theme_control").assertIsDisplayed()
-        composeTestRule.onNodeWithTag("btn_settings_quick_theme_atelier_prism_noir")
+        composeTestRule.onNodeWithTag("btn_settings_quick_theme_ios_liquid_light")
             .assertIsDisplayed()
             .performClick()
-        assertEquals("atelier_prism_noir", selectedSpec?.themeId)
+        assertEquals("ios_liquid_light", selectedSpec?.themeId)
         assertEquals(
-            com.omnisolve.overlay.ui.theme.ThemeLayoutArchetype.ATELIER_BENTO,
+            com.omnisolve.overlay.ui.theme.ThemeLayoutArchetype.IOS_LIQUID_LIGHT,
             selectedSpec?.layoutArchetype
         )
     }
 
     @Test
+    @org.robolectric.annotation.Config(qualifiers = "w411dp-h915dp-xhdpi")
     fun testQuickPlusTreeOverlay_RendersThreeBranchesWithSizeLimitsAndActions() {
         var photoTapped = false
         var pdfTapped = false
@@ -1155,6 +1161,7 @@ class DeviceReliabilityPerfTest {
     }
 
     @Test
+    @org.robolectric.annotation.Config(qualifiers = "w411dp-h915dp-xhdpi")
     fun testLiveClassRoomScreen_LobbyAndActiveRoomRenderCleanlyOnCompactWithLargeFontScale() {
         val sampleRoom = com.omnisolve.overlay.data.LiveClassRoom(
             roomCode = "K7M29Q",

@@ -69,10 +69,10 @@ object PrismAiSolverEngine {
     const val CLOUDFLARE_FAST_MODEL = "@cf/meta/llama-3.2-3b-instruct"
     const val CLOUDFLARE_ACCURACY_MODEL = "@cf/google/gemma-4-26b-a4b-it"
 
-    private const val PLAIN_FAST_TIMEOUT_MS = 5_800L
-    private const val STRUCTURED_TIMEOUT_MS = 7_200L
-    private const val DUAL_VERIFY_TIMEOUT_MS = 4_200L
-    private const val HEDGE_BACKUP_DELAY_MS = 1_100L
+    private const val PLAIN_FAST_TIMEOUT_MS = 16_000L
+    private const val STRUCTURED_TIMEOUT_MS = 26_000L
+    private const val DUAL_VERIFY_TIMEOUT_MS = 14_000L
+    private const val HEDGE_BACKUP_DELAY_MS = 2_600L
     private const val CLOUDFLARE_COOLDOWN_MS = 5 * 60_000L
     private const val CLOUDFLARE_TRANSIENT_COOLDOWN_MS = 20_000L
 

@@ -119,21 +119,21 @@ fun Modifier.liquidGlassSurface(
     val isDark = palette.isDarkObsidian
 
     val shadowDp = when (tier) {
-        GlassMaterialTier.Subtle -> 0.dp
-        GlassMaterialTier.Standard -> if (isDark) 6.dp else 3.dp
-        GlassMaterialTier.Elevated -> if (isDark) 14.dp else 6.dp
-        GlassMaterialTier.Optical -> if (isDark) 18.dp else 8.dp
+        GlassMaterialTier.Subtle -> if (isDark) 0.dp else 5.dp
+        GlassMaterialTier.Standard -> if (isDark) 6.dp else 8.dp
+        GlassMaterialTier.Elevated -> if (isDark) 14.dp else 12.dp
+        GlassMaterialTier.Optical -> if (isDark) 18.dp else 14.dp
     }
 
     val topLayerColor = when {
-        !isDark -> palette.glassStrong
+        !isDark -> Color(0xFFFFFFFF)
         tier == GlassMaterialTier.Subtle -> Color(0xFF12151E)
         tier == GlassMaterialTier.Standard -> Color(0xFF161A25)
         tier == GlassMaterialTier.Elevated -> Color(0xFF1A1F2C)
         else -> Color(0xFF1F2433)
     }
     val bottomLayerColor = when {
-        !isDark -> palette.glassMedium
+        !isDark -> Color(0xFFF1F7FF)
         tier == GlassMaterialTier.Subtle -> Color(0xFF0E1017)
         tier == GlassMaterialTier.Standard -> Color(0xFF11141C)
         tier == GlassMaterialTier.Elevated -> Color(0xFF121620)
@@ -141,7 +141,7 @@ fun Modifier.liquidGlassSurface(
     }
 
     val rimColor = when {
-        highlighted -> effectiveAccent.copy(alpha = if (isDark) 0.70f else 0.55f)
+        highlighted -> effectiveAccent.copy(alpha = if (isDark) 0.70f else 0.65f)
         !isDark -> palette.cardHairlineBorder
         tier == GlassMaterialTier.Subtle -> GlassPrismTokens.GlassBorderSubtle
         tier == GlassMaterialTier.Standard -> GlassPrismTokens.GlassBorderStandard
@@ -150,7 +150,7 @@ fun Modifier.liquidGlassSurface(
     }
 
     val specularAlpha = when {
-        !isDark -> 0.55f
+        !isDark -> 0.65f
         tier == GlassMaterialTier.Subtle -> 0.08f
         tier == GlassMaterialTier.Standard -> 0.15f
         tier == GlassMaterialTier.Elevated -> 0.22f
@@ -163,11 +163,11 @@ fun Modifier.liquidGlassSurface(
                 Modifier.shadow(
                     elevation = shadowDp,
                     shape = shape,
-                    ambientColor = Color.Black.copy(alpha = if (isDark) 0.85f else 0.14f),
+                    ambientColor = if (isDark) Color.Black.copy(alpha = 0.85f) else Color(0x2B0C2960),
                     spotColor = if (highlighted || tier == GlassMaterialTier.Optical) {
-                        effectiveAccent.copy(alpha = if (isDark) 0.34f else 0.16f)
+                        effectiveAccent.copy(alpha = if (isDark) 0.34f else 0.28f)
                     } else {
-                        Color.Black.copy(alpha = if (isDark) 0.72f else 0.12f)
+                        if (isDark) Color.Black.copy(alpha = 0.72f) else Color(0x360E3278)
                     }
                 )
             } else {
@@ -182,7 +182,7 @@ fun Modifier.liquidGlassSurface(
         )
         .drawWithCache {
             val radiusPx = cornerRadius.toPx()
-            val strokePx = if (highlighted) 1.25.dp.toPx() else 0.95.dp.toPx()
+            val strokePx = if (highlighted) 1.35.dp.toPx() else if (isDark) 0.95.dp.toPx() else 1.25.dp.toPx()
             val topBevelBrush = Brush.horizontalGradient(
                 colors = listOf(
                     Color.Transparent,
@@ -203,15 +203,34 @@ fun Modifier.liquidGlassSurface(
             } else {
                 null
             }
+            val lightCurl = if (!isDark) {
+                androidx.compose.ui.graphics.Path().apply {
+                    moveTo(size.width * 0.65f, size.height)
+                    cubicTo(
+                        size.width * 0.77f, size.height * 0.74f,
+                        size.width * 0.88f, size.height * 0.82f,
+                        size.width, size.height * 0.56f
+                    )
+                }
+            } else {
+                null
+            }
             val rimGradient = Brush.verticalGradient(
                 colors = listOf(
                     rimColor,
-                    rimColor.copy(alpha = (rimColor.alpha * 0.42f).coerceAtLeast(0.05f))
+                    rimColor.copy(alpha = if (isDark) (rimColor.alpha * 0.42f).coerceAtLeast(0.05f) else 0.85f)
                 )
             )
             onDrawBehind {
                 if (tintGlowBrush != null) {
                     drawRect(brush = tintGlowBrush)
+                }
+                if (lightCurl != null) {
+                    drawPath(
+                        path = lightCurl,
+                        color = effectiveAccent.copy(alpha = 0.20f),
+                        style = Stroke(width = 1.5.dp.toPx(), cap = StrokeCap.Round)
+                    )
                 }
                 // Crisp specular top glass refraction rim
                 drawLine(

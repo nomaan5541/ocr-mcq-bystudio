@@ -68,6 +68,6 @@
     <string name="feature_guide_title">How Prism Solver Works</string>
     <string name="feature_guide_subtitle">Simple 4-step walkthrough.</string>
     <string name="privacy_legal_title">Privacy &amp; Safety</string>
-    <string name="privacy_legal_subtitle">Screen reading runs only when you tap Solve. Review how AI, cloud sync, and ads work.</string>
+    <string name="privacy_legal_subtitle">Screen reading runs only when you tap Solve. 100% ad-free with RAM-only OCR and encrypted cloud sync.</string>
     <string name="btn_open_website_policy">View Full Privacy Policy</string>
 </resources>

@@ -120,18 +120,34 @@ import com.omnisolve.overlay.data.LiveRoomMember
 import com.omnisolve.overlay.model.SubjectMode
 import com.omnisolve.overlay.ui.MainUiState
 import com.omnisolve.overlay.ui.physics.LocalReducedMotion
+import com.omnisolve.overlay.ui.theme.LocalWhiteGlassPalette
 
-// Discord-inspired deep mobile surfaces fused with Prism's dark brand palette
-private val DiscordCanvas = Color(0xFF0A0A0C)
-private val DiscordPanel = Color(0xFF111214)
-private val DiscordCard = Color(0xFF1A1B1F)
-private val DiscordElevated = Color(0xFF23252C)
-private val DiscordHairline = Color(0xFF2B2D36)
-private val DiscordInkPrimary = Color(0xFFEEEEEE)
-private val DiscordInkMuted = Color(0xFF949BA4)
-private val DiscordOnlineGreen = Color(0xFF23A55A)
-private val PrismCrimson = Color(0xFFD71921)
-private val PrismAmber = Color(0xFFF59E0B)
+// Theme-aware Live Class Room surfaces: deep obsidian + crimson in Prism Default,
+// daylight frosted glass + royal blue in Prism Light (zero dark/red bleed).
+private val DiscordCanvas: Color
+    @Composable get() = if (LocalWhiteGlassPalette.current.isDarkObsidian) Color(0xFF0A0A0C) else LocalWhiteGlassPalette.current.canvasTop
+private val DiscordPanel: Color
+    @Composable get() = if (LocalWhiteGlassPalette.current.isDarkObsidian) Color(0xFF111214) else LocalWhiteGlassPalette.current.glassStrong
+private val DiscordCard: Color
+    @Composable get() = if (LocalWhiteGlassPalette.current.isDarkObsidian) Color(0xFF1A1B1F) else LocalWhiteGlassPalette.current.glassMedium
+private val DiscordElevated: Color
+    @Composable get() = if (LocalWhiteGlassPalette.current.isDarkObsidian) Color(0xFF23252C) else LocalWhiteGlassPalette.current.glassSubtle
+private val DiscordHairline: Color
+    @Composable get() = if (LocalWhiteGlassPalette.current.isDarkObsidian) Color(0xFF2B2D36) else LocalWhiteGlassPalette.current.cardHairlineBorder
+private val DiscordInkPrimary: Color
+    @Composable get() = if (LocalWhiteGlassPalette.current.isDarkObsidian) Color(0xFFEEEEEE) else LocalWhiteGlassPalette.current.inkPrimary
+private val DiscordInkMuted: Color
+    @Composable get() = if (LocalWhiteGlassPalette.current.isDarkObsidian) Color(0xFF949BA4) else LocalWhiteGlassPalette.current.inkSecondary
+private val DiscordOnlineGreen: Color
+    @Composable get() = if (LocalWhiteGlassPalette.current.isDarkObsidian) Color(0xFF23A55A) else Color(0xFF15803D)
+private val PrismCrimson: Color
+    @Composable get() = if (LocalWhiteGlassPalette.current.isDarkObsidian) Color(0xFFE3182D) else LocalWhiteGlassPalette.current.accentSky
+private val PrismAmber: Color
+    @Composable get() = if (LocalWhiteGlassPalette.current.isDarkObsidian) Color(0xFFF59E0B) else Color(0xFFB45309)
+private val PrismAccentTintBg: Color
+    @Composable get() = if (LocalWhiteGlassPalette.current.isDarkObsidian) Color(0xFF231114) else PrismCrimson.copy(alpha = 0.10f)
+private val DiscordGreenTintBg: Color
+    @Composable get() = if (LocalWhiteGlassPalette.current.isDarkObsidian) Color(0xFF0E261C) else DiscordOnlineGreen.copy(alpha = 0.14f)
 
 private enum class RoomChannelTab(val channelLabel: String, val tag: String) {
     LIVE_EXAM("live-exam", "tab_room_channel_exam"),
@@ -311,7 +327,7 @@ fun LiveClassRoomScreen(
                             Icon(
                                 imageVector = Icons.Filled.Groups,
                                 contentDescription = null,
-                                tint = DiscordInkPrimary,
+                                tint = if (activeRoom != null) Color.White else DiscordInkPrimary,
                                 modifier = Modifier.size(22.dp)
                             )
                         }
@@ -380,7 +396,7 @@ fun LiveClassRoomScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(12.dp))
-                            .background(Color(0xFF231114))
+                            .background(PrismAccentTintBg)
                             .border(1.dp, PrismCrimson.copy(alpha = 0.65f), RoundedCornerShape(12.dp))
                             .padding(horizontal = 14.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -445,7 +461,7 @@ fun LiveClassRoomScreen(
                         ) {
                             Text(
                                 text = "Sign in with Google",
-                                color = DiscordInkPrimary,
+                                color = Color.White,
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.Bold
                             )
@@ -563,7 +579,7 @@ fun LiveClassRoomScreen(
                                 modifier = Modifier
                                     .size(52.dp)
                                     .clip(RoundedCornerShape(12.dp))
-                                    .background(Color(0xFF231114))
+                                    .background(PrismAccentTintBg)
                                     .border(1.dp, PrismCrimson.copy(alpha = 0.7f), RoundedCornerShape(12.dp))
                                     .clickable(enabled = !state.isLiveClassRoomBusy, role = Role.Button) {
                                         RoomQrHelper.launchGoogleQrScanner(
@@ -607,14 +623,14 @@ fun LiveClassRoomScreen(
                             ) {
                                 if (state.isLiveClassRoomBusy) {
                                     CircularProgressIndicator(
-                                        color = DiscordInkPrimary,
+                                        color = Color.White,
                                         strokeWidth = 2.dp,
                                         modifier = Modifier.size(18.dp)
                                     )
                                 } else {
                                     Text(
                                         text = "Request to Join",
-                                        color = DiscordInkPrimary,
+                                        color = Color.White,
                                         fontSize = 14.sp,
                                         fontWeight = FontWeight.Bold,
                                         maxLines = 1
@@ -770,7 +786,7 @@ fun LiveClassRoomScreen(
                                 ) {
                                     Text(
                                         text = subj.label,
-                                        color = DiscordInkPrimary,
+                                        color = if (selected) Color.White else DiscordInkPrimary,
                                         fontSize = 11.5.sp,
                                         fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
                                     )
@@ -925,7 +941,7 @@ fun LiveClassRoomScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(12.dp))
-                                .background(Color(0xFF231114))
+                                .background(PrismAccentTintBg)
                                 .border(1.dp, PrismCrimson.copy(alpha = 0.7f), RoundedCornerShape(12.dp))
                                 .clickable(role = Role.Button) { activeChannel = RoomChannelTab.MEMBERS.name }
                                 .padding(horizontal = 14.dp, vertical = 11.dp)
@@ -1252,7 +1268,7 @@ fun LiveClassRoomScreen(
                                         .fillMaxWidth()
                                         .heightIn(min = 48.dp)
                                         .clip(RoundedCornerShape(12.dp))
-                                        .background(if (isHost) Color(0xFF2B1216) else DiscordCard)
+                                        .background(if (isHost) PrismAccentTintBg else DiscordCard)
                                         .border(
                                             1.dp,
                                             if (isHost) PrismCrimson.copy(alpha = 0.7f) else DiscordHairline,
@@ -1473,26 +1489,35 @@ private fun DiscordServerHeaderCard(
     onShowQr: () -> Unit,
     onShareInvite: () -> Unit
 ) {
+    val isDark = LocalWhiteGlassPalette.current.isDarkObsidian
+    val accentGlow = PrismCrimson
     val headerShape = RoundedCornerShape(20.dp)
+    val headerGradient = if (isDark) {
+        Brush.verticalGradient(listOf(Color(0xFF191B23), Color(0xFF121319)))
+    } else {
+        Brush.verticalGradient(listOf(Color(0xFFFFFFFF), Color(0xFFF3F7FD)))
+    }
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .shadow(
-                elevation = 14.dp,
+                elevation = if (isDark) 14.dp else 8.dp,
                 shape = headerShape,
-                ambientColor = Color.Black.copy(alpha = 0.90f),
-                spotColor = PrismCrimson.copy(alpha = 0.32f)
+                ambientColor = Color.Black.copy(alpha = if (isDark) 0.90f else 0.12f),
+                spotColor = accentGlow.copy(alpha = if (isDark) 0.32f else 0.16f)
             )
             .clip(headerShape)
-            .background(
-                Brush.verticalGradient(listOf(Color(0xFF191B23), Color(0xFF121319)))
-            )
+            .background(headerGradient)
             .drawBehind {
                 val w = size.width
                 val h = size.height
                 drawLine(
                     brush = Brush.horizontalGradient(
-                        listOf(Color.Transparent, Color.White.copy(alpha = 0.16f), Color.Transparent)
+                        listOf(
+                            Color.Transparent,
+                            Color.White.copy(alpha = if (isDark) 0.16f else 0.85f),
+                            Color.Transparent
+                        )
                     ),
                     start = Offset(w * 0.12f, 1.dp.toPx()),
                     end = Offset(w * 0.88f, 1.dp.toPx()),
@@ -1505,11 +1530,11 @@ private fun DiscordServerHeaderCard(
                 }
                 drawPath(
                     path = curl,
-                    color = PrismCrimson.copy(alpha = 0.22f),
+                    color = accentGlow.copy(alpha = if (isDark) 0.22f else 0.14f),
                     style = Stroke(width = 1.4.dp.toPx(), cap = StrokeCap.Round)
                 )
             }
-            .border(1.dp, Color(0xFF2A2D39), headerShape)
+            .border(1.dp, if (isDark) Color(0xFF2A2D39) else DiscordHairline, headerShape)
             .padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
@@ -1589,7 +1614,7 @@ private fun DiscordServerHeaderCard(
                     Icon(
                         imageVector = Icons.Filled.Share,
                         contentDescription = "Share room code",
-                        tint = DiscordInkPrimary,
+                        tint = Color.White,
                         modifier = Modifier.size(18.dp)
                     )
                 }
@@ -1688,26 +1713,35 @@ private fun LockedExamBrowserCard(
         }
     }
 
+    val isDark = LocalWhiteGlassPalette.current.isDarkObsidian
+    val accentGlow = PrismCrimson
     val cardShape = RoundedCornerShape(20.dp)
+    val cardGradient = if (isDark) {
+        Brush.verticalGradient(listOf(Color(0xFF1A1C24), Color(0xFF111218)))
+    } else {
+        Brush.verticalGradient(listOf(Color(0xFFFFFFFF), Color(0xFFF3F7FD)))
+    }
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .shadow(
-                elevation = 12.dp,
+                elevation = if (isDark) 12.dp else 8.dp,
                 shape = cardShape,
-                ambientColor = Color.Black.copy(alpha = 0.90f),
-                spotColor = PrismCrimson.copy(alpha = 0.35f)
+                ambientColor = Color.Black.copy(alpha = if (isDark) 0.90f else 0.12f),
+                spotColor = accentGlow.copy(alpha = if (isDark) 0.35f else 0.16f)
             )
             .clip(cardShape)
-            .background(
-                Brush.verticalGradient(listOf(Color(0xFF1A1C24), Color(0xFF111218)))
-            )
+            .background(cardGradient)
             .drawBehind {
                 val w = size.width
                 val h = size.height
                 drawLine(
                     brush = Brush.horizontalGradient(
-                        listOf(Color.Transparent, Color.White.copy(alpha = 0.14f), Color.Transparent)
+                        listOf(
+                            Color.Transparent,
+                            Color.White.copy(alpha = if (isDark) 0.14f else 0.85f),
+                            Color.Transparent
+                        )
                     ),
                     start = Offset(w * 0.12f, 1.dp.toPx()),
                     end = Offset(w * 0.88f, 1.dp.toPx()),
@@ -1720,11 +1754,11 @@ private fun LockedExamBrowserCard(
                 }
                 drawPath(
                     path = curl,
-                    color = PrismCrimson.copy(alpha = 0.24f),
+                    color = accentGlow.copy(alpha = if (isDark) 0.24f else 0.14f),
                     style = Stroke(width = 1.4.dp.toPx(), cap = StrokeCap.Round)
                 )
             }
-            .border(1.dp, PrismCrimson.copy(alpha = 0.48f), cardShape)
+            .border(1.dp, accentGlow.copy(alpha = if (isDark) 0.48f else 0.32f), cardShape)
             .padding(14.dp)
             .testTag("live_room_locked_url_card"),
         verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -1852,13 +1886,13 @@ private fun LockedExamBrowserCard(
             Icon(
                 imageVector = Icons.Filled.Language,
                 contentDescription = null,
-                tint = DiscordInkPrimary,
+                tint = Color.White,
                 modifier = Modifier.size(18.dp)
             )
             Spacer(Modifier.width(8.dp))
             Text(
                 text = if (isHost) "Open Live Exam Browser (Host)" else "Open Live Exam Browser",
-                color = DiscordInkPrimary,
+                color = Color.White,
                 fontSize = 13.5.sp,
                 fontWeight = FontWeight.Bold,
                 maxLines = 1,
@@ -2111,7 +2145,7 @@ private fun DiscordLiveAnswerCard(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
-                        .background(if (smart.isShortDirectAnswer || answer.verifiedByAi) DiscordOnlineGreen.copy(alpha = 0.16f) else Color(0xFF231114))
+                        .background(if (smart.isShortDirectAnswer || answer.verifiedByAi) DiscordOnlineGreen.copy(alpha = 0.16f) else PrismAccentTintBg)
                         .border(
                             1.dp,
                             if (smart.isShortDirectAnswer || answer.verifiedByAi) DiscordOnlineGreen.copy(alpha = 0.6f) else PrismCrimson.copy(alpha = 0.6f),
@@ -2140,7 +2174,7 @@ private fun DiscordLiveAnswerCard(
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                     modifier = Modifier
                         .clip(CircleShape)
-                        .background(Color(0xFF0E261C))
+                        .background(DiscordGreenTintBg)
                         .padding(horizontal = 8.dp, vertical = 4.dp)
                 ) {
                     Icon(
@@ -2290,7 +2324,7 @@ private fun DiscordLiveAnswerCard(
                 ) {
                     if (isVerifyingWithAi) {
                         CircularProgressIndicator(
-                            color = DiscordInkPrimary,
+                            color = if (isDisputed) Color.White else DiscordInkPrimary,
                             strokeWidth = 1.8.dp,
                             modifier = Modifier.size(13.dp)
                         )
@@ -2298,12 +2332,12 @@ private fun DiscordLiveAnswerCard(
                         Icon(
                             imageVector = Icons.Filled.AutoAwesome,
                             contentDescription = "Verify with AI",
-                            tint = if (isDisputed) DiscordInkPrimary else PrismCrimson,
+                            tint = if (isDisputed) Color.White else PrismCrimson,
                             modifier = Modifier.size(13.dp)
                         )
                         Text(
                             text = "AI Verify",
-                            color = DiscordInkPrimary,
+                            color = if (isDisputed) Color.White else DiscordInkPrimary,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
                             maxLines = 1

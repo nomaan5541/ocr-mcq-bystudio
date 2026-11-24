@@ -149,9 +149,19 @@ object FirebaseGeminiF1Provider : F1ReasoningProvider {
         ocrEngine: OcrEngine?
     ): AnswerCandidate {
         val startMs = System.currentTimeMillis()
-        val chosenModel = PrismAiSolverEngine.MODEL_FLASH
         val attachVisionBitmap = request.screenBitmap != null &&
             (classification.needsVisionEscalation || classification.ocrConfidenceLow || promptText.length < 40)
+        val requiresDeepFlash = attachVisionBitmap ||
+            classification.category == F1QuestionCategory.MATHEMATICS ||
+            classification.category == F1QuestionCategory.COMPLEX_REASONING ||
+            classification.category == F1QuestionCategory.DIAGRAM_BASED ||
+            classification.category == F1QuestionCategory.IMAGE_BASED ||
+            classification.category == F1QuestionCategory.MATCH_THE_FOLLOWING
+        val chosenModel = if (requiresDeepFlash) {
+            PrismAiSolverEngine.MODEL_FLASH
+        } else {
+            PrismAiSolverEngine.normalizeCloudModel(request.requestedModel)
+        }
         val enrichedPrompt = augmentPromptWithEvidence(promptText, evidence)
         return try {
             val ans = withTimeout(timeoutMs.coerceAtLeast(600L)) {

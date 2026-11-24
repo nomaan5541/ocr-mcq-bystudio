@@ -56,8 +56,10 @@ object GoogleAuthManager {
      */
     suspend fun signInInteractive(
         activityContext: Context,
-        auth: FirebaseAuth = Firebase.auth
+        auth: FirebaseAuth? = null
     ): GoogleSignInOutcome {
+        val firebaseAuth = auth ?: runCatching { Firebase.auth }.getOrNull()
+            ?: return GoogleSignInOutcome.Error("Firebase Auth is not initialized yet. Please restart the app.")
         val webClientId = resolveWebClientId(activityContext)
             ?: return GoogleSignInOutcome.Error("Google Sign-In client configuration not found.")
 
@@ -72,7 +74,7 @@ object GoogleAuthManager {
                 request = request,
                 context = activityContext
             )
-            exchangeGoogleCredentialWithFirebase(result.credential, auth)
+            exchangeGoogleCredentialWithFirebase(result.credential, firebaseAuth)
         } catch (ce: CancellationException) {
             throw ce
         } catch (e: GetCredentialCancellationException) {
@@ -95,9 +97,10 @@ object GoogleAuthManager {
      */
     suspend fun trySilentRestore(
         activityContext: Context,
-        auth: FirebaseAuth = Firebase.auth
+        auth: FirebaseAuth? = null
     ): FirebaseUser? {
-        auth.currentUser?.let { return it }
+        val firebaseAuth = auth ?: runCatching { Firebase.auth }.getOrNull() ?: return null
+        firebaseAuth.currentUser?.let { return it }
         val webClientId = resolveWebClientId(activityContext) ?: return null
         return try {
             val credentialManager = CredentialManager.create(activityContext)
@@ -113,7 +116,7 @@ object GoogleAuthManager {
                 request = request,
                 context = activityContext
             )
-            when (val outcome = exchangeGoogleCredentialWithFirebase(result.credential, auth)) {
+            when (val outcome = exchangeGoogleCredentialWithFirebase(result.credential, firebaseAuth)) {
                 is GoogleSignInOutcome.Success -> outcome.user
                 else -> null
             }
@@ -126,13 +129,15 @@ object GoogleAuthManager {
 
     suspend fun signOut(
         context: Context,
-        auth: FirebaseAuth = Firebase.auth
+        auth: FirebaseAuth? = null
     ) {
-        auth.signOut()
-        try {
-            CredentialManager.create(context).clearCredentialState(ClearCredentialStateRequest())
-        } catch (e: Exception) {
-            Log.w(TAG, "Credential state clear skipped: ${e.message}")
+        kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+            try {
+                CredentialManager.create(context).clearCredentialState(ClearCredentialStateRequest())
+            } catch (e: Exception) {
+                Log.w(TAG, "Credential state clear skipped: ${e.message}")
+            }
+            runCatching { (auth ?: Firebase.auth).signOut() }
         }
     }
 

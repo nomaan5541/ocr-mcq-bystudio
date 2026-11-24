@@ -58,7 +58,7 @@ object DirectVisionSolverEngine {
         translateToEnglish: Boolean = false,
         forceFreshResolve: Boolean = false,
         previousWrongAnswer: String? = null,
-        timeoutMs: Long = 4_500L
+        timeoutMs: Long = 18_000L
     ): AnswerModel? = withContext(Dispatchers.IO) {
         if (rawBitmap == null || rawBitmap.isRecycled || rawBitmap.width <= 0 || rawBitmap.height <= 0) {
             return@withContext null
@@ -229,8 +229,7 @@ object DirectVisionSolverEngine {
                 )
             }
 
-            // Parallel Race: Firebase AI Logic Multimodal Vision PRIMARY (t=0ms) + Cloudflare Workers AI backup (1.1s hedge)
-            // Strict 7.8s cap so quick answers always arrive under 8 seconds with zero API keys in the APK.
+            // Parallel Race: Firebase AI Logic Multimodal Vision PRIMARY (t=0ms) + emergency backups only after 3.8s/5.2s hedge (or immediate wake on early failure)
             val winningVisionModel: AnswerModel? = kotlinx.coroutines.coroutineScope {
                 val resultChannel = kotlinx.coroutines.channels.Channel<AnswerModel?>(kotlinx.coroutines.channels.Channel.UNLIMITED)
                 val visionFailedEarly = kotlinx.coroutines.CompletableDeferred<Unit>()
@@ -271,7 +270,7 @@ object DirectVisionSolverEngine {
                     activeRunners++
                     async(Dispatchers.IO) {
                         if (!PrismAiSolverEngine.isCloudTemporarilyUnavailable()) {
-                            kotlinx.coroutines.withTimeoutOrNull(1_100L) { visionFailedEarly.await() }
+                            kotlinx.coroutines.withTimeoutOrNull(3_800L) { visionFailedEarly.await() }
                         }
                         val ans = try {
                             PrismAiSolverEngine.solveViaCloudflare(
@@ -292,7 +291,7 @@ object DirectVisionSolverEngine {
                     activeRunners++
                     async(Dispatchers.IO) {
                         val ans = try {
-                            kotlinx.coroutines.withTimeoutOrNull(7_000L) {
+                            kotlinx.coroutines.withTimeoutOrNull(14_000L) {
                                 geminiWebSolver.invoke(webPrompt, null, previewLabel)
                             }
                         } catch (ce: CancellationException) {
@@ -309,7 +308,7 @@ object DirectVisionSolverEngine {
                     activeRunners++
                     async(Dispatchers.IO) {
                         if (!PrismAiSolverEngine.isCloudTemporarilyUnavailable()) {
-                            kotlinx.coroutines.withTimeoutOrNull(1_600L) { visionFailedEarly.await() }
+                            kotlinx.coroutines.withTimeoutOrNull(5_200L) { visionFailedEarly.await() }
                         }
                         val ans = try {
                             OnlineConsensusRaceEngine.solveViaZeroAuthOnlineAiSuspend(webPrompt, structuredScreenText)
@@ -323,7 +322,7 @@ object DirectVisionSolverEngine {
                     }
                 } else null
 
-                val winner: AnswerModel? = kotlinx.coroutines.withTimeoutOrNull(7_800L) {
+                val winner: AnswerModel? = kotlinx.coroutines.withTimeoutOrNull(22_000L) {
                     var found: AnswerModel? = null
                     for (i in 0 until activeRunners) {
                         val candidate = resultChannel.receive()
@@ -378,7 +377,7 @@ object DirectVisionSolverEngine {
         solveMode: QuestionSolveMode,
         dualVerify: Boolean,
         translateToEnglish: Boolean,
-        totalTimeoutMs: Long = 12_500L
+        totalTimeoutMs: Long = 24_000L
     ): AnswerModel? {
         val deadlineMonoMs = (System.nanoTime() / 1_000_000L) + totalTimeoutMs.coerceAtLeast(800L)
         // 1. Fast direct option-only Multimodal Vision (`FINAL_ANSWER: <option>`, maxOutputTokens = 256)
@@ -444,7 +443,7 @@ object DirectVisionSolverEngine {
         val remainingFallbackMs = deadlineMonoMs - (System.nanoTime() / 1_000_000L)
         if (!PrismAiSolverEngine.isCloudTemporarilyUnavailable() && remainingFallbackMs >= 1_200L) {
             try {
-                val structuredAns = withTimeout(minOf(remainingFallbackMs, 8_500L)) {
+                val structuredAns = withTimeout(minOf(remainingFallbackMs, 14_000L)) {
                     PrismAiSolverEngine.solveQuestion(
                         extractedText = structuredScreenText.ifBlank {
                             "Inspect the attached screen image and solve the multiple-choice or math question."

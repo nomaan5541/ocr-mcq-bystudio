@@ -1,44 +1,22 @@
 package com.omnisolve.overlay.ads
 
-import com.omnisolve.overlay.BuildConfig
-
 /**
- * Google AdMob Central Configuration.
+ * Ad-Free Architecture Stub.
  *
- * - AdMob App ID (AndroidManifest.xml): ca-app-pub-6628813367564084~2373198575
- * - Banner Ad Unit (Prism_Main_Banner): ca-app-pub-6628813367564084/4121394511
- * - Interstitial Ad Unit (Prism_Interstitial): ca-app-pub-6628813367564084/3509342389
- * - App Open Ad Unit (Prism_App_Open): ca-app-pub-6628813367564084/9522024889
- * - app-ads.txt entry: google.com, pub-6628813367564084, DIRECT, f08c47fec0942fa0
- *
- * Uses official Google test Ad Unit IDs automatically in DEBUG builds to protect
- * the AdMob account during development and automated testing, and serves only
- * verified live units in RELEASE builds.
+ * Advertising is permanently disabled across Prism Solver. All ad flags evaluate
+ * to false and no third-party ad SDKs or ad unit IDs are bundled in the APK/AAB.
  */
 object AdConfig {
-    /** Global master switch to enable/disable in-app ads (disabled for clean launch; flip to true when ready) */
+    /** Permanently false: Prism Solver ships 100% ad-free. */
     const val ADS_ENABLED: Boolean = false
 
-    private const val TEST_BANNER_ID = "ca-app-pub-3940256099942544/6300978111"
-    private const val TEST_INTERSTITIAL_ID = "ca-app-pub-3940256099942544/1033173712"
-    private const val TEST_APP_OPEN_ID = "ca-app-pub-3940256099942544/9257395921"
+    val BANNER_AD_UNIT_ID: String = ""
 
-    private const val PROD_BANNER_ID = "ca-app-pub-6628813367564084/4121394511"
-    private const val PROD_INTERSTITIAL_ID = "ca-app-pub-6628813367564084/3509342389"
-    private const val PROD_APP_OPEN_ID = "ca-app-pub-6628813367564084/9522024889"
+    val INTERSTITIAL_ENABLED: Boolean = false
 
-    val BANNER_AD_UNIT_ID: String
-        get() = if (BuildConfig.DEBUG) TEST_BANNER_ID else PROD_BANNER_ID
+    val APP_OPEN_ENABLED: Boolean = false
 
-    val INTERSTITIAL_ENABLED: Boolean
-        get() = ADS_ENABLED && (BuildConfig.DEBUG || PROD_INTERSTITIAL_ID.isNotBlank())
+    val INTERSTITIAL_AD_UNIT_ID: String = ""
 
-    val APP_OPEN_ENABLED: Boolean
-        get() = ADS_ENABLED && (BuildConfig.DEBUG || PROD_APP_OPEN_ID.isNotBlank())
-
-    val INTERSTITIAL_AD_UNIT_ID: String
-        get() = if (BuildConfig.DEBUG) TEST_INTERSTITIAL_ID else PROD_INTERSTITIAL_ID
-
-    val APP_OPEN_AD_UNIT_ID: String
-        get() = if (BuildConfig.DEBUG) TEST_APP_OPEN_ID else PROD_APP_OPEN_ID
+    val APP_OPEN_AD_UNIT_ID: String = ""
 }

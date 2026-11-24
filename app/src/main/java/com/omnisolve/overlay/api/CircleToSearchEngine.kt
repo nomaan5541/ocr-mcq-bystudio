@@ -121,9 +121,10 @@ object CircleToSearchEngine {
                     )
                 }
 
-                // Race Personal API Keys, Cloud Gemini AI (`Firebase.ai`), Warm Background Gemini Session,
-                // Zero-Auth Online AI, and Search-Grounded Matcher ALL IN PARALLEL at t = 0ms.
+                // Race Firebase AI Logic (`Firebase.ai`), Personal API Keys, and Warm Background Session PRIMARY at t=0ms;
+                // defer third-party emergency fallbacks until 3.2s/4.5s hedge (or wake immediately on early primary failure).
                 val resultChannel = Channel<AnswerModel?>(Channel.UNLIMITED)
+                val primaryFailedEarly = kotlinx.coroutines.CompletableDeferred<Unit>()
                 var activeRunners = 0
 
                 val apiJob = if (MultiProviderApiSolver.hasAnyConfiguredKey(context)) {
@@ -187,9 +188,13 @@ object CircleToSearchEngine {
                             null
                         }
                         val valid = ans?.takeIf { it.correctChoice.isNotBlank() && it.correctChoice != "?" }
+                        if (valid == null) primaryFailedEarly.complete(Unit)
                         resultChannel.trySend(valid)
                     }
-                } else null
+                } else {
+                    primaryFailedEarly.complete(Unit)
+                    null
+                }
 
                 val cloudflareJob = if (meaningfulChars >= 12 &&
                     !PrismAiSolverEngine.isCloudflareTemporarilyUnavailable() &&
@@ -197,6 +202,9 @@ object CircleToSearchEngine {
                 ) {
                     activeRunners++
                     async(Dispatchers.IO) {
+                        if (!PrismAiSolverEngine.isCloudTemporarilyUnavailable()) {
+                            withTimeoutOrNull(3_200L) { primaryFailedEarly.await() }
+                        }
                         val ans = try {
                             PrismAiSolverEngine.solveViaCloudflare(structuredText)
                         } catch (ce: CancellationException) {
@@ -212,6 +220,9 @@ object CircleToSearchEngine {
                 val zeroAuthJob = if (meaningfulChars >= 12) {
                     activeRunners++
                     async(Dispatchers.IO) {
+                        if (!PrismAiSolverEngine.isCloudTemporarilyUnavailable()) {
+                            withTimeoutOrNull(4_500L) { primaryFailedEarly.await() }
+                        }
                         val ans = try {
                             OnlineConsensusRaceEngine.solveViaZeroAuthOnlineAiSuspend(fastPrompt, structuredText)
                         } catch (ce: CancellationException) {
@@ -252,7 +263,7 @@ object CircleToSearchEngine {
                     }
                 } else null
 
-                var winningModel: AnswerModel? = withTimeoutOrNull(16_000L) {
+                var winningModel: AnswerModel? = withTimeoutOrNull(22_000L) {
                     var found: AnswerModel? = null
                     for (i in 0 until activeRunners) {
                         val candidate = resultChannel.receive()
@@ -271,6 +282,7 @@ object CircleToSearchEngine {
                 zeroAuthJob?.cancel()
                 groundedWebJob?.cancel()
                 resultChannel.close()
+                primaryFailedEarly.cancel()
 
                 if (winningModel != null) {
                     if (currentSig.isNotEmpty()) lastSolvedQuestionSignature = currentSig
@@ -359,7 +371,7 @@ object CircleToSearchEngine {
 
         // Cloud Gemini AI (`gemini-3.5-flash-lite` -> `gemini-3.8-flash`) via PrismAiSolverEngine / Firebase.ai
         try {
-            val cloudAns = withTimeout(9000L) {
+            val cloudAns = withTimeout(16_000L) {
                 PrismAiSolverEngine.solveQuestion(
                     extractedText = enrichedText.ifBlank { "Solve the multiple-choice question shown in the image." },
                     screenBitmap = visionBitmap,

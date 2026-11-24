@@ -790,7 +790,7 @@ class SolverEnginesRobolectricTest {
     fun testGoogleFormsExtraction_CompactFormatAndPinnedNotification() {
         // 1. Verify HomeSubScreen route exists
         assertEquals(
-            "Google Forms Solve",
+            "Quiz Browser & Forms",
             com.omnisolve.overlay.ui.HomeSubScreen.GOOGLE_FORMS_SOLVE.title
         )
 

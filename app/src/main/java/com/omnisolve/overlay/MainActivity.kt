@@ -1518,7 +1518,7 @@ private fun MainInstantApp(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(14.dp))
-                                .background(Color(0xFF141519))
+                                .background(palette.glassStrong)
                                 .border(1.dp, palette.accentSky.copy(alpha = 0.65f), RoundedCornerShape(14.dp))
                                 .padding(horizontal = 12.dp, vertical = 8.dp)
                                 .testTag("banner_copied_form_link"),

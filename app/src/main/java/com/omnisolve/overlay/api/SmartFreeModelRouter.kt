@@ -210,30 +210,30 @@ object AdaptiveFreeModelRouter {
             )
         }
 
-        // 2. Rapid-fire plain MCQ streak -> fastest ultra-low-latency model (Flash-Lite + Workers AI)
+        // 2. Rapid-fire plain MCQ streak -> fastest ultra-low-latency Firebase AI model (Flash-Lite primary)
         if (!isComplexOrMatch && (isRapidStreak || isFasterThan(PrismAiSolverEngine.MODEL_LITE, PrismAiSolverEngine.MODEL_FLASH))) {
             val primary = if (liteHealthy) PrismAiSolverEngine.MODEL_LITE else PrismAiSolverEngine.MODEL_FLASH
             val fallback = if (primary == PrismAiSolverEngine.MODEL_LITE) PrismAiSolverEngine.MODEL_FLASH else PrismAiSolverEngine.MODEL_LITE
             return RoutePlan(
                 primaryGeminiModel = primary,
                 fallbackGeminiModel = fallback,
-                preferCloudflareFirst = cfHealthy,
+                preferCloudflareFirst = !liteHealthy && !flashHealthy && cfHealthy,
                 attachMathVision = false,
                 escalationReason = reason,
-                routingSummary = if (isRapidStreak) "Rapid MCQ Auto-Speed" else "Fast Free Auto-Route"
+                routingSummary = if (isRapidStreak) "Rapid MCQ Firebase Fast-Lane" else "Firebase Flash-Lite Auto-Route"
             )
         }
 
-        // 3. Balanced / reasoning text MCQ -> Gemini 3.8 Flash + Workers AI race
+        // 3. Balanced / reasoning text MCQ -> Firebase Gemini 3.8 Flash primary
         val primary = if (flashHealthy) PrismAiSolverEngine.MODEL_FLASH else PrismAiSolverEngine.MODEL_LITE
         val fallback = if (primary == PrismAiSolverEngine.MODEL_FLASH) PrismAiSolverEngine.MODEL_LITE else PrismAiSolverEngine.MODEL_FLASH
         return RoutePlan(
             primaryGeminiModel = primary,
             fallbackGeminiModel = fallback,
-            preferCloudflareFirst = cfHealthy && !isComplexOrMatch,
+            preferCloudflareFirst = !flashHealthy && !liteHealthy && cfHealthy && !isComplexOrMatch,
             attachMathVision = false,
             escalationReason = reason,
-            routingSummary = if (isComplexOrMatch) "Balanced Accuracy Route" else "Smart Free Auto-Route"
+            routingSummary = if (isComplexOrMatch) "Firebase Accuracy Route" else "Firebase Smart Auto-Route"
         )
     }
 

@@ -399,7 +399,7 @@ fun PrismStudioHomeScreen(
                             haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                             onToggleOverlay()
                         },
-                        testTag = "btn_start_floating_helper"
+                        testTag = "btn_toggle_overlay"
                     )
 
                     Row(
@@ -526,7 +526,7 @@ fun PrismStudioHomeScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     QuickStudioToolChip(
-                        label = "Solving Style",
+                        label = "Style · ${state.solverMethod.shortName}",
                         icon = Icons.Filled.Tune,
                         onClick = { onOpenHomeSubScreen(HomeSubScreen.ANSWER_MODELS) },
                         testTag = "chip_home_solving_style"
@@ -551,7 +551,7 @@ fun PrismStudioHomeScreen(
                         label = "Themes",
                         icon = Icons.Filled.Palette,
                         onClick = { onOpenHomeSubScreen(HomeSubScreen.THEME_STUDIO) },
-                        testTag = "chip_home_themes"
+                        testTag = "card_open_theme_studio"
                     )
                     QuickStudioToolChip(
                         label = "Saved",

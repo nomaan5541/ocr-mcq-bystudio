@@ -29,6 +29,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -57,8 +58,6 @@ import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.NotificationsActive
-import com.omnisolve.overlay.ads.AdBannerStyle
-import com.omnisolve.overlay.ads.InAppAdMobBanner
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.PlayArrow
@@ -104,6 +103,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -138,6 +138,7 @@ fun IosLiquidLightHomeLayout(
     onToggleOverlay: () -> Unit,
     onRequestOverlayPermission: () -> Unit,
     onOpenHomeSubScreen: (HomeSubScreen) -> Unit,
+    onOpenRoomsTab: () -> Unit = {},
     onSolvePhotoUri: (Uri) -> Unit = {},
     onShowBannerMessage: (String) -> Unit = {},
     modifier: Modifier = Modifier
@@ -198,7 +199,9 @@ fun IosLiquidLightHomeLayout(
         item(key = "ios_hero_stage") {
             ScrollRevealSection(index = 0) {
                 Column(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("home_layout_IOS_LIQUID_LIGHT"),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Row(
@@ -316,6 +319,7 @@ fun IosLiquidLightHomeLayout(
                             icon = if (state.isOverlayRunning) Icons.Filled.Stop else Icons.Filled.PlayArrow,
                             accentColor = if (state.isOverlayRunning) Color(0xFF0A54D8) else Color(0xFF1B6EF3),
                             highlighted = false,
+                            wavePhaseOffset = 0f,
                             testTag = "btn_toggle_overlay",
                             modifier = Modifier.weight(1f),
                             onClick = {
@@ -332,6 +336,7 @@ fun IosLiquidLightHomeLayout(
                             icon = if (batteryStatus.isProtected) Icons.Filled.Shield else Icons.Filled.BatteryChargingFull,
                             accentColor = if (batteryStatus.isProtected) Color(0xFF24A148) else Color(0xFFFF9500),
                             highlighted = false,
+                            wavePhaseOffset = 0.28f,
                             testTag = "card_ios_battery_keep_alive",
                             modifier = Modifier.weight(1f),
                             onClick = {
@@ -354,6 +359,7 @@ fun IosLiquidLightHomeLayout(
                             icon = Icons.Filled.PhotoLibrary,
                             accentColor = Color(0xFF5856D6),
                             highlighted = false,
+                            wavePhaseOffset = 0.54f,
                             testTag = "card_ios_snap_solve_photo",
                             modifier = Modifier.weight(1f),
                             onClick = {
@@ -372,6 +378,7 @@ fun IosLiquidLightHomeLayout(
                             icon = Icons.Filled.FileDownload,
                             accentColor = Color(0xFF00A878),
                             highlighted = false,
+                            wavePhaseOffset = 0.80f,
                             testTag = "card_open_export_qa",
                             modifier = Modifier.weight(1f),
                             onClick = { onOpenHomeSubScreen(HomeSubScreen.EXPORT_QA) }
@@ -388,10 +395,17 @@ fun IosLiquidLightHomeLayout(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .shadow(elevation = 4.dp, shape = RoundedCornerShape(22.dp), ambientColor = Color.Black.copy(alpha = 0.06f))
+                            .shadow(
+                                elevation = 10.dp,
+                                shape = RoundedCornerShape(22.dp),
+                                ambientColor = Color(0x280D2B66),
+                                spotColor = Color(0x36FF9500)
+                            )
                             .clip(RoundedCornerShape(22.dp))
-                            .background(Color.White)
-                            .border(0.8.dp, Color(0xFFFF9500).copy(alpha = 0.45f), RoundedCornerShape(22.dp))
+                            .background(
+                                Brush.verticalGradient(listOf(Color(0xFFFFFFFF), Color(0xFFFFFAF2)))
+                            )
+                            .border(1.25.dp, Color(0xFFFF9500).copy(alpha = 0.58f), RoundedCornerShape(22.dp))
                             .clickable(role = Role.Button) {
                                 BatterySurvivalHelper.openUnrestrictedBatterySettings(context)
                                 onShowBannerMessage("${batteryStatus.oemDisplayName}: Set Battery to Unrestricted.")
@@ -471,22 +485,67 @@ fun IosLiquidLightHomeLayout(
                         modifier = Modifier
                             .fillMaxWidth()
                             .shadow(
-                                elevation = 8.dp,
+                                elevation = 12.dp,
                                 shape = RoundedCornerShape(24.dp),
-                                ambientColor = Color.Black.copy(alpha = 0.05f),
-                                spotColor = Color.Black.copy(alpha = 0.07f)
+                                ambientColor = Color(0x2A0C2A62),
+                                spotColor = Color(0x341B6EF3)
                             )
                             .clip(RoundedCornerShape(24.dp))
-                            .background(Color.White)
-                            .border(0.75.dp, palette.cardHairlineBorder, RoundedCornerShape(24.dp))
+                            .background(
+                                Brush.verticalGradient(listOf(Color(0xFFFFFFFF), Color(0xFFF6FAFF)))
+                            )
+                            .drawBehind {
+                                val topCurl = Path().apply {
+                                    moveTo(size.width * 0.62f, 0f)
+                                    cubicTo(
+                                        size.width * 0.76f, size.height * 0.06f,
+                                        size.width * 0.88f, size.height * 0.03f,
+                                        size.width, size.height * 0.10f
+                                    )
+                                }
+                                drawPath(
+                                    path = topCurl,
+                                    color = Color(0xFF1B6EF3).copy(alpha = 0.16f),
+                                    style = Stroke(width = 1.6.dp.toPx(), cap = StrokeCap.Round)
+                                )
+                                val bottomCurl = Path().apply {
+                                    moveTo(0f, size.height * 0.92f)
+                                    cubicTo(
+                                        size.width * 0.16f, size.height * 0.96f,
+                                        size.width * 0.30f, size.height * 0.90f,
+                                        size.width * 0.42f, size.height
+                                    )
+                                }
+                                drawPath(
+                                    path = bottomCurl,
+                                    color = Color(0xFF4B9BFF).copy(alpha = 0.18f),
+                                    style = Stroke(width = 1.6.dp.toPx(), cap = StrokeCap.Round)
+                                )
+                            }
+                            .border(
+                                width = 1.25.dp,
+                                brush = Brush.linearGradient(
+                                    listOf(Color(0xFFA2C2F0), Color(0xFF7FA9E8))
+                                ),
+                                shape = RoundedCornerShape(24.dp)
+                            )
                     ) {
                         IosGroupedToolRow(
                             icon = Icons.Filled.Description,
                             iconBg = Color(0xFF007AFF),
-                            title = "Google Forms & Worksheet Solver",
-                            subtitle = "Paste link, text, or pick photo for batch answers",
+                            title = "Universal Quiz Browser",
+                            subtitle = "Google Forms, portals, extensions & 1-tap Mark All",
                             testTag = "card_open_google_forms_solve",
                             onClick = { onOpenHomeSubScreen(HomeSubScreen.GOOGLE_FORMS_SOLVE) }
+                        )
+                        IosInsetDivider()
+                        IosGroupedToolRow(
+                            icon = Icons.Filled.AutoAwesome,
+                            iconBg = Color(0xFF1B6EF3),
+                            title = "Live Class Rooms",
+                            subtitle = "6-digit QR sync rooms • Host URL lock (up to 40 members)",
+                            testTag = "card_open_live_rooms_light",
+                            onClick = onOpenRoomsTab
                         )
                         IosInsetDivider()
                         IosGroupedToolRow(
@@ -545,13 +604,6 @@ fun IosLiquidLightHomeLayout(
                     }
                 }
             }
-        }
-
-        item(key = "ios_home_bottom_ad") {
-            InAppAdMobBanner(
-                placementTag = "home_main_tools_bottom",
-                style = AdBannerStyle.INLINE_CARD
-            )
         }
     }
 }
@@ -612,18 +664,57 @@ private fun IosKineticDynamicIslandShowcase(
         modifier = Modifier
             .fillMaxWidth()
             .shadow(
-                elevation = 10.dp,
+                elevation = 14.dp,
                 shape = RoundedCornerShape(26.dp),
-                ambientColor = Color.Black.copy(alpha = 0.06f),
-                spotColor = Color.Black.copy(alpha = 0.08f)
+                ambientColor = Color(0x2B0C2960),
+                spotColor = Color(0x381B6EF3)
             )
             .clip(RoundedCornerShape(26.dp))
             .background(
                 Brush.verticalGradient(
-                    listOf(Color(0xFFFFFFFF), Color(0xFFF6F7FB))
+                    listOf(Color(0xFFFFFFFF), Color(0xFFF1F7FF))
                 )
             )
-            .border(0.9.dp, Color(0xFFDCDCE4), RoundedCornerShape(26.dp))
+            .drawBehind {
+                // Soft curly liquid silk ribbons framing top-right and bottom-left corners
+                val topRightCurl = Path().apply {
+                    moveTo(size.width * 0.64f, 0f)
+                    cubicTo(
+                        size.width * 0.78f, size.height * 0.24f,
+                        size.width * 0.90f, size.height * 0.14f,
+                        size.width, size.height * 0.42f
+                    )
+                }
+                drawPath(
+                    path = topRightCurl,
+                    brush = Brush.linearGradient(
+                        listOf(Color(0xFF60A5FA).copy(alpha = 0.24f), Color(0xFF1B6EF3).copy(alpha = 0.34f))
+                    ),
+                    style = Stroke(width = 1.8.dp.toPx(), cap = StrokeCap.Round)
+                )
+                val bottomLeftCurl = Path().apply {
+                    moveTo(0f, size.height * 0.66f)
+                    cubicTo(
+                        size.width * 0.14f, size.height * 0.84f,
+                        size.width * 0.26f, size.height * 0.72f,
+                        size.width * 0.38f, size.height
+                    )
+                }
+                drawPath(
+                    path = bottomLeftCurl,
+                    brush = Brush.linearGradient(
+                        listOf(Color(0xFF1B6EF3).copy(alpha = 0.22f), Color(0xFF93C5FD).copy(alpha = 0.30f))
+                    ),
+                    style = Stroke(width = 1.6.dp.toPx(), cap = StrokeCap.Round)
+                )
+            }
+            .border(
+                width = 1.3.dp,
+                brush = Brush.linearGradient(
+                    listOf(Color(0xFFA0C1F0), Color(0xFF7CA7E8))
+                ),
+                shape = RoundedCornerShape(26.dp)
+            )
             .padding(horizontal = 16.dp, vertical = 16.dp)
             .testTag("card_ios_kinetic_island_showcase"),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -977,10 +1068,41 @@ private fun IosSquircleControlTile(
     accentColor: Color,
     highlighted: Boolean,
     testTag: String,
+    wavePhaseOffset: Float = 0f,
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
+    val reducedMotion = LocalReducedMotion.current
     val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val tileElevation by animateDpAsState(
+        targetValue = when {
+            isPressed -> 5.dp
+            highlighted -> 14.dp
+            else -> 12.dp
+        },
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMedium
+        ),
+        label = "ios_tile_shadow_lift"
+    )
+    // Gentle living liquid curl drift inside each box (border stays calm & crisp)
+    val curlWaveState = if (reducedMotion) {
+        null
+    } else {
+        val transition = rememberInfiniteTransition(label = "ios_tile_curl_$testTag")
+        transition.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 4800, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "tile_curl_drift"
+        )
+    }
+
     val shape = RoundedCornerShape(24.dp)
     val primaryTextColor = if (highlighted) Color.White else Color(0xFF0C1830)
     val secondaryTextColor = if (highlighted) Color.White.copy(alpha = 0.88f) else Color(0xFF4B6282)
@@ -988,12 +1110,12 @@ private fun IosSquircleControlTile(
     Column(
         modifier = modifier
             .heightIn(min = 128.dp)
-            .liquidPressScale(interactionSource, pressedScale = 0.95f)
+            .liquidPressScale(interactionSource, pressedScale = 0.94f)
             .shadow(
-                elevation = if (highlighted) 10.dp else 8.dp,
+                elevation = tileElevation,
                 shape = shape,
-                ambientColor = Color(0xFF1B6EF3).copy(alpha = 0.14f),
-                spotColor = Color(0xFF1B6EF3).copy(alpha = 0.16f)
+                ambientColor = Color(0x2C0C2960),
+                spotColor = accentColor.copy(alpha = 0.34f)
             )
             .clip(shape)
             .background(
@@ -1002,41 +1124,86 @@ private fun IosSquircleControlTile(
                 } else {
                     Brush.verticalGradient(
                         listOf(
-                            Color(0xF5FFFFFF),
-                            Color(0xE8EEF6FF)
+                            Color(0xFFFFFFFF),
+                            Color(0xFFF0F6FF)
                         )
                     )
                 }
             )
             .drawBehind {
                 if (!highlighted) {
-                    // Subtle flowing blue liquid-glass wave in bottom-right corner
-                    val wave = Path().apply {
-                        moveTo(size.width * 0.42f, size.height)
+                    val livePhase = ((curlWaveState?.value ?: 0.5f) + wavePhaseOffset) % 1f
+                    val sway = (livePhase - 0.5f) * size.height * 0.14f
+
+                    // Layered curly liquid-glass wave gently flowing in bottom-right corner
+                    val waveFill = Path().apply {
+                        moveTo(size.width * 0.34f, size.height)
                         cubicTo(
-                            size.width * 0.60f, size.height * 0.78f,
-                            size.width * 0.78f, size.height * 0.62f,
-                            size.width, size.height * 0.46f
+                            size.width * 0.54f, size.height * 0.74f + sway,
+                            size.width * 0.74f, size.height * 0.62f - sway,
+                            size.width, size.height * 0.42f + sway * 0.5f
                         )
                         lineTo(size.width, size.height)
                         close()
                     }
                     drawPath(
-                        path = wave,
+                        path = waveFill,
                         brush = Brush.linearGradient(
                             colors = listOf(
-                                Color(0xFF60A5FA).copy(alpha = 0.14f),
-                                Color(0xFF1B6EF3).copy(alpha = 0.24f)
+                                accentColor.copy(alpha = 0.10f),
+                                accentColor.copy(alpha = 0.24f)
                             ),
-                            start = Offset(size.width * 0.45f, size.height),
-                            end = Offset(size.width, size.height * 0.48f)
+                            start = Offset(size.width * 0.38f, size.height),
+                            end = Offset(size.width, size.height * 0.42f)
                         )
+                    )
+                    // Crisp inner curly ribbon crest stroke
+                    val waveCrest = Path().apply {
+                        moveTo(size.width * 0.34f, size.height)
+                        cubicTo(
+                            size.width * 0.54f, size.height * 0.74f + sway,
+                            size.width * 0.74f, size.height * 0.62f - sway,
+                            size.width, size.height * 0.42f + sway * 0.5f
+                        )
+                    }
+                    drawPath(
+                        path = waveCrest,
+                        brush = Brush.linearGradient(
+                            colors = listOf(
+                                Color.White.copy(alpha = 0.85f),
+                                accentColor.copy(alpha = 0.44f)
+                            )
+                        ),
+                        style = Stroke(width = 1.6.dp.toPx(), cap = StrokeCap.Round)
+                    )
+                    // Secondary delicate top-left curl accent
+                    val topCurl = Path().apply {
+                        moveTo(0f, size.height * 0.24f - sway * 0.35f)
+                        cubicTo(
+                            size.width * 0.14f, size.height * 0.12f,
+                            size.width * 0.24f, size.height * 0.18f + sway * 0.3f,
+                            size.width * 0.34f, 0f
+                        )
+                    }
+                    drawPath(
+                        path = topCurl,
+                        color = accentColor.copy(alpha = 0.22f),
+                        style = Stroke(width = 1.3.dp.toPx(), cap = StrokeCap.Round)
                     )
                 }
             }
             .border(
-                width = 1.dp,
-                color = if (highlighted) Color.White.copy(alpha = 0.35f) else Color.White.copy(alpha = 0.92f),
+                width = 1.25.dp,
+                brush = if (highlighted) {
+                    Brush.linearGradient(listOf(Color.White.copy(alpha = 0.45f), Color.White.copy(alpha = 0.20f)))
+                } else {
+                    Brush.linearGradient(
+                        listOf(
+                            Color(0xFFA2C2F0),
+                            accentColor.copy(alpha = 0.42f)
+                        )
+                    )
+                },
                 shape = shape
             )
             .clickable(

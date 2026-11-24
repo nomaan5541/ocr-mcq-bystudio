@@ -1153,8 +1153,18 @@ class OverlayService : Service() {
             extractionEngine = intent.getStringExtra(EXTRA_EXTRACTION_ENGINE) ?: extractionEngine
         }
         if (intent.hasExtra(EXTRA_SOLVER_METHOD)) {
-            solverMethod = SolverMethod.fromId(intent.getStringExtra(EXTRA_SOLVER_METHOD))
-            if (solverMethod == SolverMethod.OVERLAPPING_GOOGLE) {
+            val updatedMethod = SolverMethod.fromId(intent.getStringExtra(EXTRA_SOLVER_METHOD))
+            solverMethod = updatedMethod
+            val syncedDisplayMode = if (updatedMethod == SolverMethod.OVERLAPPING_GOOGLE) {
+                MainActivity.MODE_WINDOW
+            } else {
+                MainActivity.MODE_STEALTH
+            }
+            prefs.edit()
+                .putString(MainActivity.PREF_KEY_SOLVER_METHOD, updatedMethod.id)
+                .putString(MainActivity.PREF_KEY_DISPLAY_MODE, syncedDisplayMode)
+                .apply()
+            if (updatedMethod == SolverMethod.OVERLAPPING_GOOGLE) {
                 currentSizeIndex = 3
                 displayMode = MainActivity.MODE_WINDOW
                 if (geminiWindowView == null) {
@@ -1163,8 +1173,17 @@ class OverlayService : Service() {
                     showGeminiWindow(true)
                 }
                 bringFrontPillToTop()
-            } else if (isWindowVisible) {
-                showGeminiWindow(false)
+            } else {
+                displayMode = MainActivity.MODE_STEALTH
+                if (isWindowVisible) {
+                    showGeminiWindow(false)
+                }
+            }
+            if (!isScanning && !isCamouflageEnabled && !isAdvEnabled(MainActivity.PREF_KEY_ADV_NET_SPEED_DISGUISE)) {
+                tvIslandTitle?.text = "${updatedMethod.shortName} Ready"
+            }
+            if (llMethodLoopDrawer?.visibility == View.VISIBLE) {
+                openMethodLoopDrawer()
             }
         }
         if (intent.hasExtra(EXTRA_SCAN_INTERVAL_SEC)) {
@@ -2195,17 +2214,27 @@ class OverlayService : Service() {
         solverMethod = activeMethod
 
         val loopMethods = listOf(
-            Triple(SolverMethod.TURBO_HYBRID, "Best Accuracy", "Double-checks answers fast"),
-            Triple(SolverMethod.CIRCLE_TO_SEARCH, "Visual Lookup", "Quick 3s visual & screen check"),
-            Triple(SolverMethod.OVERLAPPING_GOOGLE, "Floating AI Window", "Opens draggable AI browser")
+            Triple(SolverMethod.BACKGROUND_GEMINI, "Smart Auto", "Fast + Auto-Math & Offline Cache"),
+            Triple(SolverMethod.TURBO_HYBRID, "Double-Check Accuracy", "Multi-engine verified consensus"),
+            Triple(SolverMethod.DIRECT_VISION, "Photo & Math Vision", "Reads formulas, charts & diagrams"),
+            Triple(SolverMethod.FIREBASE_SERVER, "Cloud Solver", "Fast cloud inference with backup"),
+            Triple(SolverMethod.CIRCLE_TO_SEARCH, "Web Facts Lookup", "Checks live web facts with AI"),
+            Triple(SolverMethod.API_KEYS, "Your Own API Keys", "Uses your keys from Settings")
         )
 
         itemsContainer.removeAllViews()
         var targetScrollRow: View? = null
+        val accentHex = if (islandLightMode) "#1B6EF3" else "#D71921"
+        val selectedFillHex = if (islandLightMode) "#221B6EF3" else "#2AD71921"
+        val idleFillHex = if (islandLightMode) "#F4F8FF" else "#141418"
+        val idleBorderHex = if (islandLightMode) "#9AB9EA" else "#26262C"
+        val primaryTextHex = if (islandLightMode) "#0E172A" else "#FFFFFF"
+        val idleTextHex = if (islandLightMode) "#1E293B" else "#EEEEEE"
+        val subActiveHex = if (islandLightMode) "#1B6EF3" else "#F87171"
+        val subIdleHex = if (islandLightMode) "#52627A" else "#8E93A0"
 
-        val repeatedCount = 9 // 3 full cycles for infinite wheel feel
-        for (idx in 0 until repeatedCount) {
-            val (methodItem, title, subtitle) = loopMethods[idx % loopMethods.size]
+        for (item in loopMethods) {
+            val (methodItem, title, subtitle) = item
             val isSelected = (methodItem == activeMethod)
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
@@ -2214,10 +2243,10 @@ class OverlayService : Service() {
                 setPadding(dpToPx(10), dpToPx(8), dpToPx(10), dpToPx(8))
                 background = android.graphics.drawable.GradientDrawable().apply {
                     cornerRadius = dpToPx(10).toFloat()
-                    setColor(if (isSelected) Color.parseColor("#2AD71921") else Color.parseColor("#141418"))
+                    setColor(Color.parseColor(if (isSelected) selectedFillHex else idleFillHex))
                     setStroke(
                         dpToPx(1),
-                        if (isSelected) Color.parseColor("#D71921") else Color.parseColor("#26262C")
+                        Color.parseColor(if (isSelected) accentHex else idleBorderHex)
                     )
                 }
                 layoutParams = LinearLayout.LayoutParams(
@@ -2234,12 +2263,12 @@ class OverlayService : Service() {
                 text = if (isSelected) "● $title (Active)" else "○ $title"
                 textSize = 11.5f
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
-                setTextColor(Color.parseColor(if (isSelected) "#FFFFFF" else "#EEEEEE"))
+                setTextColor(Color.parseColor(if (isSelected) primaryTextHex else idleTextHex))
             }
             val subTv = TextView(this).apply {
                 text = subtitle
                 textSize = 9.5f
-                setTextColor(Color.parseColor(if (isSelected) "#F87171" else "#767676"))
+                setTextColor(Color.parseColor(if (isSelected) subActiveHex else subIdleHex))
             }
             row.addView(titleTv)
             row.addView(subTv)
@@ -2249,7 +2278,7 @@ class OverlayService : Service() {
             }
 
             itemsContainer.addView(row)
-            if (idx in 3..5 && isSelected && targetScrollRow == null) {
+            if (isSelected && targetScrollRow == null) {
                 targetScrollRow = row
             }
         }
@@ -2270,7 +2299,7 @@ class OverlayService : Service() {
 
         scrollView.post {
             val topY = targetScrollRow?.top ?: 0
-            scrollView.scrollTo(0, (topY - dpToPx(16)).coerceAtLeast(0))
+            scrollView.scrollTo(0, (topY - dpToPx(12)).coerceAtLeast(0))
         }
     }
 
@@ -2287,11 +2316,23 @@ class OverlayService : Service() {
 
     private fun selectSolverMethodFromIslandLoop(chosen: SolverMethod) {
         solverMethod = chosen
+        val nextDisplayMode = if (chosen == SolverMethod.OVERLAPPING_GOOGLE) {
+            MainActivity.MODE_WINDOW
+        } else {
+            MainActivity.MODE_STEALTH
+        }
+        displayMode = nextDisplayMode
         val prefs = getSharedPreferences("OmniSolvePrefs", Context.MODE_PRIVATE)
         prefs.edit()
             .putString(MainActivity.PREF_KEY_SOLVER_METHOD, chosen.id)
-            .putString(MainActivity.PREF_KEY_DISPLAY_MODE, MainActivity.MODE_STEALTH)
+            .putString(MainActivity.PREF_KEY_DISPLAY_MODE, nextDisplayMode)
             .apply()
+        serviceScope.launch(Dispatchers.IO) {
+            runCatching {
+                com.omnisolve.overlay.data.SettingsDataStoreRepository(applicationContext)
+                    .updateSolverMethod(chosen)
+            }
+        }
 
         if (chosen == SolverMethod.OVERLAPPING_GOOGLE) {
             if (geminiWindowView == null) {
@@ -3318,7 +3359,7 @@ class OverlayService : Service() {
                     val captureStartMs = PrismPerfLogger.nowMs()
                     val freshBitmap: Bitmap? = when {
                         preCapturedData?.third != null -> preCapturedData.third
-                        hasCropSelection && cropScreenRect != null && screenCaptureManager != null -> {
+                        cropScreenRect != null && screenCaptureManager != null -> {
                             val croppedData = captureAndOcrCropped(cropScreenRect)
                             textBlocks = croppedData?.second.orEmpty()
                             croppedData?.third
@@ -3369,7 +3410,7 @@ class OverlayService : Service() {
                     } else {
                         null
                     }
-                    val activeRaceMode = if (dualVerify || effectiveForceFresh) {
+                    val activeRaceMode = if (dualVerify || effectiveForceFresh || method == SolverMethod.TURBO_HYBRID) {
                         F1RaceMode.ACCURACY_CONSENSUS
                     } else {
                         F1RaceMode.FAST
@@ -4655,9 +4696,8 @@ class OverlayService : Service() {
                                 pendingCleanText = cleanText
                             }
                             // Wait up to 5 ticks (~325ms) for the short 1-line "| reason" to finish streaming
-                            val readyPending = pendingAnswerModel
-                            if (tick - pendingAnswerFirstTick >= 5 && readyPending != null) {
-                                return@withContext deliverParsedNow(readyPending, pendingTurnCount, pendingCleanText, tick)
+                            if (tick - pendingAnswerFirstTick >= 5) {
+                                return@withContext deliverParsedNow(parsedModel, pendingTurnCount, pendingCleanText, tick)
                             }
                         }
                     }

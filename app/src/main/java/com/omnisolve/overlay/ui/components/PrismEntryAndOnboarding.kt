@@ -185,11 +185,13 @@ fun RedPrismLogoMark(
     modifier: Modifier = Modifier,
     animated: Boolean = false
 ) {
+    val palette = LocalWhiteGlassPalette.current
+    val isDark = palette.isDarkObsidian
     val shimmerAlpha = if (animated) {
         val inf = rememberInfiniteTransition(label = "prismIconSheen")
         val a by inf.animateFloat(
             initialValue = 0.04f,
-            targetValue = 0.22f,
+            targetValue = 0.24f,
             animationSpec = infiniteRepeatable(
                 animation = tween(2200, easing = FastOutSlowInEasing),
                 repeatMode = RepeatMode.Reverse
@@ -204,12 +206,65 @@ fun RedPrismLogoMark(
             .clip(RoundedCornerShape(24)),
         contentAlignment = Alignment.Center
     ) {
-        androidx.compose.foundation.Image(
-            painter = androidx.compose.ui.res.painterResource(id = com.omnisolve.overlay.R.drawable.ic_red_prism_fg),
-            contentDescription = null,
-            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-            modifier = Modifier.fillMaxSize()
-        )
+        if (isDark) {
+            androidx.compose.foundation.Image(
+                painter = androidx.compose.ui.res.painterResource(id = com.omnisolve.overlay.R.drawable.ic_red_prism_fg),
+                contentDescription = null,
+                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+        } else {
+            // Pure daylight royal-blue & crystal-white prism emblem (zero red bleed on Prism Light)
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val w = size.width
+                val h = size.height
+                drawRect(
+                    brush = Brush.linearGradient(
+                        colors = listOf(Color(0xFF3B8BFF), Color(0xFF1B6EF3), Color(0xFF0A47B8)),
+                        start = Offset(0f, 0f),
+                        end = Offset(w, h)
+                    )
+                )
+                val cx = w * 0.5f
+                val top = Offset(cx, h * 0.14f)
+                val left = Offset(w * 0.18f, h * 0.52f)
+                val right = Offset(w * 0.82f, h * 0.52f)
+                val bottom = Offset(cx, h * 0.86f)
+                val core = Offset(cx, h * 0.49f)
+
+                drawPath(
+                    path = Path().apply {
+                        moveTo(top.x, top.y); lineTo(left.x, left.y); lineTo(core.x, core.y); close()
+                    },
+                    color = Color.White.copy(alpha = 0.94f)
+                )
+                drawPath(
+                    path = Path().apply {
+                        moveTo(top.x, top.y); lineTo(right.x, right.y); lineTo(core.x, core.y); close()
+                    },
+                    color = Color(0xFFD6E8FF)
+                )
+                drawPath(
+                    path = Path().apply {
+                        moveTo(left.x, left.y); lineTo(bottom.x, bottom.y); lineTo(core.x, core.y); close()
+                    },
+                    color = Color(0xFF9AC5FF)
+                )
+                drawPath(
+                    path = Path().apply {
+                        moveTo(right.x, right.y); lineTo(bottom.x, bottom.y); lineTo(core.x, core.y); close()
+                    },
+                    color = Color(0xFF60A5FA)
+                )
+                drawLine(
+                    color = Color.White,
+                    start = top,
+                    end = core,
+                    strokeWidth = (w * 0.045f).coerceAtLeast(1.5f),
+                    cap = StrokeCap.Round
+                )
+            }
+        }
         if (animated) {
             Box(
                 modifier = Modifier

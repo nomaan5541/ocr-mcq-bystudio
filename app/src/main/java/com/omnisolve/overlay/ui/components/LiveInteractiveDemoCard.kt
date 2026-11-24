@@ -41,6 +41,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
@@ -133,12 +140,53 @@ fun LiveInteractiveDemoCard(
         }
     }
 
+    val isLight = !palette.isDarkObsidian
+    val cardShape = RoundedCornerShape(corner)
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(corner))
-            .background(palette.glassStrong)
-            .border(1.dp, palette.accentSky.copy(alpha = 0.45f), RoundedCornerShape(corner))
+            .then(
+                if (isLight) {
+                    Modifier.shadow(
+                        elevation = 12.dp,
+                        shape = cardShape,
+                        ambientColor = Color(0x2B0C2960),
+                        spotColor = palette.accentSky.copy(alpha = 0.30f)
+                    )
+                } else {
+                    Modifier
+                }
+            )
+            .clip(cardShape)
+            .background(
+                if (isLight) {
+                    Brush.verticalGradient(listOf(Color(0xFFFFFFFF), Color(0xFFF3F8FF)))
+                } else {
+                    Brush.verticalGradient(listOf(palette.glassStrong, palette.glassStrong))
+                }
+            )
+            .drawBehind {
+                if (isLight) {
+                    val curl = Path().apply {
+                        moveTo(size.width * 0.68f, 0f)
+                        cubicTo(
+                            size.width * 0.80f, size.height * 0.14f,
+                            size.width * 0.90f, size.height * 0.08f,
+                            size.width, size.height * 0.24f
+                        )
+                    }
+                    drawPath(
+                        path = curl,
+                        color = palette.accentSky.copy(alpha = 0.20f),
+                        style = Stroke(width = 1.6.dp.toPx(), cap = StrokeCap.Round)
+                    )
+                }
+            }
+            .border(
+                width = if (isLight) 1.25.dp else 1.dp,
+                color = if (isLight) Color(0xFF9AB9EA) else palette.accentSky.copy(alpha = 0.45f),
+                shape = cardShape
+            )
             .padding(if (compact) 12.dp else 14.dp)
             .testTag("card_interactive_live_demo"),
         verticalArrangement = Arrangement.spacedBy(10.dp)

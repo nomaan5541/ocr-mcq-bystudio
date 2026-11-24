@@ -18,8 +18,8 @@ android {
     applicationId = "com.aistudio.ocrmcqsolver.vrsbsx"
     minSdk = 26
     targetSdk = 36
-    versionCode = 6
-    versionName = "3.5.2"
+    versionCode = 8
+    versionName = "3.8.2"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -73,10 +73,6 @@ android {
     compose = true
     viewBinding = true
     buildConfig = true
-  }
-  lint {
-    checkReleaseBuilds = false
-    abortOnError = false
   }
   packaging {
     resources {
@@ -156,7 +152,6 @@ dependencies {
   implementation("com.google.mlkit:text-recognition:16.0.1")
   implementation("com.google.zxing:core:3.5.3")
   implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
-  implementation("com.google.android.gms:play-services-ads:23.6.0")
   implementation("com.google.android.play:app-update-ktx:2.1.0")
   implementation("com.google.android.play:review-ktx:2.0.2")
 

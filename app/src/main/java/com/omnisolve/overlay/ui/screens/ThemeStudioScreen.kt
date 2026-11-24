@@ -51,8 +51,6 @@ import com.omnisolve.overlay.ui.components.LivingSecondaryButton
 import com.omnisolve.overlay.ui.components.PrismLiveThemeShowcaseStage
 import com.omnisolve.overlay.ui.physics.ScrollRevealSection
 import com.omnisolve.overlay.ui.physics.liquidPressScale
-import com.omnisolve.overlay.ui.theme.CRIMSON_STUDIO_THEME
-import com.omnisolve.overlay.ui.theme.GLASS_PRISM_THEME
 import com.omnisolve.overlay.ui.theme.IOS_LIQUID_LIGHT_THEME
 import com.omnisolve.overlay.ui.theme.LocalWhiteGlassPalette
 import com.omnisolve.overlay.ui.theme.NORMAL_DEFAULT_THEME
@@ -68,19 +66,10 @@ private fun friendlyAnimLabel(intensity: ThemeAnimationIntensity): String = when
     ThemeAnimationIntensity.EXTREME_3D -> "Lively"
 }
 
-private fun friendlyAppearanceLabel(mode: ThemeColorAppearance): String = when (mode) {
-    ThemeColorAppearance.AUTO -> "Default"
-    ThemeColorAppearance.DARK_ONLY -> "Dark Only"
-    ThemeColorAppearance.DARK_SIGNATURE_RED -> "Dark + Red"
-    ThemeColorAppearance.ADAPTIVE_LIGHT_DARK -> "Light & Dark"
-}
-
 /**
- * Curated 4-Theme Studio:
- * 1. Prism Default (Obsidian Dark + Crimson)
- * 2. Crimson Studio (New Flagship Cinematic Studio)
- * 3. Glass Prism (Optical Liquid Glass Dark)
- * 4. Prism Light (Clean Daylight Light)
+ * Curated 2-Theme Studio (Zero Clutter, Zero Theme Bleed):
+ * 1. Prism Default (Obsidian Dark + Refined Crimson)
+ * 2. Prism Light (Daylight Frosted White + Royal Blue)
  */
 @Composable
 fun ThemeStudioScreen(
@@ -168,11 +157,10 @@ fun ThemeStudioScreen(
                             }
                         }
 
-                        val sourceBadge = when (activeSpec.themeId) {
-                            CRIMSON_STUDIO_THEME.themeId -> "NEW STUDIO"
-                            GLASS_PRISM_THEME.themeId -> "LIQUID GLASS"
-                            IOS_LIQUID_LIGHT_THEME.themeId -> "LIGHT"
-                            else -> "DEFAULT"
+                        val sourceBadge = if (activeSpec.themeId == IOS_LIQUID_LIGHT_THEME.themeId) {
+                            "LIGHT"
+                        } else {
+                            "DARK"
                         }
                         Box(
                             modifier = Modifier
@@ -199,7 +187,7 @@ fun ThemeStudioScreen(
                     ) {
                         ThemePaletteSwatchesRow(spec = activeSpec)
                         Text(
-                            text = "4 Curated Themes",
+                            text = "2 Core Themes",
                             style = MaterialTheme.typography.labelSmall.copy(
                                 color = palette.inkMuted,
                                 fontSize = 11.sp
@@ -221,13 +209,13 @@ fun ThemeStudioScreen(
             }
         }
 
-        // ── 3. THE 4 CURATED THEMES ──────────────────────────────────────────
+        // ── 3. THE 2 CORE THEMES ─────────────────────────────────────────────
         item(key = "theme_card_default") {
             ScrollRevealSection(index = 2) {
                 CuratedThemeShowcaseCard(
                     spec = NORMAL_DEFAULT_THEME,
                     subtitleBadge = "Default • Obsidian Dark + Crimson",
-                    description = "Deep obsidian surfaces (#07080B), live scanning phone preview, quick mode chips, and controlled crimson accents.",
+                    description = "Deep obsidian surfaces (#07080B), live vertical scanning phone preview, quick mode chips, and controlled crimson accents.",
                     icon = Icons.Filled.DarkMode,
                     isActive = activeSpec.themeId == NORMAL_DEFAULT_THEME.themeId,
                     onClick = onRevertToNormalDefault,
@@ -236,40 +224,12 @@ fun ThemeStudioScreen(
             }
         }
 
-        item(key = "theme_card_crimson_studio") {
-            ScrollRevealSection(index = 3) {
-                CuratedThemeShowcaseCard(
-                    spec = CRIMSON_STUDIO_THEME,
-                    subtitleBadge = "New • Cinematic Studio Dark",
-                    description = "Our newest studio flagship: 3-step Scan-Answer-Understand showcase, explanation preview illustration, and sculpted crimson glass.",
-                    icon = Icons.Filled.Diamond,
-                    isActive = activeSpec.themeId == CRIMSON_STUDIO_THEME.themeId,
-                    onClick = { onSelectLocalPreset(CRIMSON_STUDIO_THEME) },
-                    testTag = "card_theme_crimson_studio"
-                )
-            }
-        }
-
-        item(key = "theme_card_glass_prism") {
-            ScrollRevealSection(index = 4) {
-                CuratedThemeShowcaseCard(
-                    spec = GLASS_PRISM_THEME,
-                    subtitleBadge = "Liquid Glass • Ice-White & Sapphire Blue",
-                    description = "Pure frosted ice-white & sapphire-blue liquid glass with animated curly silk waves, glossy droplets, and tall vertical preview.",
-                    icon = Icons.Filled.AutoAwesome,
-                    isActive = activeSpec.themeId == GLASS_PRISM_THEME.themeId,
-                    onClick = { onSelectLocalPreset(GLASS_PRISM_THEME) },
-                    testTag = "card_theme_glass_prism"
-                )
-            }
-        }
-
         item(key = "theme_card_prism_light") {
-            ScrollRevealSection(index = 5) {
+            ScrollRevealSection(index = 3) {
                 CuratedThemeShowcaseCard(
                     spec = IOS_LIQUID_LIGHT_THEME,
                     subtitleBadge = "Daylight • Pure White & Royal Blue",
-                    description = "Bright frosted white & royal-blue liquid surfaces with flowing curly ribbons, crystal rings, and a matching light floating pill.",
+                    description = "Bright frosted white & royal-blue liquid surfaces with crisp contrast, flowing glass waves, and a matching light floating pill.",
                     icon = Icons.Filled.LightMode,
                     isActive = activeSpec.themeId == IOS_LIQUID_LIGHT_THEME.themeId,
                     onClick = { onSelectLocalPreset(IOS_LIQUID_LIGHT_THEME) },
@@ -341,31 +301,6 @@ fun ThemeStudioScreen(
                                     selected = state.themeAnimationOverride == intensity,
                                     onClick = { onSelectAnimationOverride(intensity) },
                                     testTag = "chip_anim_${intensity.id}"
-                                )
-                            }
-                        }
-                    }
-
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(
-                            text = "Color Override",
-                            style = MaterialTheme.typography.labelMedium.copy(
-                                color = palette.inkPrimary,
-                                fontWeight = FontWeight.Bold
-                            )
-                        )
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            ThemeColorAppearance.entries.forEach { mode ->
-                                ThemePillChip(
-                                    label = friendlyAppearanceLabel(mode),
-                                    selected = state.themeColorAppearanceOverride == mode,
-                                    onClick = { onSelectAppearanceOverride(mode) },
-                                    testTag = "chip_color_${mode.id}"
                                 )
                             }
                         }

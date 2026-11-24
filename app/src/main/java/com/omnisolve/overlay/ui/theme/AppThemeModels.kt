@@ -191,14 +191,8 @@ data class RemoteThemeSpec(
         val withAppearance = when (effectiveAppearance) {
             ThemeColorAppearance.DARK_SIGNATURE_RED -> {
                 if (!isDark) {
-                    copy(
-                        accentPrimaryHex = "#E3182D",
-                        accentBrightHex = "#FF334A",
-                        accentContainerHex = "#FCE8EB",
-                        islandAccentHex = "#E3182D",
-                        errorHex = "#B91C1C",
-                        isDark = false
-                    )
+                    // Never bleed crimson onto Prism Light; preserve clean daylight frosted white & blue
+                    this
                 } else {
                     copy(
                         accentPrimaryHex = "#E3182D",
@@ -567,12 +561,12 @@ val IOS_LIQUID_LIGHT_THEME: RemoteThemeSpec = RemoteThemeSpec(
     category = ThemeCategory.MODERN_LANGUAGE,
     isDark = false,
     isPublic = true,
-    canvasTopHex = "#EFF5FF",
-    canvasBottomHex = "#DCEBFF",
+    canvasTopHex = "#E5EFFD",
+    canvasBottomHex = "#CEE1FA",
     surfacePrimaryHex = "#FFFFFF",
-    surfaceElevatedHex = "#F5F9FF",
-    surfaceSubtleHex = "#E5EFFD",
-    borderHex = "#C9DCFA",
+    surfaceElevatedHex = "#F7FAFF",
+    surfaceSubtleHex = "#E4EEFC",
+    borderHex = "#9AB9EA",
     accentPrimaryHex = "#1B6EF3",
     accentBrightHex = "#4B9BFF",
     accentContainerHex = "#E4F0FF",
@@ -583,7 +577,7 @@ val IOS_LIQUID_LIGHT_THEME: RemoteThemeSpec = RemoteThemeSpec(
     warningHex = "#E88B14",
     errorHex = "#C81E2E",
     cornerRadiusDp = 24,
-    borderWidthTenths = 9,
+    borderWidthTenths = 12,
     surfaceEffect = SurfaceEffectStyle.IOS_LIQUID_GLASS,
     animationIntensity = ThemeAnimationIntensity.INTERACTIVE,
     colorAppearance = ThemeColorAppearance.AUTO,
@@ -675,29 +669,32 @@ val CRIMSON_STUDIO_THEME: RemoteThemeSpec = RemoteThemeSpec(
 )
 
 /**
- * The complete curated 4-theme collection:
- * 1. Prism Default (Default Dark)
- * 2. Prism Light (Daylight Light)
- * 3. Glass Prism (Optical Liquid Glass)
- * 4. Crimson Studio (New Flagship Cinematic Studio)
+ * Strictly 2 curated core themes (zero clutter, zero theme bleed):
+ * 1. Prism Default (Obsidian Dark + Refined Crimson)
+ * 2. Prism Light (Daylight Frosted White + Royal Blue)
  */
 val CURATED_PRISM_THEMES: List<RemoteThemeSpec> = listOf(
     NORMAL_DEFAULT_THEME,
-    IOS_LIQUID_LIGHT_THEME,
-    GLASS_PRISM_THEME,
-    CRIMSON_STUDIO_THEME
+    IOS_LIQUID_LIGHT_THEME
 )
 
-// Backwards-compatible aliases pointing cleanly to the curated 4-theme set
+// Backwards-compatible aliases pointing cleanly to the curated 2-theme set
 val ALL_50_UNSLOP_THEMES: List<RemoteThemeSpec> = CURATED_PRISM_THEMES
 val ALL_THEME_OPTIONS: List<RemoteThemeSpec> = CURATED_PRISM_THEMES
 val FEATURED_THEME_IDS: List<String> = CURATED_PRISM_THEMES.map { it.themeId }
 val FEATURED_THEMES: List<RemoteThemeSpec> = CURATED_PRISM_THEMES
 val TOP_5_MCQ_THEMES: List<RemoteThemeSpec> = CURATED_PRISM_THEMES
-val SIGNATURE_ATELIER_THEMES: List<RemoteThemeSpec> = listOf(CRIMSON_STUDIO_THEME, GLASS_PRISM_THEME)
-val FLAGSHIP_LIGHT_THEMES: List<RemoteThemeSpec> = listOf(CRIMSON_STUDIO_THEME, GLASS_PRISM_THEME, IOS_LIQUID_LIGHT_THEME)
+val SIGNATURE_ATELIER_THEMES: List<RemoteThemeSpec> = CURATED_PRISM_THEMES
+val FLAGSHIP_LIGHT_THEMES: List<RemoteThemeSpec> = listOf(IOS_LIQUID_LIGHT_THEME)
 
-fun findThemePresetById(id: String?): RemoteThemeSpec =
-    CURATED_PRISM_THEMES.firstOrNull {
-        it.themeId.equals(id?.trim(), ignoreCase = true)
+fun findThemePresetById(id: String?): RemoteThemeSpec {
+    val normalized = id?.trim().orEmpty()
+    if (normalized.equals(IOS_LIQUID_LIGHT_THEME.themeId, ignoreCase = true) ||
+        normalized.equals(GLASS_PRISM_THEME.themeId, ignoreCase = true)
+    ) {
+        return IOS_LIQUID_LIGHT_THEME
+    }
+    return CURATED_PRISM_THEMES.firstOrNull {
+        it.themeId.equals(normalized, ignoreCase = true)
     } ?: NORMAL_DEFAULT_THEME
+}

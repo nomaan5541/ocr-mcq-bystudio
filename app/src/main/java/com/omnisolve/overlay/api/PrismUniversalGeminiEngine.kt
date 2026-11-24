@@ -413,7 +413,7 @@ object PrismUniversalGeminiEngine {
             val telemetryFeature = when (attachment?.type) {
                 UniversalAttachmentType.PHOTO -> TelemetryFeature.PHOTO_SOLVER
                 UniversalAttachmentType.PDF -> TelemetryFeature.PDF_SOLVER
-                null -> FEATURE_UNIVERSAL_ASK
+                null -> TelemetryFeature.PRACTICE
             }
             runCatching {
                 FirebaseTelemetryRepository.recordSolveRequest(

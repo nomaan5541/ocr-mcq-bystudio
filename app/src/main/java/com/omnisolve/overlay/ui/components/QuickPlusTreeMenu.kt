@@ -213,6 +213,7 @@ fun QuickPlusTreeOverlay(
         val formsMax = UsageLimitFeature.GOOGLE_FORMS.dailyLimit
 
         val scrimInteraction = remember { MutableInteractionSource() }
+        val isDark = palette.isDarkObsidian
         val accentCrimson = palette.accentSky
         val accentEmerald = palette.accentEmerald
 
@@ -221,9 +222,9 @@ fun QuickPlusTreeOverlay(
                 .fillMaxSize()
                 .background(
                     Brush.verticalGradient(
-                        0f to Color(0xFF0A0A0C).copy(alpha = 0.76f),
-                        0.62f to Color(0xFF0A0A0C).copy(alpha = 0.88f),
-                        1f to Color(0xFF14090B).copy(alpha = 0.95f)
+                        0f to if (isDark) Color(0xFF0A0A0C).copy(alpha = 0.76f) else Color(0xFFEAF2FF).copy(alpha = 0.76f),
+                        0.62f to if (isDark) Color(0xFF0A0A0C).copy(alpha = 0.88f) else Color(0xFFDCEBFF).copy(alpha = 0.90f),
+                        1f to if (isDark) Color(0xFF14090B).copy(alpha = 0.95f) else Color(0xFFD2E5FF).copy(alpha = 0.96f)
                     )
                 )
                 .clickable(
@@ -296,7 +297,7 @@ fun QuickPlusTreeOverlay(
                             translationY = (1f - p) * 18f
                         }
                         .clip(CircleShape)
-                        .background(Color(0xFF141519))
+                        .background(palette.glassStrong)
                         .border(1.dp, palette.cardHairlineBorder, CircleShape)
                         .padding(horizontal = 14.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -419,7 +420,7 @@ fun QuickPlusTreeOverlay(
                             title = "Photo",
                             subtitle = "Gallery · Max 2 MB",
                             badgeText = "$photoLeft/$photoMax left",
-                            accentTint = Color(0xFFEEEEEE),
+                            accentTint = if (isDark) Color(0xFFEEEEEE) else palette.accentSky,
                             highlightBorder = false,
                             testTag = "btn_plus_tree_photo",
                             onClick = {
@@ -448,7 +449,7 @@ fun QuickPlusTreeOverlay(
                             title = "PDF",
                             subtitle = "Max 3 MB · 12 pages",
                             badgeText = "$pdfLeft/$pdfMax left",
-                            accentTint = Color(0xFFFF8A80),
+                            accentTint = if (isDark) Color(0xFFFF8A80) else Color(0xFF4F46E5),
                             highlightBorder = false,
                             testTag = "btn_plus_tree_pdf",
                             onClick = {
@@ -476,7 +477,7 @@ fun QuickPlusTreeOverlay(
                         .heightIn(min = 50.dp)
                         .clip(RoundedCornerShape(16.dp))
                         .background(
-                            if (!activeLiveRoomCode.isNullOrBlank()) Color(0xFF1F1114) else Color(0xFF141519)
+                            if (!activeLiveRoomCode.isNullOrBlank()) palette.glassTintedSky else palette.glassStrong
                         )
                         .border(
                             width = 1.dp,
@@ -541,7 +542,7 @@ fun QuickPlusTreeOverlay(
                     Box(
                         modifier = Modifier
                             .clip(CircleShape)
-                            .background(if (!activeLiveRoomCode.isNullOrBlank()) accentEmerald.copy(alpha = 0.2f) else Color(0xFF23252D))
+                            .background(if (!activeLiveRoomCode.isNullOrBlank()) accentEmerald.copy(alpha = 0.2f) else palette.glassSubtle)
                             .padding(horizontal = 10.dp, vertical = 5.dp)
                     ) {
                         Text(
@@ -572,7 +573,7 @@ fun QuickPlusTreeOverlay(
                         .heightIn(min = 52.dp)
                         .clip(RoundedCornerShape(16.dp))
                         .background(
-                            if (isOverlayRunning) Color(0xFF10241A) else Color(0xFF141519)
+                            if (isOverlayRunning) palette.glassTintedMint else palette.glassStrong
                         )
                         .border(
                             width = 1.dp,
@@ -682,7 +683,7 @@ private fun QuickBloomActionTile(
             .heightIn(min = 100.dp)
             .liquidPressScale(interaction, pressedScale = 0.95f)
             .clip(RoundedCornerShape(18.dp))
-            .background(Color(0xFF131418))
+            .background(palette.glassStrong)
             .border(
                 width = 1.dp,
                 color = if (highlightBorder) accentTint.copy(alpha = 0.45f) else palette.cardHairlineBorder,
@@ -801,7 +802,7 @@ fun QuickSolveResultSheet(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color(0xFF0A0A0C).copy(alpha = 0.72f))
+                .background(palette.canvasTop.copy(alpha = 0.76f))
                 .clickable(
                     interactionSource = scrimInteraction,
                     indication = null,
@@ -816,7 +817,7 @@ fun QuickSolveResultSheet(
                     .widthIn(max = 600.dp)
                     .heightIn(min = 320.dp, max = 640.dp)
                     .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
-                    .background(Color(0xFF101114))
+                    .background(palette.glassStrong)
                     .border(
                         width = 1.dp,
                         color = palette.cardHairlineBorder,
@@ -888,7 +889,7 @@ fun QuickSolveResultSheet(
                                 modifier = Modifier
                                     .heightIn(min = 48.dp)
                                     .clip(RoundedCornerShape(10.dp))
-                                    .background(Color(0xFF1A1B20))
+                                    .background(palette.glassMedium)
                                     .border(1.dp, palette.cardHairlineBorder, RoundedCornerShape(10.dp))
                                     .clickable(role = Role.Button, onClick = onStartFresh)
                                     .padding(horizontal = 10.dp)
@@ -909,7 +910,7 @@ fun QuickSolveResultSheet(
                             modifier = Modifier
                                 .size(48.dp)
                                 .clip(CircleShape)
-                                .background(Color(0xFF1A1B20))
+                                .background(palette.glassMedium)
                                 .border(1.dp, palette.cardHairlineBorder, CircleShape)
                                 .clickable(role = Role.Button, onClick = onDismiss)
                                 .testTag("btn_quick_solve_close")
@@ -979,7 +980,7 @@ fun QuickSolveResultSheet(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(14.dp))
-                        .background(Color(0xFF17181D))
+                        .background(palette.glassMedium)
                         .border(1.dp, palette.cardHairlineBorder, RoundedCornerShape(14.dp))
                         .padding(horizontal = 12.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -1040,14 +1041,14 @@ fun QuickSolveResultSheet(
                             modifier = Modifier
                                 .size(48.dp)
                                 .clip(CircleShape)
-                                .background(if (canSend) palette.accentSky else Color(0xFF22242B))
+                                .background(if (canSend) palette.accentSky else palette.glassSubtle)
                                 .clickable(enabled = canSend, role = Role.Button, onClick = onSendFollowUp)
                                 .testTag("btn_quick_solve_send")
                         ) {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.Send,
                                 contentDescription = "Send",
-                                tint = if (canSend) Color(0xFFEEEEEE) else palette.inkMuted,
+                                tint = if (canSend) palette.onAccentInk else palette.inkMuted,
                                 modifier = Modifier.size(18.dp)
                             )
                         }
@@ -1070,7 +1071,7 @@ private fun QuickSolveBubble(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(12.dp))
-                .background(Color(0xFF17181E))
+                .background(palette.glassMedium)
                 .border(1.dp, palette.cardHairlineBorder, RoundedCornerShape(12.dp))
                 .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -1101,7 +1102,7 @@ private fun QuickSolveBubble(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(14.dp))
-                .background(if (message.isError) Color(0xFF241214) else Color(0xFF13151B))
+                .background(if (message.isError) palette.dangerContainer else palette.glassMedium)
                 .border(
                     1.dp,
                     if (message.isError) palette.accentSky.copy(alpha = 0.55f) else palette.cardHairlineBorder,
@@ -1150,7 +1151,7 @@ private fun QuickSolveBubble(
                         modifier = Modifier
                             .heightIn(min = 48.dp)
                             .clip(RoundedCornerShape(10.dp))
-                            .background(Color(0xFF1C1E26))
+                            .background(palette.glassSubtle)
                             .clickable(role = Role.Button) { onCopy(message.text) }
                             .padding(horizontal = 12.dp, vertical = 8.dp)
                     ) {
@@ -1176,7 +1177,7 @@ private fun QuickSolveBubble(
                         modifier = Modifier
                             .heightIn(min = 48.dp)
                             .clip(RoundedCornerShape(10.dp))
-                            .background(Color(0xFF1C1E26))
+                            .background(palette.glassSubtle)
                             .clickable(role = Role.Button) { onShare(message.text) }
                             .padding(horizontal = 12.dp, vertical = 8.dp)
                     ) {

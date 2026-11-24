@@ -81,14 +81,14 @@ enum class F1FailureCategory {
 
 data class F1TimeoutConfig(
     val ocrBudgetMs: Long = 4_500L,
-    val fastTargetMs: Long = 3_000L,
-    val primaryProviderDeadlineMs: Long = 5_000L,
-    val onlineRaceDeadlineMs: Long = 8_000L,
-    val visionEscalationBudgetMs: Long = 4_500L,
-    val webAutomatedTimeoutMs: Long = 15_000L,
-    val searchEvidenceTimeoutMs: Long = 2_200L,
-    val minHedgeDelayMs: Long = 500L,
-    val maxHedgeDelayMs: Long = 900L
+    val fastTargetMs: Long = 3_500L,
+    val primaryProviderDeadlineMs: Long = 15_000L,
+    val onlineRaceDeadlineMs: Long = 24_000L,
+    val visionEscalationBudgetMs: Long = 18_000L,
+    val webAutomatedTimeoutMs: Long = 18_000L,
+    val searchEvidenceTimeoutMs: Long = 2_500L,
+    val minHedgeDelayMs: Long = 1_600L,
+    val maxHedgeDelayMs: Long = 3_200L
 )
 
 data class AnswerCandidate(

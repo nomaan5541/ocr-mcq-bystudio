@@ -251,7 +251,7 @@ class CeoProductUpgradeTest {
         )
         assertEquals(PrismAiSolverEngine.MODEL_LITE, rapidRoute.primaryGeminiModel)
         assertFalse(rapidRoute.attachMathVision)
-        assertTrue(rapidRoute.preferCloudflareFirst)
+        assertFalse(rapidRoute.preferCloudflareFirst)
         assertFalse(rapidRoute.primaryGeminiModel.contains("argon", ignoreCase = true))
         assertFalse(rapidRoute.fallbackGeminiModel.contains("argon", ignoreCase = true))
 
@@ -646,7 +646,7 @@ class CeoProductUpgradeTest {
         assertFalse(IOS_LIQUID_LIGHT_THEME.isDark)
         assertEquals(ThemeLayoutArchetype.IOS_LIQUID_LIGHT, IOS_LIQUID_LIGHT_THEME.layoutArchetype)
         assertEquals(IOS_LIQUID_LIGHT_THEME, findThemePresetById("ios_liquid_light"))
-        assertEquals(4, ALL_50_UNSLOP_THEMES.size)
+        assertEquals(2, ALL_50_UNSLOP_THEMES.size)
 
         composeTestRule.setContent {
             WhiteGlassTheme(themeSpec = IOS_LIQUID_LIGHT_THEME) {

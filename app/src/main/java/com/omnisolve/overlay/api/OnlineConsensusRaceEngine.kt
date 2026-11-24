@@ -48,8 +48,8 @@ import org.json.JSONObject
 object OnlineConsensusRaceEngine {
 
     private const val TAG = "OnlineConsensusRace"
-    private const val MAX_RACE_WINDOW_MS = 10_500L
-    private const val POST_FIRST_VOTE_SETTLE_MS = 2_200L
+    private const val MAX_RACE_WINDOW_MS = 16_000L
+    private const val POST_FIRST_VOTE_SETTLE_MS = 2_800L
     private const val DEFAULT_ZERO_AUTH_ENDPOINT = "https://text.pollinations.ai/openai"
     private val POST_ZERO_AUTH_ENDPOINTS = listOf(
         "https://text.pollinations.ai/openai",

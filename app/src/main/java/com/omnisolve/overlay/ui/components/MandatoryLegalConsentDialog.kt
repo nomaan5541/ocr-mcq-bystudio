@@ -144,8 +144,8 @@ fun MandatoryLegalConsentDialog(
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 LegalSummaryBullet(
-                    title = "2. Solving, Shared Form Answers & Ads",
-                    description = "Questions (and photos or PDFs you pick) are sent securely to generate answers. History syncs to your signed-in Google account, solved Google Form links may be cached so classmates get instant answers, and Google AdMob ads are shown."
+                    title = "2. Solving, Shared Form Answers & Zero Ads",
+                    description = "Questions (and photos or PDFs you pick) are sent securely over HTTPS to generate answers. History syncs to your signed-in Google account, solved Google Form links may be cached so classmates get instant answers, and Prism Solver is 100% ad-free."
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 LegalSummaryBullet(

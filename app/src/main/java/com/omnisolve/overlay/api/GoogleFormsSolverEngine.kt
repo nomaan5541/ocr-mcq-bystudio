@@ -876,7 +876,7 @@ object GoogleFormsSolverEngine {
 
         val formSolveStartMs = System.currentTimeMillis()
         val combinedParsedMap = linkedMapOf<Int, ParsedBatchEntry>()
-        val solveDeadlineMs = formSolveStartMs + 65_000L
+        val solveDeadlineMs = formSolveStartMs + 90_000L
         var primaryEngineUsed = ""
         var lastErrorMsg = ""
         var loginPromptRequired = false
@@ -971,7 +971,7 @@ object GoogleFormsSolverEngine {
                                 chunk = chunk,
                                 subjectMode = subjectMode,
                                 selectedModel = selectedOption,
-                                timeoutMs = remainingMs.coerceAtMost(24_000L)
+                                timeoutMs = remainingMs.coerceAtMost(36_000L)
                             )
                             synchronized(combinedParsedMap) {
                                 for ((qNum, entry) in outcome.parsed) {
@@ -1254,7 +1254,7 @@ object GoogleFormsSolverEngine {
                 }
                 val leftCloudMs = cloudDeadlineMs - System.currentTimeMillis()
                 if (leftCloudMs <= 1_500L) break
-                val perCallCap = if (idx == 0) 9_500L else 7_500L
+                val perCallCap = if (idx == 0) 22_000L else 16_000L
                 val callTimeoutMs = minOf(perCallCap, leftCloudMs)
                 val cloudCallStart = System.currentTimeMillis()
                 try {
@@ -1490,8 +1490,19 @@ object GoogleFormsSolverEngine {
             var usedCloud = false
             var usedCloudflare = false
 
+            val preferredCloudOrder = if (selectedModel == GoogleFormsModelOption.GEMINI_35_FLASH_LITE) {
+                listOf(PrismAiSolverEngine.MODEL_LITE, PrismAiSolverEngine.MODEL_FLASH)
+            } else {
+                listOf(PrismAiSolverEngine.MODEL_FLASH, PrismAiSolverEngine.MODEL_LITE)
+            }
+            val secondaryCloudModel = if (selectedModel == GoogleFormsModelOption.GEMINI_35_FLASH_LITE) {
+                PrismAiSolverEngine.MODEL_FLASH
+            } else {
+                PrismAiSolverEngine.MODEL_LITE
+            }
+
             val pairResult = coroutineScope {
-                val primaryBudget = remainingChunkMs(reserveForFallbackMs = 6_000L).coerceAtMost(15_000L)
+                val primaryBudget = remainingChunkMs(reserveForFallbackMs = 6_000L).coerceAtMost(24_000L)
                 if (hasGeminiWeb) {
                     usedWeb = true
                     solverAJob = async(Dispatchers.IO) {
@@ -1501,9 +1512,13 @@ object GoogleFormsSolverEngine {
                         usedCloud = true
                         async(Dispatchers.IO) {
                             runCloudStructured(
-                                listOf(PrismAiSolverEngine.MODEL_FLASH, PrismAiSolverEngine.MODEL_LITE),
+                                preferredCloudOrder,
                                 primaryBudget
                             )
+                        }
+                    } else if (hasPersonalKey) {
+                        async(Dispatchers.IO) {
+                            runPersonalKeys(primaryBudget)
                         }
                     } else if (!PrismAiSolverEngine.isCloudflareTemporarilyUnavailable()) {
                         usedCloudflare = true
@@ -1512,28 +1527,32 @@ object GoogleFormsSolverEngine {
                         }
                     } else null
                 } else {
-                    // User not signed into Gemini Web: run General Cloud AI (Gemini 3.8 Flash) + Cloudflare High-Accuracy in parallel
+                    // Firebase-First Cloud Consensus: Firebase AI Logic primary + Personal Keys (or fast secondary Firebase Gemini model)
+                    // Third-party Cloudflare Workers AI is reserved for fallback if Firebase AI is unavailable.
                     solverAJob = if (cloudAvailable) {
                         usedCloud = true
                         async(Dispatchers.IO) {
                             runCloudStructured(
-                                listOf(PrismAiSolverEngine.MODEL_FLASH, PrismAiSolverEngine.MODEL_LITE),
+                                preferredCloudOrder,
                                 primaryBudget
                             )
                         }
                     } else null
-                    solverBJob = if (!PrismAiSolverEngine.isCloudflareTemporarilyUnavailable()) {
+                    solverBJob = if (hasPersonalKey) {
+                        async(Dispatchers.IO) {
+                            runPersonalKeys(primaryBudget)
+                        }
+                    } else if (cloudAvailable && !isUnitTestWithSingleMock) {
+                        async(Dispatchers.IO) {
+                            runCloudStructured(
+                                listOf(secondaryCloudModel),
+                                primaryBudget
+                            )
+                        }
+                    } else if (!PrismAiSolverEngine.isCloudflareTemporarilyUnavailable()) {
                         usedCloudflare = true
                         async(Dispatchers.IO) {
                             runCloudflareBatch(primaryBudget)
-                        }
-                    } else if (cloudAvailable && !isUnitTestWithSingleMock) {
-                        // Independent second-opinion pass on Gemini Lite if Cloudflare is unavailable
-                        async(Dispatchers.IO) {
-                            runCloudStructured(
-                                listOf(PrismAiSolverEngine.MODEL_LITE),
-                                primaryBudget
-                            )
                         }
                     } else null
                 }

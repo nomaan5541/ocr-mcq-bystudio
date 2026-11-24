@@ -191,21 +191,21 @@ object F1ProviderHealthManager {
             val snap = getSnapshot(id)
             val baseLatency = when {
                 snap.averageLatencyMs > 0L -> snap.averageLatencyMs.toDouble()
-                id == F1ProviderId.FIREBASE_GEMINI -> 1_900.0
-                id == F1ProviderId.CLOUDFLARE_WORKERS -> 2_100.0
-                id == F1ProviderId.PERSONAL_API_KEYS -> 2_200.0
-                id == F1ProviderId.DIRECT_VISION -> 2_600.0
-                id == F1ProviderId.ZERO_AUTH_ONLINE_AI -> 3_400.0
-                else -> 4_500.0
+                id == F1ProviderId.FIREBASE_GEMINI -> 1_100.0
+                id == F1ProviderId.PERSONAL_API_KEYS -> 1_850.0
+                id == F1ProviderId.DIRECT_VISION -> 2_200.0
+                id == F1ProviderId.CLOUDFLARE_WORKERS -> 3_600.0
+                id == F1ProviderId.ZERO_AUTH_ONLINE_AI -> 4_800.0
+                else -> 5_500.0
             }
             val reliabilityPenalty = ((100 - snap.successRatePct).coerceAtLeast(0)) * 35.0
             val categoryBonus = when {
                 (category == F1QuestionCategory.DIAGRAM_BASED || category == F1QuestionCategory.IMAGE_BASED) &&
                     (id == F1ProviderId.DIRECT_VISION || id == F1ProviderId.FIREBASE_GEMINI) -> -850.0
                 (category == F1QuestionCategory.MATHEMATICS || category == F1QuestionCategory.COMPLEX_REASONING) &&
-                    id == F1ProviderId.FIREBASE_GEMINI -> -500.0
+                    id == F1ProviderId.FIREBASE_GEMINI -> -600.0
                 (category == F1QuestionCategory.SIMPLE_FACTUAL_MCQ || category == F1QuestionCategory.TRUE_FALSE) &&
-                    (id == F1ProviderId.FIREBASE_GEMINI || id == F1ProviderId.CLOUDFLARE_WORKERS) -> -250.0
+                    id == F1ProviderId.FIREBASE_GEMINI -> -250.0
                 else -> 0.0
             }
             baseLatency + reliabilityPenalty + categoryBonus
@@ -213,8 +213,9 @@ object F1ProviderHealthManager {
     }
 
     /**
-     * Computes adaptive staggered launch delay (500–900ms) for backup competitors based
-     * on the primary provider's rolling health. Launches sooner when primary is slower/shaky.
+     * Computes adaptive staggered launch delay for backup competitors based on the primary
+     * provider's rolling health. Gives Firebase AI Logic clean headroom before launching
+     * emergency backups, while waking backups immediately if primary fails early.
      */
     fun computeAdaptiveHedgeDelayMs(
         primaryProviderId: F1ProviderId,
@@ -224,8 +225,8 @@ object F1ProviderHealthManager {
         if (!snap.isAvailable) return 0L
         return when {
             snap.totalRequests >= 2 && snap.successRatePct < 65 -> config.minHedgeDelayMs
-            snap.averageLatencyMs >= 3_200L -> config.minHedgeDelayMs
-            snap.averageLatencyMs in 1L..1_800L && snap.successRatePct >= 90 -> config.maxHedgeDelayMs
+            snap.averageLatencyMs >= 4_500L -> config.minHedgeDelayMs
+            snap.averageLatencyMs in 1L..2_400L && snap.successRatePct >= 90 -> config.maxHedgeDelayMs
             else -> ((config.minHedgeDelayMs + config.maxHedgeDelayMs) / 2L)
         }.coerceIn(config.minHedgeDelayMs, config.maxHedgeDelayMs)
     }

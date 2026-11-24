@@ -6,8 +6,12 @@ import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.SpringSpec
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -380,14 +384,14 @@ fun Modifier.livingGlassSurface(
         ThemeAnimationIntensity.SUBTLE -> 0.7f
     }
 
+    val isLight = !palette.isDarkObsidian
     val shadowElevation = when (strength) {
-        GlassMaterialStrength.FloatingDock -> (10f * depthMultiplier).dp
-        GlassMaterialStrength.Hero -> (7f * depthMultiplier).dp
-        // Ordinary scrolling cards rely on crisp borders + cached specular rim instead of
-        // per-item hardware shadow render passes, eliminating LazyColumn scroll jank.
+        GlassMaterialStrength.FloatingDock -> (if (isLight) 12f else 10f * depthMultiplier).dp
+        GlassMaterialStrength.Hero -> (if (isLight) 12f else 7f * depthMultiplier).dp
+        // In Prism Light, grounded drop-shadows separate crisp white cards cleanly from the daylight canvas.
         GlassMaterialStrength.Card,
         GlassMaterialStrength.AccentMint,
-        GlassMaterialStrength.AccentSky -> 0.dp
+        GlassMaterialStrength.AccentSky -> if (isLight) 8.dp else 0.dp
     }
 
     val topFill: Color
@@ -397,37 +401,37 @@ fun Modifier.livingGlassSurface(
         GlassMaterialStrength.FloatingDock -> {
             topFill = palette.glassMedium
             bottomFill = palette.glassStrong
-            borderColor = palette.rimHighlight
+            borderColor = if (isLight) palette.cardHairlineBorder else palette.rimHighlight
         }
         GlassMaterialStrength.Hero -> {
             topFill = palette.glassMedium
             bottomFill = palette.glassStrong
-            borderColor = palette.accentSky.copy(alpha = 0.52f)
+            borderColor = palette.accentSky.copy(alpha = if (isLight) 0.58f else 0.52f)
         }
         GlassMaterialStrength.AccentMint -> {
             topFill = palette.glassTintedMint
             bottomFill = palette.glassStrong
-            borderColor = palette.accentMint.copy(alpha = 0.50f)
+            borderColor = palette.accentMint.copy(alpha = if (isLight) 0.62f else 0.50f)
         }
         GlassMaterialStrength.AccentSky -> {
             topFill = palette.glassTintedSky
             bottomFill = palette.glassStrong
-            borderColor = palette.accentSky.copy(alpha = 0.68f)
+            borderColor = palette.accentSky.copy(alpha = if (isLight) 0.72f else 0.68f)
         }
         GlassMaterialStrength.Card -> {
-            topFill = palette.glassStrong
-            bottomFill = palette.glassStrong.copy(alpha = if (palette.isDarkObsidian) 0.96f else 1f)
+            topFill = if (isLight) Color(0xFFFFFFFF) else palette.glassStrong
+            bottomFill = if (isLight) Color(0xFFF3F8FF) else palette.glassStrong.copy(alpha = 0.96f)
             borderColor = palette.cardHairlineBorder
         }
     }
 
     val baseMod = if (shadowElevation > 0.dp) {
-        val ambientShadow = if (palette.isDarkObsidian) Color(0x88000000) else Color(0x1A0F172A)
+        val ambientShadow = if (palette.isDarkObsidian) Color(0x88000000) else Color(0x2B0C2960)
         val spotShadow = when {
             strength == GlassMaterialStrength.Hero ->
-                palette.accentSky.copy(alpha = if (palette.isDarkObsidian) 0.28f else 0.14f)
+                palette.accentSky.copy(alpha = if (palette.isDarkObsidian) 0.28f else 0.28f)
             palette.isDarkObsidian -> Color(0x99000000)
-            else -> Color(0x200F172A)
+            else -> Color(0x360E3278)
         }
         this.shadow(
             elevation = shadowElevation,
@@ -443,18 +447,71 @@ fun Modifier.livingGlassSurface(
         .clip(shape)
         .drawWithCache {
             val fillBrush = Brush.verticalGradient(colors = listOf(topFill, bottomFill))
+            val lightCurlStroke = Stroke(
+                width = 1.6.dp.toPx(),
+                cap = androidx.compose.ui.graphics.StrokeCap.Round
+            )
+            val lightCurlAccent = palette.accentSky
+            val lightCurlPath = if (isLight) {
+                androidx.compose.ui.graphics.Path().apply {
+                    moveTo(size.width * 0.66f, size.height)
+                    cubicTo(
+                        size.width * 0.76f, size.height * 0.74f,
+                        size.width * 0.89f, size.height * 0.82f,
+                        size.width, size.height * 0.54f
+                    )
+                }
+            } else {
+                null
+            }
+            val lightCurlFillPath = if (isLight) {
+                androidx.compose.ui.graphics.Path().apply {
+                    moveTo(size.width * 0.62f, size.height)
+                    cubicTo(
+                        size.width * 0.75f, size.height * 0.76f,
+                        size.width * 0.88f, size.height * 0.82f,
+                        size.width, size.height * 0.56f
+                    )
+                    lineTo(size.width, size.height)
+                    close()
+                }
+            } else {
+                null
+            }
+            val lightCurlBrush = if (isLight) {
+                Brush.linearGradient(
+                    colors = listOf(
+                        lightCurlAccent.copy(alpha = 0.04f),
+                        lightCurlAccent.copy(alpha = 0.12f)
+                    ),
+                    start = Offset(size.width * 0.62f, size.height),
+                    end = Offset(size.width, size.height * 0.56f)
+                )
+            } else {
+                null
+            }
             onDrawBehind {
                 drawRect(brush = fillBrush)
+                if (lightCurlFillPath != null && lightCurlBrush != null) {
+                    drawPath(path = lightCurlFillPath, brush = lightCurlBrush)
+                }
+                if (lightCurlPath != null) {
+                    drawPath(
+                        path = lightCurlPath,
+                        color = lightCurlAccent.copy(alpha = 0.22f),
+                        style = lightCurlStroke
+                    )
+                }
             }
         }
         .border(
-            width = borderWidth,
+            width = if (isLight) borderWidth.coerceAtLeast(1.2.dp) else borderWidth,
             color = borderColor,
             shape = shape
         )
         .topGlassSpecularHighlight(
             cornerRadius = resolvedRadius,
-            alpha = if (palette.isDarkObsidian) 0.11f else 0.28f
+            alpha = if (palette.isDarkObsidian) 0.11f else 0.55f
         )
 }
 
@@ -514,6 +571,23 @@ fun LiquidAtmosphericBackdrop(
     val palette = LocalWhiteGlassPalette.current
     val spec = LocalPrismThemeSpec.current
     val reducedMotion = LocalReducedMotion.current
+    val animateCurls = !reducedMotion &&
+        (spec.surfaceEffect == SurfaceEffectStyle.IOS_LIQUID_GLASS ||
+            spec.surfaceEffect == SurfaceEffectStyle.LIQUID_SPECULAR)
+    val animatedPhaseState = if (animateCurls) {
+        val infinite = rememberInfiniteTransition(label = "prism_light_curly_ribbons")
+        infinite.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 7600, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "curly_ribbon_phase"
+        )
+    } else {
+        null
+    }
     val phase = 0.35f
 
     Box(
@@ -783,42 +857,45 @@ fun LiquidAtmosphericBackdrop(
                             }
                             SurfaceEffectStyle.LIQUID_SPECULAR,
                             SurfaceEffectStyle.IOS_LIQUID_GLASS -> {
-                                // Animated curly white & royal-blue liquid silk ribbons + floating glossy droplets
+                                // Smoothly animated curly white & royal-blue liquid silk ribbons + floating glossy droplets
                                 drawCircle(brush = iosOrb1Brush, center = iosOrb1Center, radius = iosOrb1Radius)
                                 drawCircle(brush = iosOrb2Brush, center = iosOrb2Center, radius = iosOrb2Radius)
                                 drawCircle(brush = shineBrush, center = shineCenter, radius = shineRadius)
 
-                                val drift = (phase - 0.5f) * size.width * 0.09f
+                                val livePhase = animatedPhaseState?.value ?: phase
+                                val drift = (livePhase - 0.5f) * size.width * 0.16f
+                                val verticalSway = sin((livePhase * 3.14159f).toDouble()).toFloat() * size.height * 0.025f
+
                                 val curlTop = androidx.compose.ui.graphics.Path().apply {
-                                    moveTo(size.width * 0.56f, -size.height * 0.04f)
+                                    moveTo(size.width * 0.50f, -size.height * 0.04f)
                                     cubicTo(
-                                        size.width * 0.38f + drift, size.height * 0.14f,
-                                        size.width * 1.06f, size.height * 0.20f - drift * 0.6f,
-                                        size.width * 0.96f, size.height * 0.36f
+                                        size.width * 0.32f + drift, size.height * 0.14f + verticalSway,
+                                        size.width * 1.06f, size.height * 0.21f - drift * 0.65f,
+                                        size.width * 0.96f, size.height * 0.38f
                                     )
                                 }
                                 drawPath(
                                     path = curlTop,
                                     brush = Brush.linearGradient(
                                         colors = listOf(
-                                            Color.White.copy(alpha = 0.64f),
-                                            Color(0xFF8EC5FF).copy(alpha = 0.34f),
-                                            Color(0xFF1B6EF3).copy(alpha = 0.18f)
+                                            Color.White.copy(alpha = 0.66f),
+                                            Color(0xFF7CB8FF).copy(alpha = 0.38f),
+                                            Color(0xFF1B6EF3).copy(alpha = 0.22f)
                                         )
                                     ),
-                                    style = Stroke(width = 62.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
+                                    style = Stroke(width = 64.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
                                 )
                                 drawPath(
                                     path = curlTop,
-                                    color = Color.White.copy(alpha = 0.80f),
-                                    style = Stroke(width = 2.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
+                                    color = Color.White.copy(alpha = 0.85f),
+                                    style = Stroke(width = 2.2.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
                                 )
 
                                 val curlMid = androidx.compose.ui.graphics.Path().apply {
-                                    moveTo(-size.width * 0.12f, size.height * 0.34f + drift * 0.5f)
+                                    moveTo(-size.width * 0.12f, size.height * 0.34f + drift * 0.55f)
                                     cubicTo(
-                                        size.width * 0.24f, size.height * 0.44f - drift,
-                                        size.width * 0.68f, size.height * 0.28f + drift,
+                                        size.width * 0.22f, size.height * 0.46f - drift - verticalSway,
+                                        size.width * 0.68f, size.height * 0.25f + drift + verticalSway,
                                         size.width * 1.14f, size.height * 0.48f
                                     )
                                 }
@@ -826,25 +903,50 @@ fun LiquidAtmosphericBackdrop(
                                     path = curlMid,
                                     brush = Brush.horizontalGradient(
                                         colors = listOf(
-                                            Color(0xFF5FA8FF).copy(alpha = 0.26f),
-                                            Color.White.copy(alpha = 0.58f),
-                                            Color(0xFF9ACBFF).copy(alpha = 0.32f),
-                                            Color(0xFF1B6EF3).copy(alpha = 0.18f)
+                                            Color(0xFF4F9BFF).copy(alpha = 0.30f),
+                                            Color.White.copy(alpha = 0.60f),
+                                            Color(0xFF8EC5FF).copy(alpha = 0.36f),
+                                            Color(0xFF1B6EF3).copy(alpha = 0.22f)
                                         )
                                     ),
-                                    style = Stroke(width = 56.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
+                                    style = Stroke(width = 58.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
                                 )
                                 drawPath(
                                     path = curlMid,
-                                    color = Color.White.copy(alpha = 0.72f),
-                                    style = Stroke(width = 1.6.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
+                                    color = Color.White.copy(alpha = 0.78f),
+                                    style = Stroke(width = 1.8.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
+                                )
+
+                                val curlLoop = androidx.compose.ui.graphics.Path().apply {
+                                    moveTo(-size.width * 0.06f, size.height * 0.59f - verticalSway)
+                                    cubicTo(
+                                        size.width * 0.28f + drift * 0.7f, size.height * 0.51f + drift * 0.4f,
+                                        size.width * 0.74f - drift * 0.7f, size.height * 0.69f - drift * 0.35f,
+                                        size.width * 1.08f, size.height * 0.56f + verticalSway
+                                    )
+                                }
+                                drawPath(
+                                    path = curlLoop,
+                                    brush = Brush.horizontalGradient(
+                                        colors = listOf(
+                                            Color(0xFF1B6EF3).copy(alpha = 0.16f),
+                                            Color(0xFF6DB0FF).copy(alpha = 0.24f),
+                                            Color.White.copy(alpha = 0.52f)
+                                        )
+                                    ),
+                                    style = Stroke(width = 34.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
+                                )
+                                drawPath(
+                                    path = curlLoop,
+                                    color = Color(0xFF1B6EF3).copy(alpha = 0.20f),
+                                    style = Stroke(width = 1.5.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
                                 )
 
                                 val curlBottom = androidx.compose.ui.graphics.Path().apply {
-                                    moveTo(-size.width * 0.08f, size.height * 0.80f - drift * 0.5f)
+                                    moveTo(-size.width * 0.08f, size.height * 0.80f - drift * 0.55f)
                                     cubicTo(
-                                        size.width * 0.30f, size.height * 0.68f + drift,
-                                        size.width * 0.72f, size.height * 0.90f - drift,
+                                        size.width * 0.30f, size.height * 0.67f + drift + verticalSway,
+                                        size.width * 0.72f, size.height * 0.91f - drift - verticalSway,
                                         size.width * 1.12f, size.height * 0.76f
                                     )
                                 }
@@ -852,42 +954,52 @@ fun LiquidAtmosphericBackdrop(
                                     path = curlBottom,
                                     brush = Brush.horizontalGradient(
                                         colors = listOf(
-                                            Color(0xFF1B6EF3).copy(alpha = 0.22f),
-                                            Color(0xFF8BC4FF).copy(alpha = 0.32f),
-                                            Color.White.copy(alpha = 0.56f)
+                                            Color(0xFF1B6EF3).copy(alpha = 0.25f),
+                                            Color(0xFF7BB9FF).copy(alpha = 0.36f),
+                                            Color.White.copy(alpha = 0.60f)
                                         )
                                     ),
-                                    style = Stroke(width = 70.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
+                                    style = Stroke(width = 72.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
                                 )
                                 drawPath(
                                     path = curlBottom,
-                                    color = Color.White.copy(alpha = 0.68f),
-                                    style = Stroke(width = 1.5.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
+                                    color = Color.White.copy(alpha = 0.75f),
+                                    style = Stroke(width = 1.7.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
                                 )
 
-                                // Floating glossy liquid glass droplets
-                                val drop1 = Offset(size.width * 0.64f, size.height * 0.10f + drift * 0.35f)
+                                // Floating glossy liquid glass droplets gliding with the curly wave
+                                val drop1 = Offset(size.width * 0.64f + drift * 0.22f, size.height * 0.10f + drift * 0.38f)
                                 drawCircle(
                                     brush = Brush.radialGradient(
-                                        listOf(Color.White.copy(alpha = 0.92f), Color(0xFF7CB8FF).copy(alpha = 0.50f), Color(0xFF1B6EF3).copy(alpha = 0.14f)),
+                                        listOf(Color.White.copy(alpha = 0.95f), Color(0xFF7CB8FF).copy(alpha = 0.55f), Color(0xFF1B6EF3).copy(alpha = 0.18f)),
                                         center = drop1 - Offset(2.dp.toPx(), 2.dp.toPx()),
-                                        radius = 10.dp.toPx()
+                                        radius = 11.dp.toPx()
                                     ),
-                                    radius = 6.dp.toPx(),
+                                    radius = 6.5.dp.toPx(),
                                     center = drop1
                                 )
-                                val drop2 = Offset(size.width * 0.93f, size.height * 0.25f - drift * 0.45f)
+                                val drop2 = Offset(size.width * 0.92f - drift * 0.18f, size.height * 0.25f - drift * 0.45f)
                                 drawCircle(
                                     brush = Brush.radialGradient(
-                                        listOf(Color.White.copy(alpha = 0.95f), Color(0xFF5FA8FF).copy(alpha = 0.55f), Color(0xFF1B6EF3).copy(alpha = 0.18f)),
+                                        listOf(Color.White.copy(alpha = 0.96f), Color(0xFF5FA8FF).copy(alpha = 0.60f), Color(0xFF1B6EF3).copy(alpha = 0.22f)),
                                         center = drop2 - Offset(2.dp.toPx(), 2.dp.toPx()),
-                                        radius = 12.dp.toPx()
+                                        radius = 13.dp.toPx()
                                     ),
-                                    radius = 7.5.dp.toPx(),
+                                    radius = 8.dp.toPx(),
                                     center = drop2
                                 )
+                                val drop3 = Offset(size.width * 0.12f + drift * 0.25f, size.height * 0.64f + verticalSway)
+                                drawCircle(
+                                    brush = Brush.radialGradient(
+                                        listOf(Color.White.copy(alpha = 0.94f), Color(0xFF79B8FF).copy(alpha = 0.54f), Color(0xFF1B6EF3).copy(alpha = 0.18f)),
+                                        center = drop3 - Offset(2.dp.toPx(), 2.dp.toPx()),
+                                        radius = 10.dp.toPx()
+                                    ),
+                                    radius = 5.5.dp.toPx(),
+                                    center = drop3
+                                )
                                 drawLine(
-                                    color = Color.White.copy(alpha = 0.78f),
+                                    color = Color.White.copy(alpha = 0.82f),
                                     start = Offset(0f, 0.5.dp.toPx()),
                                     end = Offset(size.width, 0.5.dp.toPx()),
                                     strokeWidth = 1.dp.toPx()
@@ -934,39 +1046,58 @@ fun ScrollRevealSection(
             ThemeLayoutArchetype.TELEMETRY_HUD -> 16L
             ThemeLayoutArchetype.KINETIC_DECK -> 22L
             ThemeLayoutArchetype.ATELIER_BENTO -> 26L
+            ThemeLayoutArchetype.IOS_LIQUID_LIGHT,
+            ThemeLayoutArchetype.GLASS_PRISM -> 42L
             else -> 24L
         }
         val durationMs = when (archetype) {
             ThemeLayoutArchetype.TELEMETRY_HUD -> 140
             ThemeLayoutArchetype.KINETIC_DECK -> 185
             ThemeLayoutArchetype.EDITORIAL_MONOGRAPH -> 240
-            ThemeLayoutArchetype.IOS_LIQUID_LIGHT -> 230
-            ThemeLayoutArchetype.GLASS_PRISM -> 215
+            ThemeLayoutArchetype.IOS_LIQUID_LIGHT -> 320
+            ThemeLayoutArchetype.GLASS_PRISM -> 290
             ThemeLayoutArchetype.CRIMSON_STUDIO -> 210
             ThemeLayoutArchetype.ATELIER_BENTO -> 195
             ThemeLayoutArchetype.CLASSIC_PRISM -> 205
         }
         val staggerMs = (index.coerceIn(0, 5) * staggerStep)
         if (staggerMs > 0L) kotlinx.coroutines.delay(staggerMs)
-        progress.animateTo(
-            targetValue = 1f,
-            animationSpec = tween(
-                durationMillis = durationMs,
-                easing = FastOutSlowInEasing
+        if (archetype == ThemeLayoutArchetype.IOS_LIQUID_LIGHT || archetype == ThemeLayoutArchetype.GLASS_PRISM) {
+            progress.animateTo(
+                targetValue = 1f,
+                animationSpec = spring(
+                    dampingRatio = 0.72f,
+                    stiffness = 340f
+                )
             )
-        )
+        } else {
+            progress.animateTo(
+                targetValue = 1f,
+                animationSpec = tween(
+                    durationMillis = durationMs,
+                    easing = FastOutSlowInEasing
+                )
+            )
+        }
     }
 
     Box(
         modifier = modifier.graphicsLayer {
             val p = progress.value
-            alpha = 0.25f + 0.75f * p
+            alpha = (0.18f + 0.82f * p).coerceIn(0f, 1f)
             when (archetype) {
                 ThemeLayoutArchetype.TELEMETRY_HUD -> {
                     translationX = (1f - p) * 10.dp.toPx()
                 }
                 ThemeLayoutArchetype.EDITORIAL_MONOGRAPH -> {
                     translationY = (1f - p) * 6.dp.toPx()
+                }
+                ThemeLayoutArchetype.IOS_LIQUID_LIGHT,
+                ThemeLayoutArchetype.GLASS_PRISM -> {
+                    val s = 0.93f + 0.07f * p
+                    scaleX = s
+                    scaleY = s
+                    translationY = (1f - p) * 20.dp.toPx()
                 }
                 ThemeLayoutArchetype.KINETIC_DECK -> {
                     val s = 0.97f + 0.03f * p

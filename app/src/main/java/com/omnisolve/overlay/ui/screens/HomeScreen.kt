@@ -388,93 +388,22 @@ fun HomeScreen(
                 label = "home_layout_archetype_morph"
             ) { activeArchetype ->
                 when (activeArchetype) {
-                    ThemeLayoutArchetype.ATELIER_BENTO -> {
-                        AtelierBentoHomeLayout(
-                            state = state,
-                            listState = listState,
-                            onToggleOverlay = onToggleOverlay,
-                            onSelectSolverMethod = onSelectSolverMethod,
-                            onSignInServer = onSignInServer,
-                            onOpenHomeSubScreen = onOpenHomeSubScreen,
-                            modifier = modifier
-                        )
-                    }
-
-                    ThemeLayoutArchetype.TELEMETRY_HUD -> {
-                        TelemetryHudHomeLayout(
-                            state = state,
-                            listState = listState,
-                            onToggleOverlay = onToggleOverlay,
-                            onSignInServer = onSignInServer,
-                            onOpenHomeSubScreen = onOpenHomeSubScreen,
-                            modifier = modifier
-                        )
-                    }
-
-                    ThemeLayoutArchetype.EDITORIAL_MONOGRAPH -> {
-                        EditorialMonographHomeLayout(
-                            state = state,
-                            listState = listState,
-                            onToggleOverlay = onToggleOverlay,
-                            onSignInServer = onSignInServer,
-                            onOpenHomeSubScreen = onOpenHomeSubScreen,
-                            modifier = modifier
-                        )
-                    }
-
-                    ThemeLayoutArchetype.KINETIC_DECK -> {
-                        KineticDeckHomeLayout(
-                            state = state,
-                            listState = listState,
-                            onToggleOverlay = onToggleOverlay,
-                            onSelectSolverMethod = onSelectSolverMethod,
-                            onSignInServer = onSignInServer,
-                            onOpenHomeSubScreen = onOpenHomeSubScreen,
-                            modifier = modifier
-                        )
-                    }
-
-                    ThemeLayoutArchetype.IOS_LIQUID_LIGHT -> {
+                    ThemeLayoutArchetype.IOS_LIQUID_LIGHT,
+                    ThemeLayoutArchetype.GLASS_PRISM -> {
                         IosLiquidLightHomeLayout(
                             state = state,
                             listState = listState,
                             onToggleOverlay = onToggleOverlay,
                             onRequestOverlayPermission = onRequestOverlayPermission,
                             onOpenHomeSubScreen = onOpenHomeSubScreen,
+                            onOpenRoomsTab = onOpenRoomsTab,
                             onSolvePhotoUri = onSolveGoogleFormImageUri,
                             onShowBannerMessage = onShowBannerMessage,
                             modifier = modifier
                         )
                     }
 
-                    ThemeLayoutArchetype.GLASS_PRISM -> {
-                        GlassPrismHomeLayout(
-                            state = state,
-                            listState = listState,
-                            onToggleOverlay = onToggleOverlay,
-                            onOpenHomeSubScreen = onOpenHomeSubScreen,
-                            onOpenRoomsTab = onOpenRoomsTab,
-                            onSignInServer = onSignInServer,
-                            onSolvePhotoUri = onSolveGoogleFormImageUri,
-                            modifier = modifier
-                        )
-                    }
-
-                    ThemeLayoutArchetype.CRIMSON_STUDIO -> {
-                        PrismStudioHomeScreen(
-                            state = state,
-                            listState = listState,
-                            isStudioEdition = true,
-                            onToggleOverlay = onToggleOverlay,
-                            onOpenHomeSubScreen = onOpenHomeSubScreen,
-                            onOpenRoomsTab = onOpenRoomsTab,
-                            onSignInServer = onSignInServer,
-                            onSolvePhotoUri = onSolveGoogleFormImageUri,
-                            modifier = modifier
-                        )
-                    }
-
-                    ThemeLayoutArchetype.CLASSIC_PRISM -> {
+                    else -> {
                         PrismStudioHomeScreen(
                             state = state,
                             listState = listState,

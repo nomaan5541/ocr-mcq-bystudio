@@ -133,16 +133,46 @@ object GhostDomSolverEngine {
                 )
             }
 
-            // Step 3: Parallel AI Solving Race across Personal API Keys, Warm Background Gemini Session, and Cloud Gemini AI
+            // Step 3: Firebase-First AI Race (Firebase AI Logic + Personal API Keys + Warm Session primary; third-party fallbacks hedged)
             val winningDomAnswer: AnswerModel? = kotlinx.coroutines.coroutineScope {
                 val resultChannel = kotlinx.coroutines.channels.Channel<AnswerModel?>(kotlinx.coroutines.channels.Channel.UNLIMITED)
+                val primaryFailedEarly = kotlinx.coroutines.CompletableDeferred<Unit>()
                 var activeRunners = 0
+
+                val cloudJob = if (!PrismAiSolverEngine.isCloudTemporarilyUnavailable()) {
+                    activeRunners++
+                    async(Dispatchers.IO) {
+                        val ans = try {
+                            PrismAiSolverEngine.solveQuestion(
+                                extractedText = effectivePromptInput,
+                                screenBitmap = fallbackBitmap,
+                                requestedModel = if (forceFreshResolve) PrismAiSolverEngine.MODEL_FLASH else requestedModel,
+                                subjectMode = subjectMode,
+                                dualVerify = dualVerify || forceFreshResolve,
+                                translateToEnglish = translateToEnglish,
+                                forceVisionBitmap = forceFreshResolve && fallbackBitmap != null,
+                                compactFastMode = !forceFreshResolve && !dualVerify && !translateToEnglish && solveMode == QuestionSolveMode.STANDARD && detectedQuestionCount <= 1,
+                                solveMode = solveMode
+                            )
+                        } catch (ce: CancellationException) {
+                            throw ce
+                        } catch (_: Exception) {
+                            null
+                        }
+                        val valid = ans?.takeIf { it.correctChoice.isNotBlank() && it.correctChoice != "?" }
+                        if (valid == null) primaryFailedEarly.complete(Unit)
+                        resultChannel.trySend(valid?.copy(engineLabel = if (forceFreshResolve) "Ghost DOM Re-Check • Gemini AI" else "Ghost DOM • Gemini AI"))
+                    }
+                } else {
+                    primaryFailedEarly.complete(Unit)
+                    null
+                }
 
                 val apiJob = if (MultiProviderApiSolver.hasAnyConfiguredKey(context)) {
                     activeRunners++
                     async(Dispatchers.IO) {
                         val ans = try {
-                            kotlinx.coroutines.withTimeoutOrNull(8500L) {
+                            kotlinx.coroutines.withTimeoutOrNull(12_000L) {
                                 MultiProviderApiSolver.solveWithFailover(
                                     context = context,
                                     extractedText = effectivePromptInput,
@@ -166,7 +196,7 @@ object GhostDomSolverEngine {
                     activeRunners++
                     async(Dispatchers.IO) {
                         val ans = try {
-                            kotlinx.coroutines.withTimeoutOrNull(11_000L) {
+                            kotlinx.coroutines.withTimeoutOrNull(14_000L) {
                                 geminiWebSolver.invoke(geminiDomPrompt, null, promptInput)
                             }
                         } catch (ce: CancellationException) {
@@ -185,6 +215,9 @@ object GhostDomSolverEngine {
                 ) {
                     activeRunners++
                     async(Dispatchers.IO) {
+                        if (!PrismAiSolverEngine.isCloudTemporarilyUnavailable()) {
+                            kotlinx.coroutines.withTimeoutOrNull(3_200L) { primaryFailedEarly.await() }
+                        }
                         val ans = try {
                             PrismAiSolverEngine.solveViaCloudflare(promptInput)
                         } catch (ce: CancellationException) {
@@ -200,6 +233,9 @@ object GhostDomSolverEngine {
                 val zeroAuthJob = if (!forceFreshResolve && promptInput.count { it.isLetterOrDigit() } >= 12) {
                     activeRunners++
                     async(Dispatchers.IO) {
+                        if (!PrismAiSolverEngine.isCloudTemporarilyUnavailable()) {
+                            kotlinx.coroutines.withTimeoutOrNull(4_500L) { primaryFailedEarly.await() }
+                        }
                         val ans = try {
                             OnlineConsensusRaceEngine.solveViaZeroAuthOnlineAiSuspend(geminiDomPrompt, promptInput)
                         } catch (ce: CancellationException) {
@@ -212,32 +248,7 @@ object GhostDomSolverEngine {
                     }
                 } else null
 
-                val cloudJob = if (!PrismAiSolverEngine.isCloudTemporarilyUnavailable()) {
-                    activeRunners++
-                    async(Dispatchers.IO) {
-                        val ans = try {
-                            PrismAiSolverEngine.solveQuestion(
-                                extractedText = effectivePromptInput,
-                                screenBitmap = fallbackBitmap,
-                                requestedModel = if (forceFreshResolve) PrismAiSolverEngine.MODEL_FLASH else requestedModel,
-                                subjectMode = subjectMode,
-                                dualVerify = dualVerify || forceFreshResolve,
-                                translateToEnglish = translateToEnglish,
-                                forceVisionBitmap = forceFreshResolve && fallbackBitmap != null,
-                                compactFastMode = !forceFreshResolve && !dualVerify && !translateToEnglish && solveMode == QuestionSolveMode.STANDARD && detectedQuestionCount <= 1,
-                                solveMode = solveMode
-                            )
-                        } catch (ce: CancellationException) {
-                            throw ce
-                        } catch (_: Exception) {
-                            null
-                        }
-                        val valid = ans?.takeIf { it.correctChoice.isNotBlank() && it.correctChoice != "?" }
-                        resultChannel.trySend(valid?.copy(engineLabel = if (forceFreshResolve) "Ghost DOM Re-Check • Gemini AI" else "Ghost DOM • Gemini AI"))
-                    }
-                } else null
-
-                val winner: AnswerModel? = kotlinx.coroutines.withTimeoutOrNull(18_000L) {
+                val winner: AnswerModel? = kotlinx.coroutines.withTimeoutOrNull(22_000L) {
                     var found: AnswerModel? = null
                     for (i in 0 until activeRunners) {
                         val candidate = resultChannel.receive()
@@ -254,6 +265,7 @@ object GhostDomSolverEngine {
                 zeroAuthJob?.cancel()
                 cloudJob?.cancel()
                 resultChannel.close()
+                primaryFailedEarly.cancel()
                 winner
             }
 

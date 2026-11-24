@@ -259,7 +259,7 @@ fun PrivacyPolicyScreen(
                 ) {
                     PrivacySpecPill(label = "Screen Capture", value = "On Tap Only", modifier = Modifier.weight(1f))
                     PrivacySpecPill(label = "On-Device OCR", value = "Google ML Kit", modifier = Modifier.weight(1f))
-                    PrivacySpecPill(label = "Monetization", value = "Google AdMob", modifier = Modifier.weight(1f))
+                    PrivacySpecPill(label = "Advertising", value = "100% Ad-Free", modifier = Modifier.weight(1f))
                 }
             }
         }
@@ -290,14 +290,14 @@ fun PrivacyPolicyScreen(
             )
         }
 
-        // ── ADS & FLOATING HELPER ──
+        // ── AD-FREE GUARANTEE & FLOATING HELPER ──
         item(key = "privacy_sec_03") {
             PrivacyPolicySectionCard(
-                title = "Ads & Floating Helper",
+                title = "Ad-Free Privacy & Floating Helper",
                 icon = Icons.Filled.VerifiedUser,
                 bullets = listOf(
-                    "Prism Solver shows Google AdMob ads to help keep solving free. You can manage ad personalization anytime in Android Settings > Privacy > Ads.",
-                    "Prism Solver never uses hidden Accessibility auto-clicking or background screen recording.",
+                    "Prism Solver is 100% ad-free with zero advertising SDKs, zero device advertising ID collection, and zero third-party ad tracking.",
+                    "Prism Solver never uses hidden Accessibility auto-clicking or background screen recording. All network requests use TLS 1.3 / HTTPS.",
                     "You can turn off the floating helper anytime from Home, the pill close button, Quick Settings, or your notification shade."
                 )
             )

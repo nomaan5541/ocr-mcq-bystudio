@@ -1186,15 +1186,15 @@ class F1MasterEngineRobolectricTest {
         assertTrue("reSolveSingleItem must block signed-out users with requiresGoogleSignIn=true", reSolveBlocked)
     }
 
-    // 35. AdConfig enables live Interstitial and App Open units cleanly while protecting DEBUG builds with Google Test IDs
+    // 35. AdConfig permanently disables all advertising and ships zero AdMob unit IDs
     @Test
     fun scenario35_adConfigUnitsConfiguredAndDebugSafe() {
-        assertTrue(AdConfig.ADS_ENABLED)
-        assertTrue(AdConfig.INTERSTITIAL_ENABLED)
-        assertTrue(AdConfig.APP_OPEN_ENABLED)
-        assertTrue(AdConfig.BANNER_AD_UNIT_ID.startsWith("ca-app-pub-"))
-        assertTrue(AdConfig.INTERSTITIAL_AD_UNIT_ID.startsWith("ca-app-pub-"))
-        assertTrue(AdConfig.APP_OPEN_AD_UNIT_ID.startsWith("ca-app-pub-"))
+        assertFalse(AdConfig.ADS_ENABLED)
+        assertFalse(AdConfig.INTERSTITIAL_ENABLED)
+        assertFalse(AdConfig.APP_OPEN_ENABLED)
+        assertTrue(AdConfig.BANNER_AD_UNIT_ID.isEmpty())
+        assertTrue(AdConfig.INTERSTITIAL_AD_UNIT_ID.isEmpty())
+        assertTrue(AdConfig.APP_OPEN_AD_UNIT_ID.isEmpty())
     }
 
     // 36. F1PerformanceMonitor formats Capture, OCR, Cache Lookup, Validation, and Failure Status for live benchmarking
@@ -2214,7 +2214,7 @@ class F1MasterEngineRobolectricTest {
         assertEquals("Sanfoundry", GoogleFormsSolverEngine.detectQuizPlatformLabel("https://www.sanfoundry.com/operating-system-mcqs/"))
         assertEquals("Testbook", GoogleFormsSolverEngine.detectQuizPlatformLabel("https://testbook.com/objective-questions/mcq"))
         assertEquals("Quizizz", GoogleFormsSolverEngine.detectQuizPlatformLabel("https://quizizz.com/join/quiz/123"))
-        assertEquals("Web Quiz", GoogleFormsSolverEngine.detectQuizPlatformLabel("https://exam.mycollege.org/test/1"))
+        assertEquals("Smart Quiz Web", GoogleFormsSolverEngine.detectQuizPlatformLabel("https://exam.mycollege.org/test/1"))
 
         // 3. ShareIntentRouter deep links for Microsoft Forms & Prism Live Room invites
         val msFormIntent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
@@ -2339,7 +2339,7 @@ class F1MasterEngineRobolectricTest {
                         org.json.JSONArray().put(
                             org.json.JSONObject().put(
                                 "message",
-                                org.json.JSONObject().put("content", "ANSWER: C\nEXPLANATION: DNS resolves domain names to IP addresses.")
+                                org.json.JSONObject().put("content", "ANSWERS: (1-C)\n1-C: DNS resolves domain names to IP addresses.")
                             )
                         )
                     )

@@ -18,10 +18,13 @@ android {
     applicationId = "com.aistudio.ocrmcqsolver.vrsbsx"
     minSdk = 26
     targetSdk = 36
-    versionCode = 8
-    versionName = "3.8.2"
+    versionCode = 9
+    versionName = "3.8.3"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    ndk {
+      debugSymbolLevel = "SYMBOL_TABLE"
+    }
   }
 
   // Do not remove or modify these signingConfigs. They are necessary for building, installing,
@@ -45,7 +48,7 @@ android {
   buildTypes {
     release {
       isCrunchPngs = false
-      isMinifyEnabled = false
+      isMinifyEnabled = true
       isShrinkResources = false
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
       configure<com.google.firebase.crashlytics.buildtools.gradle.CrashlyticsExtension> {

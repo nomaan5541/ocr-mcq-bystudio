@@ -70,13 +70,13 @@ object OnlineConsensusRaceEngine {
     internal var serverEndpointsOverride: List<String>? = null
 
     private val fastOnlineHttpClient: OkHttpClient by lazy {
-        OkHttpClient.Builder()
-            .connectTimeout(2500, TimeUnit.MILLISECONDS)
-            .readTimeout(6500, TimeUnit.MILLISECONDS)
-            .writeTimeout(3500, TimeUnit.MILLISECONDS)
-            .callTimeout(8000, TimeUnit.MILLISECONDS)
-            .followRedirects(true)
-            .build()
+        PrismNetworkClient.derive(
+            connectTimeoutMs = 3_500L,
+            readTimeoutMs = 10_000L,
+            writeTimeoutMs = 4_000L,
+            callTimeoutMs = 12_000L,
+            followRedirects = true
+        )
     }
 
     internal fun clearServerCooldownsForTesting() {

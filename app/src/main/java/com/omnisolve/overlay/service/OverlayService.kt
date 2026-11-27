@@ -56,6 +56,7 @@ import com.omnisolve.overlay.api.GhostDomSolverEngine
 import com.omnisolve.overlay.api.MultiProviderApiSolver
 import com.omnisolve.overlay.api.OnlineConsensusRaceEngine
 import com.omnisolve.overlay.api.PrismAiSolverEngine
+import com.omnisolve.overlay.api.PrismNetworkClient
 import com.omnisolve.overlay.capture.OcrEngine
 import com.omnisolve.overlay.capture.ScreenCaptureManager
 import com.omnisolve.overlay.data.FirebaseTelemetryRepository
@@ -423,10 +424,12 @@ class OverlayService : Service() {
     private var isCompanionSyncActive = false
     private var companionSyncJob: Job? = null
     private val companionHttpClient by lazy {
-        OkHttpClient.Builder()
-            .readTimeout(0, TimeUnit.MILLISECONDS)
-            .connectTimeout(6, TimeUnit.SECONDS)
-            .build()
+        PrismNetworkClient.derive(
+            connectTimeoutMs = 6_000L,
+            readTimeoutMs = 0L,
+            writeTimeoutMs = 15_000L,
+            callTimeoutMs = 0L
+        )
     }
 
     // AEI Bot Question Signature Tracking (avoids duplicate solves on same question)
@@ -1762,7 +1765,7 @@ class OverlayService : Service() {
             // - Quick Swipe DOWN flick -> 3-Method Looping Switcher (Online / Circle / Gemini)
             // - Quick Swipe UP flick -> Collapse method switcher drawer if open
             // - Long-press -> Switch Subject/OCR (when Advanced Gestures ON)
-            val islandBody = bubbleView!!.findViewById<View>(R.id.ll_island_body)
+            val islandBody = llIslandBodyView
             islandBody?.setOnTouchListener(object : View.OnTouchListener {
                 private var startX = 0
                 private var startY = 0
@@ -2214,12 +2217,13 @@ class OverlayService : Service() {
         solverMethod = activeMethod
 
         val loopMethods = listOf(
-            Triple(SolverMethod.BACKGROUND_GEMINI, "Smart Auto", "Fast + Auto-Math & Offline Cache"),
-            Triple(SolverMethod.TURBO_HYBRID, "Double-Check Accuracy", "Multi-engine verified consensus"),
-            Triple(SolverMethod.DIRECT_VISION, "Photo & Math Vision", "Reads formulas, charts & diagrams"),
-            Triple(SolverMethod.FIREBASE_SERVER, "Cloud Solver", "Fast cloud inference with backup"),
-            Triple(SolverMethod.CIRCLE_TO_SEARCH, "Web Facts Lookup", "Checks live web facts with AI"),
-            Triple(SolverMethod.API_KEYS, "Your Own API Keys", "Uses your keys from Settings")
+            Triple(SolverMethod.BACKGROUND_GEMINI, "Smart Auto", "Fast + Auto-Math & Offline Cache (Daily limit)"),
+            Triple(SolverMethod.OVERLAPPING_GOOGLE, "OCR + Phone Gemini", "Unlimited • Uses phone Gemini (No Server)"),
+            Triple(SolverMethod.TURBO_HYBRID, "Double-Check Accuracy", "Multi-engine verified consensus (Daily limit)"),
+            Triple(SolverMethod.DIRECT_VISION, "Photo & Math Vision", "Reads formulas, charts & diagrams (Daily limit)"),
+            Triple(SolverMethod.FIREBASE_SERVER, "Cloud Solver", "Fast cloud inference with backup (Daily limit)"),
+            Triple(SolverMethod.CIRCLE_TO_SEARCH, "Web Facts Lookup", "Checks live web facts with AI (Daily limit)"),
+            Triple(SolverMethod.API_KEYS, "Your Own API Keys", "Unlimited • Uses your keys from Settings")
         )
 
         itemsContainer.removeAllViews()
@@ -3405,12 +3409,46 @@ class OverlayService : Service() {
                         }
                     }
 
-                    val warmWebCallback = if (geminiWindowView != null && isGeminiReady && isGeminiWebEditorHydrated) {
+                    var effectiveMethod = method
+                    if (effectiveMethod.usesCloudServerQuota) {
+                        val activeUid = runCatching {
+                            com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
+                        }.getOrNull()
+                        if (!activeUid.isNullOrBlank() &&
+                            !com.omnisolve.overlay.data.DeviceAbuseGuard.isDeviceBanned(this@OverlayService)
+                        ) {
+                            val currentSnap = com.omnisolve.overlay.data.UserUsageLimitManager.getSnapshot(
+                                this@OverlayService,
+                                activeUid
+                            )
+                            if (com.omnisolve.overlay.data.UserUsageLimitManager.shouldAutoSwitchToPhoneGemini(currentSnap.overlayMcqUsed)) {
+                                effectiveMethod = SolverMethod.OVERLAPPING_GOOGLE
+                                solverMethod = SolverMethod.OVERLAPPING_GOOGLE
+                                getSharedPreferences("OmniSolvePrefs", Context.MODE_PRIVATE)
+                                    .edit()
+                                    .putString(MainActivity.PREF_KEY_SOLVER_METHOD, SolverMethod.OVERLAPPING_GOOGLE.id)
+                                    .apply()
+                                withContext(Dispatchers.Main) {
+                                    refreshDynamicFlowChipsUI()
+                                    Toast.makeText(
+                                        this@OverlayService,
+                                        "Server limit (${currentSnap.overlayMcqUsed}/${com.omnisolve.overlay.data.UsageLimitFeature.OVERLAY_MCQ.dailyLimit}) reached — Switched to OCR + Phone Gemini (Unlimited)",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                            }
+                        }
+                    }
+
+                    val isPhoneGeminiNoServer = (effectiveMethod == SolverMethod.OVERLAPPING_GOOGLE)
+                    val warmWebCallback = if (isPhoneGeminiNoServer ||
+                        (geminiWindowView != null && isGeminiReady && isGeminiWebEditorHydrated)
+                    ) {
                         geminiWebSolverCallback
                     } else {
                         null
                     }
-                    val activeRaceMode = if (dualVerify || effectiveForceFresh || method == SolverMethod.TURBO_HYBRID) {
+                    val activeRaceMode = if (dualVerify || effectiveForceFresh || effectiveMethod == SolverMethod.TURBO_HYBRID) {
                         F1RaceMode.ACCURACY_CONSENSUS
                     } else {
                         F1RaceMode.FAST
@@ -3449,7 +3487,7 @@ class OverlayService : Service() {
                                 subjectMode = subjectMode,
                                 solveMode = solveMode,
                                 raceMode = activeRaceMode,
-                                preferredMethod = method,
+                                preferredMethod = effectiveMethod,
                                 autoFailover = autoFailover,
                                 requestedModel = selectedModel,
                                 dualVerify = dualVerify,
@@ -3457,7 +3495,8 @@ class OverlayService : Service() {
                                 forceFreshResolve = effectiveForceFresh,
                                 previousWrongAnswer = effectivePrevWrong,
                                 allowGhostDomExtraction = true,
-                                requireGoogleAuth = true,
+                                requireGoogleAuth = !isPhoneGeminiNoServer,
+                                autoSwitchToPhoneGeminiOnLimit = true,
                                 geminiWebSolverCallback = warmWebCallback,
                                 onProgressUpdate = { stageName, candidate ->
                                     if (candidate != null && activeSolveId == currentSolveId && deliveredSolveId != currentSolveId) {
@@ -3510,6 +3549,28 @@ class OverlayService : Service() {
                             val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                             clipboard.setPrimaryClip(ClipData.newPlainText("Prism F1 Question", safePromptInput))
                         } catch (_: Exception) {}
+                    }
+
+                    if (f1Result.autoSwitchedToPhoneGemini) {
+                        solverMethod = SolverMethod.OVERLAPPING_GOOGLE
+                        withContext(Dispatchers.Main) {
+                            refreshDynamicFlowChipsUI()
+                            Toast.makeText(
+                                this@OverlayService,
+                                f1Result.autoSwitchNotice.ifBlank {
+                                    "Auto-switched to OCR + Phone Gemini (Unlimited • No Server)"
+                                },
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
+                    } else if (f1Result.autoSwitchNotice.isNotBlank()) {
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(
+                                this@OverlayService,
+                                f1Result.autoSwitchNotice,
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
                     }
 
                     val finalModel = f1Result.answerModel

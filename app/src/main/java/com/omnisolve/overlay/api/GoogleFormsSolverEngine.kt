@@ -259,14 +259,15 @@ object GoogleFormsSolverEngine {
     }
 
     private val httpClient: OkHttpClient by lazy {
-        OkHttpClient.Builder()
-            .cookieJar(webViewCookieJar)
-            .followRedirects(true)
-            .followSslRedirects(true)
-            .connectTimeout(8, TimeUnit.SECONDS)
-            .readTimeout(12, TimeUnit.SECONDS)
-            .callTimeout(15, TimeUnit.SECONDS)
-            .build()
+        PrismNetworkClient.derive(
+            connectTimeoutMs = 8_000L,
+            readTimeoutMs = 20_000L,
+            writeTimeoutMs = 8_000L,
+            callTimeoutMs = 24_000L,
+            followRedirects = true,
+            followSslRedirects = true,
+            cookieJar = webViewCookieJar
+        )
     }
 
     private fun activeHttpClient(): OkHttpClient = httpClientOverrideForTest ?: httpClient

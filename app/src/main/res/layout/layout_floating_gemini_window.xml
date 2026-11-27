@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/gemini_window_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
@@ -8,7 +9,8 @@
     android:elevation="20dp"
     android:clipChildren="false"
     android:clipToPadding="false"
-    android:clipToOutline="true">
+    android:clipToOutline="true"
+    tools:targetApi="31">
 
     <!-- Top Drag & Control Header with Live Synced Answer Badge -->
     <androidx.constraintlayout.widget.ConstraintLayout
@@ -195,7 +197,7 @@
             android:layout_height="48dp"
             android:padding="13dp"
             android:src="@android:drawable/ic_menu_revert"
-            android:tint="#020617"
+            app:tint="#020617"
             android:clickable="true"
             android:focusable="true"
             android:contentDescription="Minimize Window"
@@ -210,7 +212,7 @@
             android:layout_height="48dp"
             android:padding="13dp"
             android:src="@android:drawable/ic_menu_close_clear_cancel"
-            android:tint="#BE123C"
+            app:tint="#BE123C"
             android:clickable="true"
             android:focusable="true"
             android:contentDescription="Close Window"
@@ -268,7 +270,7 @@
                 android:layout_height="18dp"
                 android:layout_gravity="center"
                 android:src="@android:drawable/ic_menu_rotate"
-                android:tint="#D71921"
+                app:tint="#D71921"
                 android:contentDescription="@null" />
         </FrameLayout>
 

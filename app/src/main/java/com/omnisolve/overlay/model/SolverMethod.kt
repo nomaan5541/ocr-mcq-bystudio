@@ -103,19 +103,29 @@ enum class SolverMethod(
     ),
     OVERLAPPING_GOOGLE(
         id = "OVERLAPPING_GOOGLE",
-        shortName = "Floating Window",
-        title = "Floating AI Window",
-        subtitle = "Keeps a small movable AI window open over any app for follow-up questions.",
-        beginnerTag = "Full View",
-        howItWorksSimple = "Opens a resizable window above your app.",
+        shortName = "OCR + Phone Gemini",
+        title = "OCR + Phone Gemini (No Server)",
+        subtitle = "On-device ML Kit OCR + your phone's Gemini web session. Uses zero cloud servers and has NO daily limit.",
+        beginnerTag = "Unlimited • No Server",
+        howItWorksSimple = "Reads text on your phone with ML Kit OCR and asks your own phone Gemini WebView directly—zero Prism servers used.",
         ratingScore = "4.3",
         ratingStars = 4,
-        ratingLabel = "Follow-Up Help"
+        ratingLabel = "Unlimited • No Server Limit"
     );
+
+    /**
+     * True for all solving methods that call Prism's cloud servers and therefore count
+     * toward the per-user/per-device daily server limit.
+     * False for [OVERLAPPING_GOOGLE] (on-device OCR + Phone Gemini WebView, zero server)
+     * and [API_KEYS] (user's own developer keys).
+     */
+    val usesCloudServerQuota: Boolean
+        get() = this != OVERLAPPING_GOOGLE && this != API_KEYS
 
     companion object {
         val everydayThree: List<SolverMethod> = listOf(
             BACKGROUND_GEMINI,
+            OVERLAPPING_GOOGLE,
             TURBO_HYBRID,
             DIRECT_VISION
         )
@@ -129,6 +139,7 @@ enum class SolverMethod(
 
         val primaryThree: List<SolverMethod> = listOf(
             BACKGROUND_GEMINI,
+            OVERLAPPING_GOOGLE,
             TURBO_HYBRID,
             FIREBASE_SERVER,
             CIRCLE_TO_SEARCH,

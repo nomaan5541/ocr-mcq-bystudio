@@ -44,8 +44,8 @@
     <string name="instant_detect_title">Auto-Check New Questions</string>
     <string name="instant_detect_desc">Automatically checks again when the question on your screen changes.</string>
 
-    <string name="overlapping_google_title">Floating AI Window</string>
-    <string name="overlapping_google_desc">Keeps a small movable AI chat window open above any app.</string>
+    <string name="overlapping_google_title">OCR + Phone Gemini (No Server)</string>
+    <string name="overlapping_google_desc">On-device OCR + your phone\'s Gemini session. Uses zero cloud servers and has no daily limit.</string>
 
     <string name="history_title">Saved Questions &amp; History</string>
     <string name="history_empty">No solved questions saved yet.</string>
@@ -68,6 +68,6 @@
     <string name="feature_guide_title">How Prism Solver Works</string>
     <string name="feature_guide_subtitle">Simple 4-step walkthrough.</string>
     <string name="privacy_legal_title">Privacy &amp; Safety</string>
-    <string name="privacy_legal_subtitle">Screen reading runs only when you tap Solve. 100% ad-free with RAM-only OCR and encrypted cloud sync.</string>
+    <string name="privacy_legal_subtitle" formatted="false">Screen reading runs only when you tap Solve. 100% ad-free with RAM-only OCR and encrypted cloud sync.</string>
     <string name="btn_open_website_policy">View Full Privacy Policy</string>
 </resources>

@@ -68,6 +68,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.omnisolve.overlay.data.UsageLimitFeature
 import com.omnisolve.overlay.model.SolverMethod
 import com.omnisolve.overlay.ui.MainUiState
 import com.omnisolve.overlay.ui.theme.LocalPrismThemeSpec
@@ -88,6 +89,13 @@ fun AnswerModelScreen(
     val cardCorner = themeSpec.cornerRadiusDp.coerceIn(14, 24).dp
     val listState = rememberLazyListState()
     val isServerSignedIn = !state.firebaseUserId.isNullOrBlank() || state.firebaseUserEmail != null
+    val serverQuotaLimit = UsageLimitFeature.OVERLAY_MCQ.dailyLimit
+    val serverQuotaRemaining = state.dailyUsage.remainingFor(UsageLimitFeature.OVERLAY_MCQ)
+    val serverQuotaPill = if (isServerSignedIn) {
+        "$serverQuotaRemaining/$serverQuotaLimit left"
+    } else {
+        "$serverQuotaLimit/day limit"
+    }
     var showMoreOptions by rememberSaveable {
         mutableStateOf(state.solverMethod in SolverMethod.advancedModes)
     }
@@ -146,7 +154,11 @@ fun AnswerModelScreen(
                                 )
                             )
                             Text(
-                                text = "Auto-Math Vision (½, Σ, ∫) & Offline Room Cache work automatically on every mode.",
+                                text = if (state.solverMethod.usesCloudServerQuota) {
+                                    "Cloud server mode ($serverQuotaRemaining/$serverQuotaLimit daily solves left) • Auto-switches to OCR + Phone Gemini (Unlimited) after $serverQuotaLimit solves."
+                                } else {
+                                    "Unlimited mode (zero Prism server quota used) • On-device OCR & Offline Room Cache active."
+                                },
                                 style = MaterialTheme.typography.bodySmall.copy(
                                     fontSize = 12.sp,
                                     color = palette.inkSecondary
@@ -235,7 +247,7 @@ fun AnswerModelScreen(
                             overflow = TextOverflow.Ellipsis
                         )
                         Text(
-                            text = "Google Sign-In unlocks multi-provider AI routing and cloud history sync",
+                            text = "Sign in with Google for cloud server modes ($serverQuotaLimit/day) & sync, or choose OCR + Phone Gemini (Unlimited • No Server) below.",
                             style = MaterialTheme.typography.bodySmall.copy(
                                 color = palette.inkSecondary,
                                 fontSize = 11.5.sp
@@ -278,18 +290,18 @@ fun AnswerModelScreen(
             )
         }
 
-        // 1. Smart Auto (Fast + Auto-Math Vision + Offline Cache)
+        // 1. Smart Auto (Fast + Auto-Math Vision + Offline Cache) — Cloud Server Limit
         item(key = "method_ocr_default") {
             RatedSolverMethodCard(
                 number = "1.",
                 title = "Smart Auto (Fast + Math)",
-                subtitle = "Checks your offline cache first, solves MCQs online, and upgrades to Vision for ½, Σ, ∫, and Match-the-Following.",
+                subtitle = "Checks offline cache first, solves MCQs on Prism cloud servers ($serverQuotaLimit/day limit), and upgrades to Vision for ½, Σ, ∫.",
                 icon = Icons.Filled.CenterFocusStrong,
                 topRecommendedTag = "RECOMMENDED • AUTO-MATH & CACHE",
-                inlineSpecText = "Smart Auto",
+                inlineSpecText = serverQuotaPill,
                 ratingScore = SolverMethod.BACKGROUND_GEMINI.ratingScore,
                 ratingStars = SolverMethod.BACKGROUND_GEMINI.ratingStars,
-                ratingLabel = SolverMethod.BACKGROUND_GEMINI.ratingLabel,
+                ratingLabel = "${SolverMethod.BACKGROUND_GEMINI.ratingLabel} • Daily Limit",
                 isHighRated = true,
                 isSelected = state.solverMethod == SolverMethod.BACKGROUND_GEMINI,
                 isLocked = false,
@@ -298,18 +310,48 @@ fun AnswerModelScreen(
             )
         }
 
-        // 2. Double-Check Accuracy
+        // 2. OCR + Phone Gemini (Zero Server • Unlimited)
+        item(key = "method_phone_gemini_ocr") {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                RatedSolverMethodCard(
+                    number = "2.",
+                    title = "OCR + Phone Gemini (No Server)",
+                    subtitle = "On-device ML Kit OCR + your phone's Gemini web session. Uses zero cloud servers — 100% unlimited with no daily limit.",
+                    icon = Icons.Filled.CastConnected,
+                    topRecommendedTag = "UNLIMITED • NO SERVER LIMIT",
+                    inlineSpecText = "Unlimited",
+                    ratingScore = SolverMethod.OVERLAPPING_GOOGLE.ratingScore,
+                    ratingStars = SolverMethod.OVERLAPPING_GOOGLE.ratingStars,
+                    ratingLabel = SolverMethod.OVERLAPPING_GOOGLE.ratingLabel,
+                    isHighRated = true,
+                    isSelected = state.solverMethod == SolverMethod.OVERLAPPING_GOOGLE,
+                    isLocked = false,
+                    onClick = { onSelectSolverMethod(SolverMethod.OVERLAPPING_GOOGLE) },
+                    testTag = "option_method_overlapping_google"
+                )
+                if (state.solverMethod == SolverMethod.OVERLAPPING_GOOGLE) {
+                    ModelHelperActionRow(
+                        label = "Connect Phone Gemini Session (gemini.google.com)",
+                        icon = Icons.Filled.CastConnected,
+                        onClick = onOpenGeminiLogin,
+                        testTag = "btn_home_connect_gemini_session"
+                    )
+                }
+            }
+        }
+
+        // 3. Double-Check Accuracy — Cloud Server Limit
         item(key = "method_all_in_one") {
             RatedSolverMethodCard(
-                number = "2.",
+                number = "3.",
                 title = "Double-Check Accuracy",
-                subtitle = "Cross-checks multiple free AI engines together and verifies tough MCQs and Match tables before replying.",
+                subtitle = "Cross-checks multiple cloud AI engines together and verifies tough MCQs and Match tables before replying ($serverQuotaLimit/day limit).",
                 icon = Icons.Filled.Bolt,
                 topRecommendedTag = "MOST ACCURATE • DOUBLE-CHECKED",
-                inlineSpecText = "Verified",
+                inlineSpecText = serverQuotaPill,
                 ratingScore = SolverMethod.TURBO_HYBRID.ratingScore,
                 ratingStars = SolverMethod.TURBO_HYBRID.ratingStars,
-                ratingLabel = SolverMethod.TURBO_HYBRID.ratingLabel,
+                ratingLabel = "${SolverMethod.TURBO_HYBRID.ratingLabel} • Daily Limit",
                 isHighRated = true,
                 isSelected = state.solverMethod == SolverMethod.TURBO_HYBRID,
                 isLocked = false,
@@ -318,17 +360,17 @@ fun AnswerModelScreen(
             )
         }
 
-        // 3. Photo & Math Vision
+        // 4. Photo & Math Vision — Cloud Server Limit
         item(key = "method_direct_vision") {
             RatedSolverMethodCard(
-                number = "3.",
+                number = "4.",
                 title = "Photo & Math Vision",
-                subtitle = "Reads the screen image directly for handwritten equations, geometry figures, graphs, and charts.",
+                subtitle = "Reads the screen image directly on cloud vision servers for equations, geometry figures, and charts ($serverQuotaLimit/day limit).",
                 icon = Icons.Filled.RemoveRedEye,
-                inlineSpecText = "Math & Charts",
+                inlineSpecText = serverQuotaPill,
                 ratingScore = SolverMethod.DIRECT_VISION.ratingScore,
                 ratingStars = SolverMethod.DIRECT_VISION.ratingStars,
-                ratingLabel = SolverMethod.DIRECT_VISION.ratingLabel,
+                ratingLabel = "${SolverMethod.DIRECT_VISION.ratingLabel} • Daily Limit",
                 isHighRated = true,
                 isSelected = state.solverMethod == SolverMethod.DIRECT_VISION,
                 isLocked = false,
@@ -396,14 +438,14 @@ fun AnswerModelScreen(
             item(key = "method_server_sol") {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     RatedSolverMethodCard(
-                        number = "4.",
+                        number = "5.",
                         title = "Cloud Solver",
-                        subtitle = "Fast cloud answers with automatic backup.",
+                        subtitle = "Fast cloud answers with automatic backup ($serverQuotaLimit/day server limit).",
                         icon = Icons.Filled.Cloud,
-                        inlineSpecText = "Ready",
+                        inlineSpecText = serverQuotaPill,
                         ratingScore = SolverMethod.FIREBASE_SERVER.ratingScore,
                         ratingStars = SolverMethod.FIREBASE_SERVER.ratingStars,
-                        ratingLabel = SolverMethod.FIREBASE_SERVER.ratingLabel,
+                        ratingLabel = "${SolverMethod.FIREBASE_SERVER.ratingLabel} • Daily Limit",
                         isHighRated = SolverMethod.FIREBASE_SERVER.ratingStars >= 4,
                         isSelected = state.solverMethod == SolverMethod.FIREBASE_SERVER,
                         isLocked = false,
@@ -422,14 +464,14 @@ fun AnswerModelScreen(
 
             item(key = "method_circle_to_search") {
                 RatedSolverMethodCard(
-                    number = "5.",
+                    number = "6.",
                     title = "Web Facts Lookup",
-                    subtitle = "Checks live web facts alongside AI. Helpful for general knowledge and trivia.",
+                    subtitle = "Checks live web facts alongside cloud AI. Helpful for general knowledge and trivia ($serverQuotaLimit/day limit).",
                     icon = Icons.Filled.Radar,
-                    inlineSpecText = "Web + Facts",
+                    inlineSpecText = serverQuotaPill,
                     ratingScore = SolverMethod.CIRCLE_TO_SEARCH.ratingScore,
                     ratingStars = SolverMethod.CIRCLE_TO_SEARCH.ratingStars,
-                    ratingLabel = SolverMethod.CIRCLE_TO_SEARCH.ratingLabel,
+                    ratingLabel = "${SolverMethod.CIRCLE_TO_SEARCH.ratingLabel} • Daily Limit",
                     isHighRated = SolverMethod.CIRCLE_TO_SEARCH.ratingStars >= 4,
                     isSelected = state.solverMethod == SolverMethod.CIRCLE_TO_SEARCH,
                     isLocked = false,
@@ -440,14 +482,14 @@ fun AnswerModelScreen(
 
             item(key = "method_ghost_dom") {
                 RatedSolverMethodCard(
-                    number = "6.",
+                    number = "7.",
                     title = "Direct App Text Reader",
-                    subtitle = "Reads visible question text directly from supported quiz apps.",
+                    subtitle = "Reads visible question text directly from supported quiz apps and solves on cloud servers ($serverQuotaLimit/day limit).",
                     icon = Icons.Filled.AccountTree,
-                    inlineSpecText = "Supported Apps",
+                    inlineSpecText = serverQuotaPill,
                     ratingScore = SolverMethod.GHOST_DOM.ratingScore,
                     ratingStars = SolverMethod.GHOST_DOM.ratingStars,
-                    ratingLabel = SolverMethod.GHOST_DOM.ratingLabel,
+                    ratingLabel = "${SolverMethod.GHOST_DOM.ratingLabel} • Daily Limit",
                     isHighRated = SolverMethod.GHOST_DOM.ratingStars >= 4,
                     isSelected = state.solverMethod == SolverMethod.GHOST_DOM,
                     isLocked = false,
@@ -459,11 +501,11 @@ fun AnswerModelScreen(
             item(key = "method_api_keys") {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     RatedSolverMethodCard(
-                        number = "7.",
+                        number = "8.",
                         title = "Your Own API Keys",
-                        subtitle = "Uses personal developer keys you added in Settings.",
+                        subtitle = "Uses personal developer keys you added in Settings (no Prism server quota used).",
                         icon = Icons.Filled.Key,
-                        inlineSpecText = "${state.configuredKeyCount} Keys",
+                        inlineSpecText = "${state.configuredKeyCount} Keys • Unlimited",
                         ratingScore = SolverMethod.API_KEYS.ratingScore,
                         ratingStars = SolverMethod.API_KEYS.ratingStars,
                         ratingLabel = SolverMethod.API_KEYS.ratingLabel,
@@ -491,17 +533,9 @@ fun AnswerModelScreen(
             }
         }
 
-        // Back CTA & optional floating window login
+        // Back CTA
         item(key = "method_footer_actions") {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                if (state.solverMethod == SolverMethod.OVERLAPPING_GOOGLE) {
-                    ModelHelperActionRow(
-                        label = "Connect Floating AI Window",
-                        icon = Icons.Filled.CastConnected,
-                        onClick = onOpenGeminiLogin,
-                        testTag = "btn_home_connect_gemini_session"
-                    )
-                }
 
                 Row(
                     modifier = Modifier

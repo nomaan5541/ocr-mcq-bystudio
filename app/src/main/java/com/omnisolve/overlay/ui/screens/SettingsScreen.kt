@@ -124,9 +124,10 @@ import androidx.compose.ui.unit.sp
 import com.omnisolve.overlay.BuildConfig
 import com.omnisolve.overlay.MainActivity
 import com.omnisolve.overlay.R
-import com.omnisolve.overlay.ads.AdBannerStyle
-import com.omnisolve.overlay.ads.InAppAdMobBanner
 import com.omnisolve.overlay.data.DailyUsageSnapshot
+import com.omnisolve.overlay.data.UsageLimitFeature
+import com.omnisolve.overlay.f1.F1ProviderHealthManager
+import com.omnisolve.overlay.firebase.getAppCheckDiagnosticStatus
 import com.omnisolve.overlay.model.SolverMethod
 import com.omnisolve.overlay.service.OverlayService
 import com.omnisolve.overlay.service.PrismQuickSettingsTileService
@@ -372,14 +373,6 @@ fun SettingsScreen(
             )
         }
 
-        // ── 0C. SPONSORED BANNER CARD (IN-APP SETTINGS SLOT) ───────────────
-        item(key = "settings_inline_ad_slot") {
-            InAppAdMobBanner(
-                placementTag = "settings_inline_card",
-                style = AdBannerStyle.INLINE_CARD
-            )
-        }
-
         // ── 1. ACCOUNT & FORM BROWSER LOGIN ────────────────────────────────
         item(key = "local_api_keys_section") {
             SettingsAccordionCard(
@@ -442,6 +435,8 @@ fun SettingsScreen(
                     }
 
                     DailyAllowanceCompactCard(snapshot = state.dailyUsage)
+
+                    ServerMonitoringDashboardCard(state = state)
 
                     LivingSecondaryButton(
                         text = if (state.isDeletingAccount) "Deleting Account & History..." else "Delete Account & Cloud Data",
@@ -1107,7 +1102,7 @@ fun SettingsScreen(
                     subtitle = stringResource(R.string.overlapping_google_desc),
                     selected = isOverlappingActive,
                     icon = Icons.Filled.OpenInFull,
-                    badgeText = if (isOverlappingActive) "ACTIVE" else "WINDOW",
+                    badgeText = if (isOverlappingActive) "ACTIVE" else "UNLIMITED",
                     onClick = {
                         onSelectSolverMethod(
                             if (isOverlappingActive) SolverMethod.BACKGROUND_GEMINI else SolverMethod.OVERLAPPING_GOOGLE
@@ -1116,8 +1111,8 @@ fun SettingsScreen(
                     testTag = "option_method_overlapping_google"
                 )
                 LivingSwitchRow(
-                    title = "Enable Floating AI Browser",
-                    subtitle = "Opens answers in a draggable floating web card.",
+                    title = "Enable OCR + Phone Gemini (No Server)",
+                    subtitle = "Uses on-device OCR + your phone's Gemini session with zero server quota.",
                     checked = isOverlappingActive,
                     onCheckedChange = { enabled ->
                         onSelectSolverMethod(
@@ -1692,12 +1687,231 @@ private fun DailyAllowanceCompactCard(
             }
         }
         Text(
-            text = "Cached answers & your own API keys do not use daily allowance.",
+            text = "Per-email & device limits reset 00:00 UTC. At ${UsageLimitFeature.OVERLAY_MCQ.dailyLimit} cloud solves, Prism auto-switches to OCR + Phone Gemini (Unlimited • No Server). Cached answers & personal keys never use quota.",
             style = MaterialTheme.typography.labelSmall.copy(
                 color = palette.inkMuted,
                 fontSize = 10.5.sp,
                 lineHeight = 14.sp
             )
+        )
+    }
+}
+
+@Composable
+private fun ServerMonitoringDashboardCard(
+    state: MainUiState
+) {
+    val palette = LocalWhiteGlassPalette.current
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    val appCheckStatus = remember(state.firebaseUserId, state.latestF1RaceReport) {
+        getAppCheckDiagnosticStatus()
+    }
+    val healthSnapshots = state.f1HealthSnapshots.ifEmpty {
+        remember { F1ProviderHealthManager.getAllSnapshots() }
+    }
+    val onlineCount = healthSnapshots.count { it.isAvailable }
+    val profile = state.cloudActivityProfile
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(palette.canvasBottom)
+            .border(1.dp, palette.cardHairlineBorder, RoundedCornerShape(12.dp))
+            .padding(12.dp)
+            .testTag("card_server_monitoring_dashboard"),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .minimumInteractiveComponentSize()
+                .clickable(role = Role.Button) { expanded = !expanded }
+                .testTag("btn_toggle_server_monitoring"),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.weight(1f)
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Speed,
+                    contentDescription = null,
+                    tint = palette.accentEmerald,
+                    modifier = Modifier.size(18.dp)
+                )
+                Column {
+                    Text(
+                        text = "Server & Per-Email Monitoring",
+                        style = MaterialTheme.typography.labelLarge.copy(
+                            color = palette.inkPrimary,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.5.sp
+                        )
+                    )
+                    Text(
+                        text = "$onlineCount/${healthSnapshots.size} engines ready • ${profile?.totalRequests ?: 0} logged solves • App Check active",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            color = palette.inkSecondary,
+                            fontSize = 10.5.sp
+                        ),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+            Icon(
+                imageVector = if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                contentDescription = if (expanded) "Collapse server monitoring" else "Expand server monitoring",
+                tint = palette.inkSecondary,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+
+        AnimatedVisibility(visible = expanded) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                HorizontalDivider(color = palette.cardHairlineBorder)
+
+                // 1. Server Readiness & Security Status
+                Text(
+                    text = "Backend Readiness",
+                    style = MaterialTheme.typography.labelMedium.copy(
+                        color = palette.inkPrimary,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 11.5.sp
+                    )
+                )
+                MonitoringMetricRow("Signed-In Email", state.firebaseUserEmail ?: "Not signed in")
+                MonitoringMetricRow("App Check Attestation", appCheckStatus)
+                MonitoringMetricRow(
+                    "Auto-Switch Policy",
+                    "Phone Gemini (No Server) at ${UsageLimitFeature.OVERLAY_MCQ.dailyLimit}/day"
+                )
+
+                // 2. Per-Email Cloud Telemetry (Firestore /users/{uid})
+                if (profile != null) {
+                    HorizontalDivider(color = palette.cardHairlineBorder)
+                    Text(
+                        text = "Per-Email Cloud Telemetry",
+                        style = MaterialTheme.typography.labelMedium.copy(
+                            color = palette.inkPrimary,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.5.sp
+                        )
+                    )
+                    MonitoringMetricRow("Total Solves Logged", "${profile.totalRequests}")
+                    MonitoringMetricRow(
+                        "Server Split (Firebase / Edge)",
+                        "${profile.firebaseRequests} / ${profile.cloudflareRequests}"
+                    )
+                    MonitoringMetricRow("Cache Hits / Failures", "${profile.cacheHits} / ${profile.failedRequests}")
+                    MonitoringMetricRow("Avg Latency / Sessions", "${profile.avgLatencyMs} ms • ${profile.activeSessionsCount} sessions")
+                }
+
+                // 3. Live Provider Circuit Breakers & Latency
+                HorizontalDivider(color = palette.cardHairlineBorder)
+                Text(
+                    text = "Live Provider Health & Circuit Breakers",
+                    style = MaterialTheme.typography.labelMedium.copy(
+                        color = palette.inkPrimary,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 11.5.sp
+                    )
+                )
+                healthSnapshots.forEach { snap ->
+                    val statusText = if (snap.isAvailable) "ONLINE" else "COOLDOWN"
+                    val latencyLabel = if (snap.averageLatencyMs > 0L) "${snap.averageLatencyMs}ms" else "ready"
+                    MonitoringMetricRow(
+                        label = snap.providerId.displayName,
+                        value = "$statusText • ${snap.successRatePct}% • $latencyLabel",
+                        highlightEmerald = snap.isAvailable
+                    )
+                }
+
+                // 4. Latest F1 Race & Recent Cloud Request Logs
+                state.latestF1RaceReport?.let { race ->
+                    HorizontalDivider(color = palette.cardHairlineBorder)
+                    Text(
+                        text = "Latest F1 Race (#${race.requestId})",
+                        style = MaterialTheme.typography.labelMedium.copy(
+                            color = palette.inkPrimary,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.5.sp
+                        )
+                    )
+                    MonitoringMetricRow(
+                        label = "Winner (${race.totalMs}ms)",
+                        value = "${race.winnerProviderName} • OCR ${race.ocrMs}ms"
+                    )
+                }
+
+                if (state.recentCloudRequestLogs.isNotEmpty()) {
+                    HorizontalDivider(color = palette.cardHairlineBorder)
+                    Text(
+                        text = "Recent Cloud Logs (Per Email)",
+                        style = MaterialTheme.typography.labelMedium.copy(
+                            color = palette.inkPrimary,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.5.sp
+                        )
+                    )
+                    state.recentCloudRequestLogs.take(5).forEach { log ->
+                        MonitoringMetricRow(
+                            label = "${log.backend} • ${log.answerBadge.ifBlank { "-" }}",
+                            value = "${log.status} • ${log.latencyMs}ms",
+                            highlightEmerald = log.status != "FAILED"
+                        )
+                    }
+                }
+
+                if (!state.cloudTelemetryError.isNullOrBlank()) {
+                    Text(
+                        text = "Sync notice: ${state.cloudTelemetryError}",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            color = palette.warningAmber,
+                            fontSize = 10.5.sp
+                        )
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MonitoringMetricRow(
+    label: String,
+    value: String,
+    highlightEmerald: Boolean = false
+) {
+    val palette = LocalWhiteGlassPalette.current
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodySmall.copy(
+                color = palette.inkSecondary,
+                fontSize = 11.sp
+            ),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f)
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = value,
+            style = MaterialTheme.typography.labelSmall.copy(
+                color = if (highlightEmerald) palette.accentEmerald else palette.inkPrimary,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 10.5.sp
+            ),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
         )
     }
 }

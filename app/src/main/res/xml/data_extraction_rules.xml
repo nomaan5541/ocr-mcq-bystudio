@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <data-extraction-rules>
+    <!-- Strict allowlist: OmniSolveSecureKeysPrefs.xml is excluded automatically because it is not listed here. -->
     <cloud-backup>
         <include domain="sharedpref" path="OmniSolvePrefs.xml" />
         <include domain="sharedpref" path="PrismGoogleFormsPrefs.xml" />

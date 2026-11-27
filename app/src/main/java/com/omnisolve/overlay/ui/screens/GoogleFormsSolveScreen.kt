@@ -118,8 +118,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.omnisolve.overlay.GoogleFormsWebActivity
-import com.omnisolve.overlay.ads.AdBannerStyle
-import com.omnisolve.overlay.ads.InAppAdMobBanner
 import com.omnisolve.overlay.api.GoogleFormSolveResult
 import com.omnisolve.overlay.api.GoogleFormSolvedItem
 import com.omnisolve.overlay.api.GoogleFormsModelOption
@@ -1837,14 +1835,6 @@ fun GoogleFormsSolveScreen(
                     onReSolve = { onReSolveQuestion(item.number) }
                 )
             }
-        }
-
-        // ── SPONSORED BANNER ────────────────────────────────────────────────
-        item(key = "forms_bottom_ad_slot") {
-            InAppAdMobBanner(
-                placementTag = "forms_bottom",
-                style = AdBannerStyle.INLINE_CARD
-            )
         }
 
         // ── BACK TO HOME ────────────────────────────────────────────────────

@@ -34,8 +34,8 @@ enum class UsageLimitFeature(
     val prefSuffix: String
 ) {
     OVERLAY_MCQ(
-        dailyLimit = 30,
-        displayName = "Screen Solves",
+        dailyLimit = 20,
+        displayName = "Screen Solves (Cloud)",
         firestoreField = "overlayMcqCount",
         prefSuffix = "overlay_mcq"
     ),
@@ -135,11 +135,20 @@ object UserUsageLimitManager {
     private const val DAILY_USAGE_SUBCOLLECTION = "dailyUsage"
     private const val CLOUD_SYNC_STALE_MS = 60_000L
 
+    /** Soft notice threshold (15/20 cloud solves) alerting users before auto-switch. */
+    const val SERVER_SOFT_WARNING_THRESHOLD = 15
+
+    /** Automatic switch threshold (20/20 cloud solves) transitioning users to unlimited OCR + Phone Gemini. */
+    const val SERVER_AUTO_SWITCH_THRESHOLD = 20
+
+    fun isApproachingAutoSwitch(overlayUsed: Int): Boolean =
+        overlayUsed in SERVER_SOFT_WARNING_THRESHOLD until SERVER_AUTO_SWITCH_THRESHOLD
+
+    fun shouldAutoSwitchToPhoneGemini(overlayUsed: Int): Boolean =
+        overlayUsed >= SERVER_AUTO_SWITCH_THRESHOLD
+
     private val lock = Any()
     private val lastCloudSyncByUidDate = ConcurrentHashMap<String, Long>()
-
-    @Volatile
-    private var cachedDb: FirebaseFirestore? = null
 
     @Volatile
     internal var clockUtcDateProviderForTest: (() -> String)? = null
@@ -160,14 +169,9 @@ object UserUsageLimitManager {
 
     private fun getDatabaseOrNull(context: Context): FirebaseFirestore? {
         if (disableCloudSyncForTest) return null
-        cachedDb?.let { return it }
         return try {
-            val dbId = context.getString(R.string.firestore_database_id).trim()
-            if (dbId.isBlank()) {
-                null
-            } else {
-                FirebaseFirestore.getInstance(dbId).also { cachedDb = it }
-            }
+            val dbId = context.applicationContext.getString(R.string.firestore_database_id).trim()
+            if (dbId.isBlank()) null else FirebaseFirestore.getInstance(dbId)
         } catch (_: Exception) {
             null
         }
@@ -419,7 +423,7 @@ object UserUsageLimitManager {
         val capped = used.coerceAtLeast(feature.dailyLimit)
         return when (feature) {
             UsageLimitFeature.OVERLAY_MCQ ->
-                "Daily Screen Solve limit reached ($capped/${feature.dailyLimit}). Resets at midnight UTC, or add your own API key in Settings."
+                "Daily cloud server limit reached ($capped/${feature.dailyLimit}). Auto-switched to OCR + Phone Gemini (Unlimited • No Server), or wait for midnight UTC reset."
             UsageLimitFeature.ASK_AI_TEXT ->
                 "Daily Quick Follow-Up limit reached ($capped/${feature.dailyLimit}). Resets at midnight UTC."
             UsageLimitFeature.ASK_AI_PHOTO ->
@@ -435,7 +439,7 @@ object UserUsageLimitManager {
         synchronized(lock) {
             lastCloudSyncByUidDate.clear()
             context?.applicationContext?.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                ?.edit()?.clear()?.commit()
+                ?.edit()?.clear()?.apply()
             _snapshotFlow.value = DailyUsageSnapshot()
         }
         clockUtcDateProviderForTest = null

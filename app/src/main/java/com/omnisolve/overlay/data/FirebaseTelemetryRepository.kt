@@ -132,16 +132,10 @@ object FirebaseTelemetryRepository {
     private const val REQUEST_LOGS_SUBCOLLECTION = "requestLogs"
     private const val ACTIVE_SESSIONS_SUBCOLLECTION = "activeSessions"
 
-    @Volatile
-    private var cachedDb: FirebaseFirestore? = null
-
     private fun getDatabase(context: Context): FirebaseFirestore {
-        cachedDb?.let { return it }
-        val dbId = context.getString(R.string.firestore_database_id).trim()
+        val dbId = context.applicationContext.getString(R.string.firestore_database_id).trim()
         require(dbId.isNotBlank()) { "Missing firestore_database_id" }
-        val db = FirebaseFirestore.getInstance(dbId)
-        cachedDb = db
-        return db
+        return FirebaseFirestore.getInstance(dbId)
     }
 
     private fun currentUser(): FirebaseUser? {

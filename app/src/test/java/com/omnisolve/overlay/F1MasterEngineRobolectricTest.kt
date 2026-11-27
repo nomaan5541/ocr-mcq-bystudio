@@ -1450,12 +1450,13 @@ class F1MasterEngineRobolectricTest {
                     .usedFor(com.omnisolve.overlay.data.UsageLimitFeature.OVERLAY_MCQ)
             )
 
-            // Bring User A up to 30/30 and confirm next uncached solve is blocked with QUOTA_LIMITED
+            // Bring User A up to 20/20 and confirm next uncached solve is blocked with QUOTA_LIMITED
+            val overlayLimit = com.omnisolve.overlay.data.UsageLimitFeature.OVERLAY_MCQ.dailyLimit
             com.omnisolve.overlay.data.UserUsageLimitManager.recordUsage(
                 context = context,
                 uid = "uid_user_a",
                 feature = com.omnisolve.overlay.data.UsageLimitFeature.OVERLAY_MCQ,
-                delta = 29
+                delta = overlayLimit - 1
             )
             val blockedScreen = F1MasterEngine.solve(
                 context = context,
@@ -1463,7 +1464,7 @@ class F1MasterEngineRobolectricTest {
             )
             assertNull(blockedScreen.winner)
             assertEquals(F1FailureCategory.QUOTA_LIMITED, blockedScreen.failureCategory)
-            assertTrue(blockedScreen.errorMessage.contains("30/30"))
+            assertTrue(blockedScreen.errorMessage.contains("$overlayLimit/$overlayLimit"))
 
             // 3. Google Forms (4/day) limit enforcement
             com.omnisolve.overlay.data.UserUsageLimitManager.recordUsage(
@@ -2526,6 +2527,115 @@ class F1MasterEngineRobolectricTest {
             F1AuthGate.authOverrideForTest = null
             com.omnisolve.overlay.data.UserUsageLimitManager.resetForTests(context)
         }
+    }
+
+    @Test
+    fun scenario29_phoneGeminiOcrIsUnlimitedZeroServerWhileCloudMethodsEnforceDailyLimits() = runBlocking {
+        // Verify metadata contract
+        assertFalse(SolverMethod.OVERLAPPING_GOOGLE.usesCloudServerQuota)
+        assertFalse(SolverMethod.API_KEYS.usesCloudServerQuota)
+        assertTrue(SolverMethod.BACKGROUND_GEMINI.usesCloudServerQuota)
+        assertTrue(SolverMethod.TURBO_HYBRID.usesCloudServerQuota)
+        assertTrue(SolverMethod.DIRECT_VISION.usesCloudServerQuota)
+        assertTrue(SolverMethod.FIREBASE_SERVER.usesCloudServerQuota)
+        assertTrue(SolverMethod.CIRCLE_TO_SEARCH.usesCloudServerQuota)
+        assertTrue(SolverMethod.GHOST_DOM.usesCloudServerQuota)
+        assertTrue(SolverMethod.OVERLAPPING_GOOGLE in SolverMethod.everydayThree)
+
+        val serverInvocations = AtomicInteger(0)
+        val phoneWebInvocations = AtomicInteger(0)
+
+        F1MasterEngine.providersOverrideForTest = listOf(
+            fakeProvider(F1ProviderId.FIREBASE_GEMINI) { req, _, _, _, _ ->
+                serverInvocations.incrementAndGet()
+                okCandidate(req.requestId, F1ProviderId.FIREBASE_GEMINI, "A")
+            },
+            fakeProvider(F1ProviderId.CLOUDFLARE_WORKERS) { req, _, _, _, _ ->
+                serverInvocations.incrementAndGet()
+                okCandidate(req.requestId, F1ProviderId.CLOUDFLARE_WORKERS, "A")
+            },
+            fakeProvider(F1ProviderId.ZERO_AUTH_ONLINE_AI) { req, _, _, _, _ ->
+                serverInvocations.incrementAndGet()
+                okCandidate(req.requestId, F1ProviderId.ZERO_AUTH_ONLINE_AI, "A")
+            },
+            fakeProvider(F1ProviderId.GEMINI_WEBVIEW) { req, _, _, _, _ ->
+                phoneWebInvocations.incrementAndGet()
+                okCandidate(req.requestId, F1ProviderId.GEMINI_WEBVIEW, "B", explanation = "Solved via Phone Gemini WebView")
+            }
+        )
+
+        // 1. Even when user is NOT signed into Google Auth, OCR + Phone Gemini (No Server) succeeds & calls 0 server providers
+        F1AuthGate.authOverrideForTest = {
+            F1AuthCheckResult(isAuthenticated = false, errorMessage = "Not signed in")
+        }
+        val phoneResult = F1MasterEngine.solve(
+            context = context,
+            request = F1SolveRequest(
+                preExtractedText = standardMcq,
+                preferredMethod = SolverMethod.OVERLAPPING_GOOGLE,
+                requireGoogleAuth = true,
+                timeoutConfig = fastTimeouts()
+            )
+        )
+        assertFalse("OCR + Phone Gemini must NOT require Prism Google Auth", phoneResult.authRequired)
+        assertEquals("B", phoneResult.winner?.selectedOption)
+        assertEquals(F1ProviderId.GEMINI_WEBVIEW, phoneResult.raceReport.winnerProviderId)
+        assertEquals("Zero cloud server providers may be called in Phone Gemini mode", 0, serverInvocations.get())
+        assertEquals("Phone Gemini WebView provider must be called exactly once", 1, phoneWebInvocations.get())
+
+        // 2. When signed in and daily OVERLAY_MCQ quota is exhausted, server methods MUST be blocked while Phone Gemini stays unlimited
+        val uid = "uid_quota_enforcement_check"
+        F1AuthGate.authOverrideForTest = {
+            F1AuthCheckResult(isAuthenticated = true, uid = uid, email = "quota@prism.app")
+        }
+        val dailyLimit = com.omnisolve.overlay.data.UsageLimitFeature.OVERLAY_MCQ.dailyLimit
+        assertEquals("Daily cloud server limit should be 20 (in 15-20 range)", 20, dailyLimit)
+        repeat(dailyLimit) {
+            com.omnisolve.overlay.data.UserUsageLimitManager.recordUsage(
+                context = context,
+                uid = uid,
+                feature = com.omnisolve.overlay.data.UsageLimitFeature.OVERLAY_MCQ
+            )
+        }
+
+        // 2a. With autoSwitch disabled, cloud server method is strictly blocked with QUOTA_LIMITED
+        val blockedServerResult = F1MasterEngine.solve(
+            context = context,
+            request = F1SolveRequest(
+                preExtractedText = "Which gas do plants absorb?\nA) Oxygen\nB) Carbon dioxide\nC) Argon\nD) Helium",
+                preferredMethod = SolverMethod.BACKGROUND_GEMINI,
+                requireGoogleAuth = true,
+                autoSwitchToPhoneGeminiOnLimit = false,
+                timeoutConfig = fastTimeouts()
+            )
+        )
+        assertNull("Cloud server method must be blocked when daily limit is reached and auto-switch is off", blockedServerResult.winner)
+        assertEquals(F1FailureCategory.QUOTA_LIMITED, blockedServerResult.failureCategory)
+        assertEquals("Blocked server request must invoke 0 providers", 0, serverInvocations.get())
+
+        // 2b. With autoSwitch enabled (default), reaching 20/20 server solves AUTOMATICALLY switches to OCR + Phone Gemini (No Server)
+        val autoSwitchedResult = F1MasterEngine.solve(
+            context = context,
+            request = F1SolveRequest(
+                preExtractedText = "Which gas do plants absorb?\nA) Oxygen\nB) Carbon dioxide\nC) Argon\nD) Helium",
+                preferredMethod = SolverMethod.BACKGROUND_GEMINI,
+                requireGoogleAuth = true,
+                autoSwitchToPhoneGeminiOnLimit = true,
+                timeoutConfig = fastTimeouts()
+            )
+        )
+        assertTrue("Result must report autoSwitchedToPhoneGemini = true", autoSwitchedResult.autoSwitchedToPhoneGemini)
+        assertEquals("B", autoSwitchedResult.winner?.selectedOption)
+        assertEquals(F1ProviderId.GEMINI_WEBVIEW, autoSwitchedResult.raceReport.winnerProviderId)
+        assertEquals("Auto-switched solve must call 0 cloud server providers", 0, serverInvocations.get())
+        assertEquals("Phone Gemini WebView should handle the auto-switched solve", 2, phoneWebInvocations.get())
+        val persistedMethod = context.getSharedPreferences("OmniSolvePrefs", Context.MODE_PRIVATE)
+            .getString(MainActivity.PREF_KEY_SOLVER_METHOD, null)
+        assertEquals(
+            "OmniSolvePrefs must persist OVERLAPPING_GOOGLE after auto-switch",
+            SolverMethod.OVERLAPPING_GOOGLE.id,
+            persistedMethod
+        )
     }
 }
 

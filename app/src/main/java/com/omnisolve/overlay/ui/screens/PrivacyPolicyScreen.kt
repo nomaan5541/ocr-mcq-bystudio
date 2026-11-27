@@ -162,6 +162,7 @@ fun PrivacyPolicyModalDialog(
                     onBack = onDismiss,
                     onClearSolvedHistory = onClearSolvedHistory,
                     onClearLocalApiKeys = onClearLocalApiKeys,
+                    isModal = true,
                     modifier = Modifier.weight(1f, fill = false)
                 )
             }
@@ -174,6 +175,7 @@ fun PrivacyPolicyScreen(
     onBack: () -> Unit,
     onClearSolvedHistory: (() -> Unit)? = null,
     onClearLocalApiKeys: (() -> Unit)? = null,
+    isModal: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -187,7 +189,12 @@ fun PrivacyPolicyScreen(
         modifier = modifier
             .fillMaxWidth()
             .testTag("privacy_policy_screen_list"),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 28.dp),
+        contentPadding = PaddingValues(
+            start = 16.dp,
+            end = 16.dp,
+            top = 12.dp,
+            bottom = if (isModal) 24.dp else 120.dp
+        ),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         // ── 1. TRANSPARENT PRIVACY OVERVIEW BANNER ──
@@ -284,6 +291,7 @@ fun PrivacyPolicyScreen(
                 icon = Icons.Filled.Security,
                 bullets = listOf(
                     "Google Sign-In keeps your saved history synced and protects daily usage limits for every student.",
+                    "Live Class Rooms: When you create or join a study room, your display name, host-approved membership, and shared quiz answers sync in real time with room members via Firebase Firestore. Room hosts can approve/remove members or end the room at any time.",
                     "Class-Wide Shared Form Answers: When a Google Form link is solved, its hashed link and verified answer text may be saved on our server so classmates opening the same quiz link get instant answers without repeating AI calls.",
                     "Fair-Use Protection: Daily limits apply per account and per device. Repeatedly switching or deleting accounts on the same phone to bypass daily limits triggers a warning and then a device restriction."
                 )
@@ -446,7 +454,7 @@ fun PrivacyPolicyScreen(
                                 )
                             )
                             Text(
-                                text = "Official Prism Solver Privacy Policy (virusboss.in)",
+                                text = "nomaan5541.github.io/prism-privacy-policy",
                                 style = MaterialTheme.typography.bodySmall.copy(
                                     color = palette.inkSecondary,
                                     fontSize = 11.sp

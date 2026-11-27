@@ -547,7 +547,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             launch {
                 UserUsageLimitManager.snapshotFlow.collect { snap ->
-                    _uiState.update { cur -> cur.copy(dailyUsage = snap) }
+                    val currentMethod = _uiState.value.solverMethod
+                    val shouldSwitch = currentMethod.usesCloudServerQuota &&
+                        UserUsageLimitManager.shouldAutoSwitchToPhoneGemini(snap.overlayMcqUsed) &&
+                        !DeviceAbuseGuard.isDeviceBanned(getApplication())
+                    if (shouldSwitch) {
+                        prefs.edit().putString(MainActivity.PREF_KEY_SOLVER_METHOD, SolverMethod.OVERLAPPING_GOOGLE.id).apply()
+                    }
+                    _uiState.update { cur ->
+                        cur.copy(
+                            dailyUsage = snap,
+                            solverMethod = if (shouldSwitch) SolverMethod.OVERLAPPING_GOOGLE else cur.solverMethod,
+                            statusBannerMessage = if (shouldSwitch) {
+                                "Server limit (${snap.overlayMcqUsed}/${com.omnisolve.overlay.data.UsageLimitFeature.OVERLAY_MCQ.dailyLimit}) reached — Auto-switched to OCR + Phone Gemini (Unlimited • No Server)."
+                            } else {
+                                cur.statusBannerMessage
+                            }
+                        )
+                    }
                 }
             }
             launch {

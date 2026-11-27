@@ -51,11 +51,11 @@ object CircleToSearchEngine {
     private val parserClient = GeminiVisionClient()
 
     private val fastSearchHttpClient: OkHttpClient by lazy {
-        OkHttpClient.Builder()
-            .connectTimeout(2200, TimeUnit.MILLISECONDS)
-            .readTimeout(2800, TimeUnit.MILLISECONDS)
-            .followRedirects(true)
-            .build()
+        PrismNetworkClient.derive(
+            connectTimeoutMs = 2_500L,
+            readTimeoutMs = 3_500L,
+            followRedirects = true
+        )
     }
 
     @Volatile

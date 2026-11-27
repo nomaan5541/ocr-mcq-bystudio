@@ -91,12 +91,12 @@ object MultiProviderApiSolver {
     private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
 
     private val httpClient: OkHttpClient by lazy {
-        OkHttpClient.Builder()
-            .connectTimeout(4, TimeUnit.SECONDS)
-            .readTimeout(9, TimeUnit.SECONDS)
-            .writeTimeout(5, TimeUnit.SECONDS)
-            .callTimeout(11, TimeUnit.SECONDS)
-            .build()
+        PrismNetworkClient.derive(
+            connectTimeoutMs = 5_000L,
+            readTimeoutMs = 16_000L,
+            writeTimeoutMs = 5_000L,
+            callTimeoutMs = 20_000L
+        )
     }
 
     private val parserClient = GeminiVisionClient()
@@ -646,17 +646,13 @@ object MultiProviderApiSolver {
     ): String {
         val candidateModels = if (overrideMaxTokens != null) {
             listOf(
-                "gemini-2.5-pro",
-                "gemini-2.5-flash",
-                "gemini-3-flash-preview",
-                "gemini-2.5-flash-lite"
+                "gemini-3.8-flash",
+                "gemini-3.5-flash-lite"
             )
         } else {
             listOf(
-                "gemini-2.5-flash",
-                "gemini-2.5-flash-lite",
-                "gemini-3-flash-preview",
-                "gemini-flash-latest"
+                "gemini-3.5-flash-lite",
+                "gemini-3.8-flash"
             )
         }
         val maxOut = overrideMaxTokens ?: if (solveMode == QuestionSolveMode.COMPLEX_MATH) 1024 else 512
@@ -686,12 +682,6 @@ object MultiProviderApiSolver {
                     add("generationConfig", JsonObject().apply {
                         addProperty("temperature", 0.0)
                         addProperty("maxOutputTokens", maxOut)
-                        if (modelName.contains("2.5")) {
-                            val budget = if (overrideMaxTokens == null && solveMode != QuestionSolveMode.COMPLEX_MATH) 0 else 256
-                            add("thinkingConfig", JsonObject().apply {
-                                addProperty("thinkingBudget", budget)
-                            })
-                        }
                     })
                 }
 

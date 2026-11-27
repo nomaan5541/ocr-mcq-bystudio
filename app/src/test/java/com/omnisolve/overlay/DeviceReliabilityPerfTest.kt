@@ -1292,6 +1292,41 @@ class DeviceReliabilityPerfTest {
             .performScrollToKey("member_uid_host")
         composeTestRule.onNodeWithTag("member_row_uid_host").assertExists()
     }
+
+    @Test
+    fun testPrismNetworkClient_DerivedClientsShareSingleConnectionPoolAndDispatcher() {
+        val base = com.omnisolve.overlay.api.PrismNetworkClient.shared
+        val fastClient = com.omnisolve.overlay.api.PrismNetworkClient.derive(
+            connectTimeoutMs = 3_000L,
+            readTimeoutMs = 9_000L,
+            writeTimeoutMs = 6_000L,
+            callTimeoutMs = 12_000L
+        )
+        val streamingClient = com.omnisolve.overlay.api.PrismNetworkClient.derive(
+            connectTimeoutMs = 6_000L,
+            readTimeoutMs = 0L,
+            writeTimeoutMs = 15_000L,
+            callTimeoutMs = 0L
+        )
+
+        assertTrue(
+            "Derived fast client must share the single ConnectionPool",
+            fastClient.connectionPool === base.connectionPool
+        )
+        assertTrue(
+            "Derived fast client must share the single Dispatcher",
+            fastClient.dispatcher === base.dispatcher
+        )
+        assertTrue(
+            "Derived streaming client must share the single ConnectionPool",
+            streamingClient.connectionPool === base.connectionPool
+        )
+        assertEquals(3_000, fastClient.connectTimeoutMillis)
+        assertEquals(9_000, fastClient.readTimeoutMillis)
+        assertEquals(12_000, fastClient.callTimeoutMillis)
+        assertEquals(0, streamingClient.readTimeoutMillis)
+    }
 }
+
 
 

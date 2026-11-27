@@ -80,12 +80,12 @@ object PersistentQuizCacheManager {
     }
 
     private val externalHttpClient: OkHttpClient by lazy {
-        OkHttpClient.Builder()
-            .connectTimeout(1200, TimeUnit.MILLISECONDS)
-            .readTimeout(1500, TimeUnit.MILLISECONDS)
-            .writeTimeout(1500, TimeUnit.MILLISECONDS)
-            .callTimeout(2000, TimeUnit.MILLISECONDS)
-            .build()
+        com.omnisolve.overlay.api.PrismNetworkClient.derive(
+            connectTimeoutMs = 1_500L,
+            readTimeoutMs = 2_000L,
+            writeTimeoutMs = 1_500L,
+            callTimeoutMs = 2_500L
+        )
     }
 
     private val nonWordRegex = Regex("""[^\p{L}\p{N}\s]+""")

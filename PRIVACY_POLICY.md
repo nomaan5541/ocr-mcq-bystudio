@@ -2,7 +2,7 @@
 
 **Last Updated:** November 6, 2026  
 **Application Name:** prism-ocr-solver  
-**Website:** [https://virusboss.in/app/prism-ocr-solver/#privacy-policy](https://virusboss.in/app/prism-ocr-solver/#privacy-policy)  
+**Website:** [https://nomaan5541.github.io/prism-privacy-policy/](https://nomaan5541.github.io/prism-privacy-policy/)  
 **Developer Contact:** nomaankhannfs2@gmail.com  
 
 ---
@@ -71,4 +71,4 @@ Depending on your selected answer method:
 ## 7. Contact Us
 If you have any questions or feedback regarding this Privacy Policy or your privacy rights, please contact:
 * **Email:** nomaankhannfs2@gmail.com
-* **Website:** [https://virusboss.in/app/prism-ocr-solver/#privacy-policy](https://virusboss.in/app/prism-ocr-solver/#privacy-policy)
+* **Website:** [https://nomaan5541.github.io/prism-privacy-policy/](https://nomaan5541.github.io/prism-privacy-policy/)

@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/island_root"
     android:layout_width="wrap_content"
     android:layout_height="wrap_content"
@@ -196,7 +197,7 @@
             android:visibility="gone"
             android:background="@drawable/bg_ios_island_lens"
             android:src="@android:drawable/ic_menu_close_clear_cancel"
-            android:tint="#AEAEB2"
+            app:tint="#AEAEB2"
             android:clickable="true"
             android:focusable="true"
             android:contentDescription="Collapse Dynamic Island tools" />

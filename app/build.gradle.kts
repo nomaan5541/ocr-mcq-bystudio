@@ -18,8 +18,8 @@ android {
     applicationId = "com.aistudio.ocrmcqsolver.vrsbsx"
     minSdk = 26
     targetSdk = 36
-    versionCode = 9
-    versionName = "3.8.3"
+    versionCode = 10
+    versionName = "3.8.4"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     ndk {
@@ -49,7 +49,7 @@ android {
     release {
       isCrunchPngs = false
       isMinifyEnabled = true
-      isShrinkResources = false
+      isShrinkResources = true
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
       configure<com.google.firebase.crashlytics.buildtools.gradle.CrashlyticsExtension> {
         mappingFileUploadEnabled = false

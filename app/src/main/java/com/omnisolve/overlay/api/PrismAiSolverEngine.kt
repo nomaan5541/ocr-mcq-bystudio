@@ -77,14 +77,12 @@ object PrismAiSolverEngine {
     private const val CLOUDFLARE_TRANSIENT_COOLDOWN_MS = 20_000L
 
     private val cloudflareDefaultHttpClient: OkHttpClient by lazy {
-        OkHttpClient.Builder()
-            .connectionPool(ConnectionPool(8, 3, TimeUnit.MINUTES))
-            .connectTimeout(3000, TimeUnit.MILLISECONDS)
-            .readTimeout(6800, TimeUnit.MILLISECONDS)
-            .writeTimeout(3000, TimeUnit.MILLISECONDS)
-            .callTimeout(7400, TimeUnit.MILLISECONDS)
-            .retryOnConnectionFailure(true)
-            .build()
+        PrismNetworkClient.derive(
+            connectTimeoutMs = 4_500L,
+            readTimeoutMs = 14_000L,
+            writeTimeoutMs = 4_000L,
+            callTimeoutMs = 16_000L
+        )
     }
 
     @Volatile

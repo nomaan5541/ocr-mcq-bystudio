@@ -7,9 +7,9 @@ This document contains the exact declarations, text copy, and answers to copy-pa
 
 ### Sub-Topic 3.0: App Content & Ads Declaration
 * **Does your app contain ads?**  
-  * Answer: **Yes** (Select *"Yes, my app contains ads"* in Google Play Console under **Policy and programs → App content → Ads**).
-* **Ad Placement Policy Compliance:**  
-  * Ads are strictly limited to the main app interface (`MainActivity`). No ads are shown in floating system overlay windows or during screen captures.
+  * Answer: **No** (Select *"No, my app does not contain ads"* in Google Play Console under **Policy and programs → App content → Ads**).
+* **Advertising ID (`AD_ID`) Declaration:**  
+  * Answer: **No** (`com.google.android.gms.permission.AD_ID` is not declared, and zero advertising SDKs are bundled).
 
 ---
 
@@ -38,7 +38,7 @@ Select: **Study / Education / Screen Capture Utility**
 
 #### 2. Exact Justification Text (Copy & Paste):
 ```
-prism-ocr-solver is an on-device assistive study tool designed for students and learners reviewing digital quizzes, practice exams, and PDF lecture notes. 
+Prism Solver is an on-device assistive study tool designed for students and learners reviewing digital quizzes, practice exams, and PDF lecture notes. 
 
 The FOREGROUND_SERVICE_MEDIA_PROJECTION permission is strictly user-initiated. When the user taps the floating Dynamic Island or Bubble HUD on their screen, the service takes a single snapshot of the visible question and multiple-choice options. The bitmap is processed in volatile device RAM via on-device ML Kit OCR to recognize text, and the image is immediately discarded. 
 
@@ -47,25 +47,8 @@ Screen capture never runs continuously in the background and is only activated b
 
 ---
 
-### Sub-Topic 3.3: Accessibility Service Declaration (`BIND_ACCESSIBILITY_SERVICE`)
-
-Google Play requires a short demonstration video and an in-app disclosure for apps using `AccessibilityService`.
-
-#### 1. In-App Disclosure (Already Built-in):
-* Declared in `AndroidManifest.xml` with description:  
-  * `"prism-ocr-solver: Assistive study tool for reading on-screen quiz questions and tapping solved options when enabled."`
-* Configured with optional toggles in **Settings → Auto-Tap Solved Option**.
-
-#### 2. Demonstration Video Script (15–30 Seconds for YouTube Unlisted Link):
-Upload a short screen recording to YouTube as **Unlisted** and paste the link into the Play Console:
-* **0:00 – 0:08**: Open prism-ocr-solver and navigate to **Settings → Floating Overlay Appearance & Controls**.
-* **0:08 – 0:16**: Show the toggle for **"Auto-Tap Solved Option"**. When turned on, show the system dialog directing to Accessibility Settings.
-* **0:16 – 0:25**: Open a sample multiple-choice quiz page. Tap the floating Dynamic Island. The solver identifies Option B and the accessibility gesture automatically taps choice B on screen.
-* **Video Description in YouTube:**
-  ```
-  Demonstration of prism-ocr-solver Accessibility Service (BIND_ACCESSIBILITY_SERVICE).
-  Used strictly as an optional assistive tool to tap the user-solved answer option on screen when enabled by the user in Settings. No personal data, keystrokes, or screen contents are collected or stored.
-  ```
+### Sub-Topic 3.3: Accessibility Service
+* **Not Used:** Prism Solver does **not** declare or use `BIND_ACCESSIBILITY_SERVICE`.
 
 ---
 
@@ -75,17 +58,17 @@ Google Play's Data Safety questionnaire requires answers about user data collect
 
 | Question | Answer | Details / Justification |
 | :--- | :--- | :--- |
-| **Does your app collect or share any of the required user data types?** | **Yes** | Standard Google Mobile Ads SDK (AdMob) advertising identifiers; screen captures and OCR remain 100% ephemeral in RAM. |
-| **Is all user data collected by your app encrypted in transit?** | **Yes** | All network communications (AI model endpoints and AdMob) use HTTPS / TLS 1.3. |
-| **Do you provide a way for users to request that their data is deleted?** | **Yes** | All local test history and API keys can be purged instantly via in-app Settings ("Clear Local History") or by uninstalling; Ad ID can be deleted in Android Settings. |
+| **Does your app collect or share any of the required user data types?** | **Yes** | Optional Google Sign-In account info (name, email, user ID) for synced study history and Live Class Rooms, plus Crashlytics diagnostics. Screen captures remain 100% ephemeral in RAM. |
+| **Is all user data collected by your app encrypted in transit?** | **Yes** | All network communications (Firebase AI Logic, Firestore, Auth, Crashlytics) use HTTPS / TLS 1.3. |
+| **Do you provide a way for users to request that their data is deleted?** | **Yes** | Users can clear saved history, wipe local keys, or permanently delete their account directly inside in-app Settings; local history auto-clears after 7 days and Live Class Rooms expire after 24 hours. |
 | **Location Data:** | **No** | The app does not request or collect GPS or location. |
-| **Personal Info (Name, Email, User IDs):** | **Optional / No** | Only standard Firebase Authentication if the user chooses Google Sign-In; no personal data is sold or shared. |
+| **Personal Info (Name, Email, User IDs):** | **Yes (Optional / Account Management)** | Collected via Google Sign-In (Firebase Auth) for cloud history sync, fair-use quotas, and Live Class Room display name/avatar. Never sold or shared with third-party advertisers. |
 | **Financial Info:** | **No** | Zero financial or payment collection. |
-| **Photos & Videos:** | **No** | Screen capture bitmaps are temporary RAM buffers discarded post-OCR; zero disk storage. |
-| **Files & Documents:** | **No** | The app does not read local user storage. |
+| **Photos & Videos:** | **No (Ephemeral Only)** | Screen capture bitmaps and user-picked photos are processed ephemerally in memory to answer questions and are never stored permanently. |
+| **Files & Documents:** | **No (Ephemeral Only)** | User-selected PDFs (via system picker) are processed ephemerally and discarded. |
 | **Audio Files:** | **No** | No audio recording. |
-| **App Activity / Analytics:** | **Optional (AdMob)** | Google AdMob processes ad impressions for fraud prevention and performance. |
-| **Device or other IDs:** | **Yes** | Advertising ID collected by Google Play Services / AdMob for ad serving and fraud detection. Declared as ephemeral, encrypted in transit. |
+| **App Info & Performance (Crash Logs):** | **Yes (App Functionality)** | Firebase Crashlytics collects anonymous crash logs to improve stability. |
+| **Device or other IDs (Advertising ID):** | **No** | Zero advertising SDKs and zero Advertising ID (`AD_ID`) collection. |
 
 ---
 
@@ -131,6 +114,6 @@ Supports your own NVIDIA NIM, OpenRouter, OpenAI, and Google Gemini API keys. Al
 Screen captures are processed strictly in volatile device memory (RAM) via Google ML Kit on-device text recognition and immediately discarded. No screen recordings, personal data, or images are ever stored on remote servers.
 
 Official Website & Privacy Policy:
-https://virusboss.in/app/prism-ocr-solver/#privacy-policy
+https://nomaan5541.github.io/prism-privacy-policy/
 Contact: nomaankhannfs2@gmail.com
 ```

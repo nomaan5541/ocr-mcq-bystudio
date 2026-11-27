@@ -1,61 +1,55 @@
-# Google Play Store Listing Copy — Prism AI
+# Google Play Store Listing Copy — Prism Study (Metadata Policy Compliant)
 
 ## App Name (Title) — Max 30 chars
-Prism: Solve On Your Screen
+Prism: Screen Study & MCQ
 
 ## Short Description — Max 80 chars
-Solve anything on your screen instantly with Prism AI: Quizzes, Forms & MCQs.
+On-screen study assistant for multiple-choice quizzes, math problems & notes.
 
 ## Privacy Policy URL (for Google Play Console "App content")
 https://nomaan5541.github.io/prism-privacy-policy/
 
 ---
 
-## Full Description — Copy & Paste into Google Play Console:
+## Full Description — Copy & Paste directly into Google Play Console (Plain Text):
 
-**Solve any question directly on your screen — without ever leaving your app!**
+Prism is an on-screen study assistant built to help students understand multiple-choice questions, math equations, and practice quizzes with clear explanations.
 
-**Prism AI** is your smart, floating study companion designed to help you solve quizzes, multiple-choice questions (MCQs), test papers, and web forms instantly. Whether you are revising a PDF, taking an online practice test, or studying through documents, Prism reads questions right off your screen and delivers accurate answers with step-by-step explanations.
+Whether you are reviewing a study PDF, working through practice tests in a browser, or revising textbook problems, Prism reads the question on your screen only when you tap to scan and presents the answer along with a step-by-step explanation.
 
----
+KEY FEATURES
 
-### 🌟 KEY FEATURES
+Floating Study Overlay
+Keep a compact floating study pill available while you read notes or practice quizzes. Tap once to capture the current question and view an explanation without switching apps.
 
-⚡ **Floating Screen Lens & Dynamic Bubble**
-No more copying and pasting or switching back and forth between apps. Prism’s lightweight floating bubble stays neatly on top of your screen. Just tap once, and Prism analyzes whatever question is in front of you.
+Multiple-Choice & Math Explanations
+Identify the right answer across Science, Math, History, Computer Science, and General Studies. Prism includes concise reasoning and equation steps so you can understand the concept behind each question.
 
-🎯 **Instant MCQ & Quiz Solver**
-Need quick clarity on a tough question? Prism identifies the correct choice (A, B, C, D, or E) in seconds and provides concise explanations so you actually learn the concept, not just the answer.
+Built-In Web Quiz Study Browser
+Open practice quizzes and online study forms inside the integrated browser to review questions, match options accurately, and check explanations side by side.
 
-📋 **Google Forms & Web Test Assistant**
-Taking an online practice quiz or mock exam on Google Forms or your browser? Prism automatically extracts questions and suggests high-accuracy solutions seamlessly.
+Flexible Study Engines & On-Device OCR
+Choose between cloud-assisted reasoning modes and an on-device OCR study mode so your study sessions continue smoothly even when daily cloud usage limits are reached.
 
-🧠 **Smart Multi-Model AI Engine**
-Powered by top-tier edge intelligence (Gemma 4, Llama 3, and Gemini), Prism routes your questions through high-speed reasoning models to ensure reliable, high-precision answers across Math, Science, History, Coding, and General Knowledge.
+Collaborative Study Rooms
+Create or join a private study room with a 6-digit code to review practice questions together and verify explanations with classmates.
 
-📚 **Offline Study Library & Flashcards**
-Every solved question is automatically saved to your private on-device database. Review your questions anytime, export study notes, or practice with flashcards—even when you are completely offline!
+Photo, PDF & Offline Flashcard Library
+Scan printed textbook questions or study PDFs, save solved questions to your private library, and revisit flashcards and missed questions anytime offline.
 
-🌙 **True OLED Dark Mode & Glassmorphic UI**
-Designed for long study sessions. Features an eye-friendly OLED black theme and smooth fluid animations that look stunning while saving battery life.
+Obsidian Dark & Prism Light Themes
+Switch between a low-glare Obsidian Dark theme for late-night studying and a clean Prism Light theme for daytime reading.
 
-🔒 **Privacy-First & Battery Friendly**
-Prism only analyzes your screen when you explicitly tap the solve button. No background tracking, no hidden battery drain, and your data stays safe.
+Privacy-First, On-Demand Capture
+Prism analyzes screen content strictly when you manually trigger a scan. It does not record your screen continuously in the background.
 
----
+HOW IT WORKS
+1. Open Prism and grant the optional overlay permission.
+2. Open your study material, PDF, or practice quiz and tap the floating button to scan a question.
+3. Read the answer, review the step-by-step explanation, and save tough questions to your offline flashcard deck.
 
-### 🚀 HOW IT WORKS IN 3 EASY STEPS:
-
-1. **Activate:** Open Prism and enable the floating screen assistant.
-2. **Scan:** Open any quiz app, PDF, browser test, or Google Form, and tap the floating lens over the question.
-3. **Learn:** Get the verified correct answer along with clear explanations instantly!
-
----
-
-### 🎓 PERFECT FOR:
-* High school and university students preparing for exams
-* Competitive test prep and practice mock tests
-* Homework, assignments, and textbook problem solving
-* Quick revision and flashcard self-testing
-
-**Download Prism AI today and turn your screen into your ultimate study super-tool!**
+DESIGNED FOR
+- High school and university exam preparation
+- Practice quizzes, worksheets, and textbook homework review
+- Math equation step-by-step study
+- Offline flashcard and mistake-deck revision

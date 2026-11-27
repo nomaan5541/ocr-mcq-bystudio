@@ -12,7 +12,15 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
-    <uses-permission android:name="com.google.android.gms.permission.AD_ID" />
+
+    <!-- Scoped package visibility for external HTTPS browser fallback (Android 11+) -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="https" />
+        </intent>
+    </queries>
 
     <application
         android:allowBackup="true"
@@ -35,7 +43,6 @@
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTop"
-            android:label="@string/app_name"
             android:theme="@style/Theme.OmniSolveOverlay"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|density"
             android:windowSoftInputMode="adjustResize">

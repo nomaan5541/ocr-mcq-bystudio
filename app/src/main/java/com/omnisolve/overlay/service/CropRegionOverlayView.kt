@@ -21,6 +21,7 @@ import kotlin.math.min
  * Allows the user to drag a glowing optical selection box over a specific diagram, circuit,
  * graph, or single question when a PDF or webpage shows multiple questions at once.
  */
+@SuppressLint("ViewConstructor")
 class CropRegionOverlayView(
     context: Context,
     private val onRegionSelected: (Rect) -> Unit,

@@ -178,6 +178,7 @@ data class F1SolveRequest(
     val previousWrongAnswer: String? = null,
     val allowGhostDomExtraction: Boolean = true,
     val requireGoogleAuth: Boolean = true,
+    val autoSwitchToPhoneGeminiOnLimit: Boolean = true,
     val timeoutConfig: F1TimeoutConfig = F1TimeoutConfig(),
     val geminiWebSolverCallback: (suspend (promptText: String, base64Jpeg: String?, questionPreview: String) -> AnswerModel?)? = null,
     val onProgressUpdate: (suspend (stageLabel: String, partialCandidate: AnswerCandidate?) -> Unit)? = null
@@ -195,5 +196,7 @@ data class F1SolveResult(
     val authErrorMessage: String = "",
     val websiteFallbackReady: Boolean = false,
     val failureCategory: F1FailureCategory = F1FailureCategory.NONE,
-    val errorMessage: String = ""
+    val errorMessage: String = "",
+    val autoSwitchedToPhoneGemini: Boolean = false,
+    val autoSwitchNotice: String = ""
 )

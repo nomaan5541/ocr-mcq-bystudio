@@ -96,9 +96,6 @@ object DeviceAbuseGuard {
     private val lock = Any()
 
     @Volatile
-    private var cachedDb: FirebaseFirestore? = null
-
-    @Volatile
     private var lastCloudSyncMs: Long = 0L
 
     @Volatile
@@ -125,10 +122,9 @@ object DeviceAbuseGuard {
 
     private fun getDatabaseOrNull(context: Context): FirebaseFirestore? {
         if (disableCloudSyncForTest) return null
-        cachedDb?.let { return it }
         return try {
-            val dbId = context.getString(R.string.firestore_database_id).trim()
-            if (dbId.isBlank()) null else FirebaseFirestore.getInstance(dbId).also { cachedDb = it }
+            val dbId = context.applicationContext.getString(R.string.firestore_database_id).trim()
+            if (dbId.isBlank()) null else FirebaseFirestore.getInstance(dbId)
         } catch (_: Exception) {
             null
         }
@@ -576,7 +572,7 @@ object DeviceAbuseGuard {
         synchronized(lock) {
             lastCloudSyncMs = 0L
             context?.applicationContext?.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                ?.edit()?.clear()?.commit()
+                ?.edit()?.clear()?.apply()
             _enforcementFlow.value = AbuseEnforcementState.Clear
             _pendingDialogFlow.value = null
         }

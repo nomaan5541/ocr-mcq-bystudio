@@ -212,10 +212,15 @@ object F1MasterEngine {
         }
 
         // ---------------------------------------------------------------------
-        // STAGE 1: Google Account Auth Gate (enforced inside engine)
+        // STAGE 1: Google Account Auth Gate (enforced for all cloud server modes;
+        // bypassed for OCR + Phone Gemini which uses zero Prism servers)
         // ---------------------------------------------------------------------
+        var isPhoneGeminiNoServerMode = boundRequest.preferredMethod == SolverMethod.OVERLAPPING_GOOGLE
+        var autoSwitchedToPhoneGemini = false
+        var autoSwitchNotice = ""
+        val requiresServerAuth = boundRequest.requireGoogleAuth && !isPhoneGeminiNoServerMode
         val accountUid: String
-        if (boundRequest.requireGoogleAuth) {
+        if (requiresServerAuth) {
             val auth = F1AuthGate.verifyGoogleAccount(context)
             if (!auth.isAuthenticated || auth.uid.isNullOrBlank()) {
                 val totalMs = (monotonicNowMs() - totalStartMonoMs).coerceAtLeast(1L)
@@ -384,45 +389,70 @@ object F1MasterEngine {
         // Free & Unlimited (0 server cost): Cache Hits, On-Device OCR-Only, Local Gemini Web, & Personal Keys
         // ---------------------------------------------------------------------
         val bypassDailyLimitForLocalOrPersonal =
+            isPhoneGeminiNoServerMode ||
             (boundRequest.preferredMethod == SolverMethod.API_KEYS &&
-                PersonalApiKeysF1Provider.isEligible(context, boundRequest, classification)) ||
-            boundRequest.preferredMethod == SolverMethod.OVERLAPPING_GOOGLE
-        if (boundRequest.requireGoogleAuth && !bypassDailyLimitForLocalOrPersonal) {
+                PersonalApiKeysF1Provider.isEligible(context, boundRequest, classification))
+        if (requiresServerAuth && !bypassDailyLimitForLocalOrPersonal) {
             val limitCheck = UserUsageLimitManager.checkQuota(
                 context = context,
                 uid = accountUid,
                 feature = UsageLimitFeature.OVERLAY_MCQ
             )
             if (limitCheck is UsageLimitCheckResult.LimitReached) {
-                val totalMs = (monotonicNowMs() - totalStartMonoMs).coerceAtLeast(1L)
-                val validationMs = nanosToValidationMs(validationTotalNanos.get())
-                val report = F1RaceReport(
-                    requestId = reqId,
-                    timestampMs = totalStartWallMs,
-                    questionCategory = classification.category,
-                    raceMode = boundRequest.raceMode,
-                    captureMs = boundRequest.captureDurationMs,
-                    ocrMs = ocrMs,
-                    cacheLookupMs = cacheLookupMs,
-                    classificationMs = classificationMs,
-                    validationMs = validationMs,
-                    totalMs = totalMs,
-                    failureCategory = F1FailureCategory.QUOTA_LIMITED,
-                    failureReason = limitCheck.userMessage
-                )
-                F1PerformanceMonitor.recordRace(report)
-                return@withContext F1SolveResult(
-                    requestId = reqId,
-                    winner = null,
-                    answerModel = null,
-                    extractedQuestionPreview = effectiveQuestionText,
-                    textBlocks = textBlocks,
-                    questionCategory = classification.category,
-                    raceReport = report,
-                    websiteFallbackReady = true,
-                    failureCategory = F1FailureCategory.QUOTA_LIMITED,
-                    errorMessage = limitCheck.userMessage
-                )
+                val canAutoSwitch = !limitCheck.isDeviceBanned && boundRequest.autoSwitchToPhoneGeminiOnLimit
+                if (canAutoSwitch) {
+                    runCatching {
+                        context.applicationContext
+                            .getSharedPreferences("OmniSolvePrefs", Context.MODE_PRIVATE)
+                            .edit()
+                            .putString(com.omnisolve.overlay.MainActivity.PREF_KEY_SOLVER_METHOD, SolverMethod.OVERLAPPING_GOOGLE.id)
+                            .apply()
+                    }
+                    autoSwitchedToPhoneGemini = true
+                    autoSwitchNotice =
+                        "Daily server limit (${limitCheck.used}/${limitCheck.limit}) reached — Auto-switched to OCR + Phone Gemini (Unlimited • No Server)."
+
+                    val candidateWebProvider = (providersOverrideForTest ?: defaultProviders())
+                        .firstOrNull { it.id == F1ProviderId.GEMINI_WEBVIEW }
+                    if (candidateWebProvider != null && candidateWebProvider.isEligible(context, boundRequest, classification)) {
+                        // Seamlessly complete this solve on Phone Gemini WebView (zero Prism server calls!)
+                        isPhoneGeminiNoServerMode = true
+                    }
+                }
+
+                if (!isPhoneGeminiNoServerMode) {
+                    val totalMs = (monotonicNowMs() - totalStartMonoMs).coerceAtLeast(1L)
+                    val validationMs = nanosToValidationMs(validationTotalNanos.get())
+                    val report = F1RaceReport(
+                        requestId = reqId,
+                        timestampMs = totalStartWallMs,
+                        questionCategory = classification.category,
+                        raceMode = boundRequest.raceMode,
+                        captureMs = boundRequest.captureDurationMs,
+                        ocrMs = ocrMs,
+                        cacheLookupMs = cacheLookupMs,
+                        classificationMs = classificationMs,
+                        validationMs = validationMs,
+                        totalMs = totalMs,
+                        failureCategory = F1FailureCategory.QUOTA_LIMITED,
+                        failureReason = limitCheck.userMessage
+                    )
+                    F1PerformanceMonitor.recordRace(report)
+                    return@withContext F1SolveResult(
+                        requestId = reqId,
+                        winner = null,
+                        answerModel = null,
+                        extractedQuestionPreview = effectiveQuestionText,
+                        textBlocks = textBlocks,
+                        questionCategory = classification.category,
+                        raceReport = report,
+                        websiteFallbackReady = true,
+                        failureCategory = F1FailureCategory.QUOTA_LIMITED,
+                        errorMessage = limitCheck.userMessage,
+                        autoSwitchedToPhoneGemini = autoSwitchedToPhoneGemini,
+                        autoSwitchNotice = autoSwitchNotice
+                    )
+                }
             }
         }
 
@@ -445,7 +475,8 @@ object F1MasterEngine {
         // so slow OCR or cache lookup never starves the AI provider race.
         val raceDeadlineMs = monotonicNowMs() + boundRequest.timeoutConfig.onlineRaceDeadlineMs
 
-        val wantWebEvidence = (classification.needsWebEvidence || boundRequest.preferredMethod == SolverMethod.CIRCLE_TO_SEARCH) &&
+        val wantWebEvidence = !isPhoneGeminiNoServerMode &&
+            (classification.needsWebEvidence || boundRequest.preferredMethod == SolverMethod.CIRCLE_TO_SEARCH) &&
             effectiveQuestionText.isNotBlank()
 
         // Launch Search Evidence in parallel ONLY if question needs live web evidence or user selected Web Search
@@ -463,23 +494,28 @@ object F1MasterEngine {
         }
 
         val preferredProviderId = mapPreferredMethodToProvider(boundRequest.preferredMethod)
-        val primaryPoolIds = buildList {
-            if ((classification.needsVisionEscalation || preferredProviderId == F1ProviderId.DIRECT_VISION) &&
-                providerMap[F1ProviderId.DIRECT_VISION]?.isEligible(context, boundRequest, classification) == true
-            ) {
-                add(F1ProviderId.DIRECT_VISION)
-            }
-            if (providerMap[F1ProviderId.FIREBASE_GEMINI]?.isEligible(context, boundRequest, classification) == true) {
-                add(F1ProviderId.FIREBASE_GEMINI)
-            }
-            if (providerMap[F1ProviderId.PERSONAL_API_KEYS]?.isEligible(context, boundRequest, classification) == true) {
-                add(F1ProviderId.PERSONAL_API_KEYS)
-            }
-            if (providerMap[F1ProviderId.CLOUDFLARE_WORKERS]?.isEligible(context, boundRequest, classification) == true) {
-                add(F1ProviderId.CLOUDFLARE_WORKERS)
-            }
-            if (providerMap[F1ProviderId.ZERO_AUTH_ONLINE_AI]?.isEligible(context, boundRequest, classification) == true) {
-                add(F1ProviderId.ZERO_AUTH_ONLINE_AI)
+        val primaryPoolIds = if (isPhoneGeminiNoServerMode) {
+            // OCR + Phone Gemini uses zero Prism cloud servers — never enlist server providers!
+            emptyList()
+        } else {
+            buildList {
+                if ((classification.needsVisionEscalation || preferredProviderId == F1ProviderId.DIRECT_VISION) &&
+                    providerMap[F1ProviderId.DIRECT_VISION]?.isEligible(context, boundRequest, classification) == true
+                ) {
+                    add(F1ProviderId.DIRECT_VISION)
+                }
+                if (providerMap[F1ProviderId.FIREBASE_GEMINI]?.isEligible(context, boundRequest, classification) == true) {
+                    add(F1ProviderId.FIREBASE_GEMINI)
+                }
+                if (providerMap[F1ProviderId.PERSONAL_API_KEYS]?.isEligible(context, boundRequest, classification) == true) {
+                    add(F1ProviderId.PERSONAL_API_KEYS)
+                }
+                if (providerMap[F1ProviderId.CLOUDFLARE_WORKERS]?.isEligible(context, boundRequest, classification) == true) {
+                    add(F1ProviderId.CLOUDFLARE_WORKERS)
+                }
+                if (providerMap[F1ProviderId.ZERO_AUTH_ONLINE_AI]?.isEligible(context, boundRequest, classification) == true) {
+                    add(F1ProviderId.ZERO_AUTH_ONLINE_AI)
+                }
             }
         }
 
@@ -580,9 +616,10 @@ object F1MasterEngine {
             preSearchScope?.cancel()
         }
 
-        // 6B: Vision Escalation strictly within remaining global monotonic budget (no post-deadline extension)
+        // 6B: Vision Escalation strictly within remaining global monotonic budget (never run in Phone Gemini no-server mode)
         val visionProvider = providerMap[F1ProviderId.DIRECT_VISION]
-        if (winningCandidate == null &&
+        if (!isPhoneGeminiNoServerMode &&
+            winningCandidate == null &&
             (boundRequest.autoFailover || boundRequest.preferredMethod == SolverMethod.DIRECT_VISION) &&
             activeRequestId.get() == reqId &&
             visionProvider != null &&
@@ -607,17 +644,21 @@ object F1MasterEngine {
             }
         }
 
-        // 6C: Bounded Automated Gemini WebView Fallback strictly capped by remaining deadline
+        // 6C: Phone Gemini WebView (primary & exclusive when OVERLAPPING_GOOGLE; bounded fallback otherwise)
         var webSessionExpired = false
         val webProvider = providerMap[F1ProviderId.GEMINI_WEBVIEW]
         if (winningCandidate == null &&
-            (boundRequest.autoFailover || finalPrimaryIds.isEmpty()) &&
+            (isPhoneGeminiNoServerMode || boundRequest.autoFailover || finalPrimaryIds.isEmpty()) &&
             activeRequestId.get() == reqId &&
             webProvider != null &&
             webProvider.isEligible(context, boundRequest, classification)
         ) {
-            val remainingForWeb = (raceDeadlineMs - monotonicNowMs()).coerceAtLeast(0L)
-            val webBudget = minOf(remainingForWeb, boundRequest.timeoutConfig.webAutomatedTimeoutMs)
+            val webBudget = if (isPhoneGeminiNoServerMode) {
+                boundRequest.timeoutConfig.webAutomatedTimeoutMs.coerceAtLeast(1_000L)
+            } else {
+                val remainingForWeb = (raceDeadlineMs - monotonicNowMs()).coerceAtLeast(0L)
+                minOf(remainingForWeb, boundRequest.timeoutConfig.webAutomatedTimeoutMs)
+            }
             if (webBudget >= 800L) {
                 val raw = webProvider.solve(
                     context = context,
@@ -629,7 +670,7 @@ object F1MasterEngine {
                     ocrEngine = ocrEngine
                 )
                 val validated = validateMeasured(raw, activeRequestId.get(), classification, validationTotalNanos)
-                metrics.add(validated.toMetricLine("Web Fallback"))
+                metrics.add(validated.toMetricLine(if (isPhoneGeminiNoServerMode) "Phone Gemini (No Server)" else "Web Fallback"))
                 if (validated.responseStatus == F1ResponseStatus.AUTH_REQUIRED) {
                     webSessionExpired = true
                 }
@@ -674,17 +715,37 @@ object F1MasterEngine {
 
         val finalAnswerModel = winningCandidate?.let { winner ->
             val model = buildFinalAnswerModel(winner, winner.rawAnswerModel)
-            if (boundRequest.requireGoogleAuth &&
+            if (requiresServerAuth &&
+                !isPhoneGeminiNoServerMode &&
                 winner.providerId != F1ProviderId.PERSONAL_API_KEYS &&
                 winner.providerId != F1ProviderId.GEMINI_WEBVIEW &&
                 winner.providerId != F1ProviderId.LOCAL_CACHE
             ) {
-                runCatching {
+                val updatedSnap = runCatching {
                     UserUsageLimitManager.recordUsage(
                         context = context,
                         uid = accountUid,
                         feature = UsageLimitFeature.OVERLAY_MCQ
                     )
+                }.getOrNull()
+                if (updatedSnap != null && boundRequest.autoSwitchToPhoneGeminiOnLimit) {
+                    val usedNow = updatedSnap.usedFor(UsageLimitFeature.OVERLAY_MCQ)
+                    val limitNow = UsageLimitFeature.OVERLAY_MCQ.dailyLimit
+                    if (UserUsageLimitManager.shouldAutoSwitchToPhoneGemini(usedNow)) {
+                        runCatching {
+                            context.applicationContext
+                                .getSharedPreferences("OmniSolvePrefs", Context.MODE_PRIVATE)
+                                .edit()
+                                .putString(com.omnisolve.overlay.MainActivity.PREF_KEY_SOLVER_METHOD, SolverMethod.OVERLAPPING_GOOGLE.id)
+                                .apply()
+                        }
+                        autoSwitchedToPhoneGemini = true
+                        autoSwitchNotice =
+                            "Server limit ($usedNow/$limitNow) reached — Auto-switched to OCR + Phone Gemini (Unlimited • No Server)."
+                    } else if (UserUsageLimitManager.isApproachingAutoSwitch(usedNow)) {
+                        autoSwitchNotice =
+                            "$usedNow/$limitNow cloud server solves used — Auto-switches to OCR + Phone Gemini (Unlimited) at $limitNow."
+                    }
                 }
             }
             if (effectiveQuestionText.isNotBlank() || visualFingerprint.isNotBlank()) {
@@ -706,6 +767,13 @@ object F1MasterEngine {
         val websiteFallbackReady = winningCandidate == null
         val (failureCategory, failureMsg) = if (winningCandidate != null) {
             F1FailureCategory.NONE to ""
+        } else if (isPhoneGeminiNoServerMode) {
+            val msg = if (webSessionExpired) {
+                "Phone Gemini session needs login. Open Solving Methods -> Connect Phone Gemini (gemini.google.com) — zero Prism server used."
+            } else {
+                "Phone Gemini did not reply in time. Make sure you are signed into gemini.google.com in the floating window and retry."
+            }
+            (if (webSessionExpired) F1FailureCategory.AUTH_OR_APP_CHECK else F1FailureCategory.NETWORK_TIMEOUT) to msg
         } else {
             classifyFinalFailure(
                 effectiveQuestionText = effectiveQuestionText,
@@ -747,7 +815,9 @@ object F1MasterEngine {
             raceReport = report,
             websiteFallbackReady = websiteFallbackReady,
             failureCategory = failureCategory,
-            errorMessage = failureMsg
+            errorMessage = failureMsg,
+            autoSwitchedToPhoneGemini = autoSwitchedToPhoneGemini,
+            autoSwitchNotice = autoSwitchNotice
         )
     }
 
@@ -1092,6 +1162,7 @@ object F1MasterEngine {
         SolverMethod.DIRECT_VISION -> F1ProviderId.DIRECT_VISION
         SolverMethod.API_KEYS -> F1ProviderId.PERSONAL_API_KEYS
         SolverMethod.FIREBASE_SERVER -> F1ProviderId.FIREBASE_GEMINI
+        SolverMethod.OVERLAPPING_GOOGLE -> F1ProviderId.GEMINI_WEBVIEW
         else -> null
     }
 

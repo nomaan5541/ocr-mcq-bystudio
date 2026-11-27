@@ -7,6 +7,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.res.Configuration
 import android.graphics.Color as AndroidColor
 import android.os.Build
 import android.os.Bundle
@@ -82,7 +83,9 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -158,6 +161,9 @@ import androidx.compose.ui.text.input.KeyboardType
 import com.omnisolve.overlay.data.LiveClassRoom
 import com.omnisolve.overlay.data.LiveClassRoomRepository
 import com.omnisolve.overlay.data.LiveRoomAnswer
+import com.omnisolve.overlay.data.LocalThemeRepository
+import com.omnisolve.overlay.ui.theme.NORMAL_DEFAULT_THEME
+import com.omnisolve.overlay.ui.theme.findThemePresetById
 import kotlinx.coroutines.CancellationException
 import kotlin.coroutines.resume
 import kotlinx.coroutines.Job
@@ -170,13 +176,47 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 
-private val CrimsonAccent = Color(0xFFD71921)
-private val ObsidianBg = Color(0xFF0A0A0C)
-private val SurfaceDark = Color(0xFF121316)
-private val BorderDark = Color(0xFF23252A)
-private val WhiteText = Color(0xFFEEEEEE)
-private val GrayMuted = Color(0xFF9E9EA6)
-private val EmeraldOk = Color(0xFF10B981)
+private val LocalBrowserIsLightTheme = compositionLocalOf { false }
+
+private val CrimsonAccent: Color
+    @Composable get() = if (LocalBrowserIsLightTheme.current) Color(0xFF1B6EF3) else Color(0xFFD71921)
+private val ObsidianBg: Color
+    @Composable get() = if (LocalBrowserIsLightTheme.current) Color(0xFFF4F7FC) else Color(0xFF0A0A0C)
+private val SurfaceDark: Color
+    @Composable get() = if (LocalBrowserIsLightTheme.current) Color(0xFFFFFFFF) else Color(0xFF121316)
+private val SurfaceDialog: Color
+    @Composable get() = if (LocalBrowserIsLightTheme.current) Color(0xFFFFFFFF) else Color(0xFF12151E)
+private val SurfaceCard: Color
+    @Composable get() = if (LocalBrowserIsLightTheme.current) Color(0xFFEEF3FA) else Color(0xFF191D28)
+private val SurfacePill: Color
+    @Composable get() = if (LocalBrowserIsLightTheme.current) Color(0xFFEEF2F8) else Color(0xFF1A1B20)
+private val SurfaceChip: Color
+    @Composable get() = if (LocalBrowserIsLightTheme.current) Color(0xFFE9EFF8) else Color(0xFF1B1C22)
+private val SurfaceButtonNeutral: Color
+    @Composable get() = if (LocalBrowserIsLightTheme.current) Color(0xFFE8EEF7) else Color(0xFF1E2026)
+private val SurfaceAccentSoft: Color
+    @Composable get() = if (LocalBrowserIsLightTheme.current) Color(0xFFE6F0FF) else Color(0xFF231114)
+private val SurfaceEmeraldSoft: Color
+    @Composable get() = if (LocalBrowserIsLightTheme.current) Color(0xFFE6F8F1) else Color(0xFF0E261C)
+private val SurfaceEmeraldChip: Color
+    @Composable get() = if (LocalBrowserIsLightTheme.current) Color(0xFFDCF5EA) else Color(0xFF103123)
+private val SurfaceEmeraldSelected: Color
+    @Composable get() = if (LocalBrowserIsLightTheme.current) Color(0xFFC8EEDC) else Color(0xFF193C2B)
+private val SurfaceLiveStrip: Color
+    @Composable get() = if (LocalBrowserIsLightTheme.current) Color(0xFFEDF9F4) else Color(0xFF0E1512)
+private val SurfaceLiveDetail: Color
+    @Composable get() = if (LocalBrowserIsLightTheme.current) Color(0xFFF2FBF7) else Color(0xFF111815)
+private val BorderDark: Color
+    @Composable get() = if (LocalBrowserIsLightTheme.current) Color(0xFFD8E2F0) else Color(0xFF23252A)
+private val WhiteText: Color
+    @Composable get() = if (LocalBrowserIsLightTheme.current) Color(0xFF0F172A) else Color(0xFFEEEEEE)
+private val GrayMuted: Color
+    @Composable get() = if (LocalBrowserIsLightTheme.current) Color(0xFF5A677D) else Color(0xFF9E9EA6)
+private val EmeraldOk: Color
+    @Composable get() = if (LocalBrowserIsLightTheme.current) Color(0xFF059669) else Color(0xFF10B981)
+private val OnAccentText: Color = Color.White
+private val OnEmeraldText: Color
+    @Composable get() = if (LocalBrowserIsLightTheme.current) Color.White else Color(0xFF0A0A0C)
 
 /**
  * Interactive In-App Google Forms Browser:
@@ -246,9 +286,31 @@ class GoogleFormsWebActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val savedThemePrefs = LocalThemeRepository(this).loadPreferences()
+        val systemIsDark = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+        val baseSpec = if (savedThemePrefs.preferLocalDefault) {
+            NORMAL_DEFAULT_THEME
+        } else {
+            findThemePresetById(savedThemePrefs.selectedPresetId) ?: NORMAL_DEFAULT_THEME
+        }
+        val resolvedThemeSpec = baseSpec.resolveWithOverrides(
+            animationOverride = savedThemePrefs.animationIntensityOverride,
+            appearanceOverride = savedThemePrefs.colorAppearanceOverride,
+            systemIsDark = systemIsDark
+        )
+        val isLightTheme = !resolvedThemeSpec.isDark
+
         enableEdgeToEdge(
-            statusBarStyle = SystemBarStyle.dark(AndroidColor.TRANSPARENT),
-            navigationBarStyle = SystemBarStyle.dark(AndroidColor.TRANSPARENT)
+            statusBarStyle = if (isLightTheme) {
+                SystemBarStyle.light(AndroidColor.TRANSPARENT, AndroidColor.TRANSPARENT)
+            } else {
+                SystemBarStyle.dark(AndroidColor.TRANSPARENT)
+            },
+            navigationBarStyle = if (isLightTheme) {
+                SystemBarStyle.light(AndroidColor.TRANSPARENT, AndroidColor.TRANSPARENT)
+            } else {
+                SystemBarStyle.dark(AndroidColor.TRANSPARENT)
+            }
         )
 
         val liveRoomCodeExtra = intent.getStringExtra(EXTRA_LIVE_ROOM_CODE)
@@ -263,19 +325,21 @@ class GoogleFormsWebActivity : AppCompatActivity() {
             .ifBlank { "https://docs.google.com/forms" }
 
         setContent {
-            GoogleFormsBrowserContent(
-                initialUrl = startUrl,
-                incomingExternalUrl = externalIncomingUrl.value,
-                onConsumeExternalUrl = { externalIncomingUrl.value = null },
-                liveRoomCodeParam = liveRoomCodeExtra,
-                isRoomHostParam = isRoomHostExtra,
-                onBindWebView = { webViewRef = it },
-                onDoneAndReturn = {
-                    CookieManager.getInstance().flush()
-                    setResult(Activity.RESULT_OK)
-                    finish()
-                }
-            )
+            CompositionLocalProvider(LocalBrowserIsLightTheme provides isLightTheme) {
+                GoogleFormsBrowserContent(
+                    initialUrl = startUrl,
+                    incomingExternalUrl = externalIncomingUrl.value,
+                    onConsumeExternalUrl = { externalIncomingUrl.value = null },
+                    liveRoomCodeParam = liveRoomCodeExtra,
+                    isRoomHostParam = isRoomHostExtra,
+                    onBindWebView = { webViewRef = it },
+                    onDoneAndReturn = {
+                        CookieManager.getInstance().flush()
+                        setResult(Activity.RESULT_OK)
+                        finish()
+                    }
+                )
+            }
         }
     }
 
@@ -953,7 +1017,7 @@ class GoogleFormsWebActivity : AppCompatActivity() {
                                             modifier = Modifier
                                                 .heightIn(min = 36.dp)
                                                 .clip(RoundedCornerShape(8.dp))
-                                                .background(Color(0xFF1D1E24))
+                                                .background(SurfaceCard)
                                                 .border(1.dp, CrimsonAccent.copy(alpha = 0.55f), RoundedCornerShape(8.dp))
                                                 .clickable(enabled = reSolvingQuestionNumber == null, role = Role.Button) {
                                                     reSolveSingleQuestionInBrowser(item.number)
@@ -1015,7 +1079,7 @@ class GoogleFormsWebActivity : AppCompatActivity() {
         if (showExtensionsDialog) {
             AlertDialog(
                 onDismissRequest = { showExtensionsDialog = false },
-                containerColor = Color(0xFF12151E),
+                containerColor = SurfaceDialog,
                 titleContentColor = WhiteText,
                 textContentColor = GrayMuted,
                 title = {
@@ -1061,7 +1125,7 @@ class GoogleFormsWebActivity : AppCompatActivity() {
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .clip(RoundedCornerShape(12.dp))
-                                            .background(if (sel) CrimsonAccent.copy(alpha = 0.18f) else Color(0xFF191D28))
+                                            .background(if (sel) CrimsonAccent.copy(alpha = 0.16f) else SurfaceCard)
                                             .border(
                                                 1.dp,
                                                 if (sel) CrimsonAccent else BorderDark,
@@ -1121,7 +1185,7 @@ class GoogleFormsWebActivity : AppCompatActivity() {
                                     Box(
                                         modifier = Modifier
                                             .clip(RoundedCornerShape(10.dp))
-                                            .background(if (sel) CrimsonAccent else Color(0xFF191D28))
+                                            .background(if (sel) CrimsonAccent else SurfaceCard)
                                             .border(1.dp, if (sel) CrimsonAccent else BorderDark, RoundedCornerShape(10.dp))
                                             .clickable(role = Role.RadioButton) {
                                                 activeCloudModel = opt.id
@@ -1132,7 +1196,7 @@ class GoogleFormsWebActivity : AppCompatActivity() {
                                     ) {
                                         Text(
                                             text = opt.label,
-                                            color = WhiteText,
+                                            color = if (sel) OnAccentText else WhiteText,
                                             fontSize = 11.sp,
                                             fontWeight = if (sel) FontWeight.Bold else FontWeight.Medium
                                         )
@@ -1160,7 +1224,7 @@ class GoogleFormsWebActivity : AppCompatActivity() {
                                     Box(
                                         modifier = Modifier
                                             .clip(RoundedCornerShape(10.dp))
-                                            .background(if (sel) Color(0xFF103123) else Color(0xFF191D28))
+                                            .background(if (sel) SurfaceEmeraldChip else SurfaceCard)
                                             .border(1.dp, if (sel) EmeraldOk else BorderDark, RoundedCornerShape(10.dp))
                                             .clickable(role = Role.RadioButton) {
                                                 activeSubjectMode = subj
@@ -1249,7 +1313,7 @@ class GoogleFormsWebActivity : AppCompatActivity() {
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .clip(RoundedCornerShape(12.dp))
-                                        .background(Color(0xFF191D28))
+                                        .background(SurfaceCard)
                                         .border(1.dp, BorderDark, RoundedCornerShape(12.dp))
                                         .padding(horizontal = 11.dp, vertical = 9.dp),
                                     verticalAlignment = Alignment.CenterVertically,
@@ -1276,7 +1340,7 @@ class GoogleFormsWebActivity : AppCompatActivity() {
                                             ) {
                                                 Text(
                                                     text = "$pct%",
-                                                    color = WhiteText,
+                                                    color = if (sel) OnAccentText else WhiteText,
                                                     fontSize = 10.5.sp,
                                                     fontWeight = FontWeight.Bold
                                                 )
@@ -1366,7 +1430,7 @@ class GoogleFormsWebActivity : AppCompatActivity() {
                             modifier = Modifier
                                 .size(48.dp)
                                 .clip(CircleShape)
-                                .background(Color(0xFF1A1B20))
+                                .background(SurfacePill)
                                 .border(1.dp, BorderDark, CircleShape)
                                 .clickable(role = Role.Button) {
                                     if (isEditingAddressBar) {
@@ -1466,7 +1530,7 @@ class GoogleFormsWebActivity : AppCompatActivity() {
                                             modifier = Modifier
                                                 .size(30.dp)
                                                 .clip(CircleShape)
-                                                .background(Color(0xFF23252C))
+                                                .background(SurfaceButtonNeutral)
                                                 .clickable(role = Role.Button) {
                                                     addressBarInput = ""
                                                 }
@@ -1487,7 +1551,7 @@ class GoogleFormsWebActivity : AppCompatActivity() {
                                         modifier = Modifier
                                             .size(32.dp)
                                             .clip(CircleShape)
-                                            .background(Color(0xFF1F222A))
+                                            .background(SurfaceButtonNeutral)
                                             .border(0.8.dp, BorderDark, CircleShape)
                                             .clickable(role = Role.Button) {
                                                 val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
@@ -1523,7 +1587,7 @@ class GoogleFormsWebActivity : AppCompatActivity() {
                                     ) {
                                         Text(
                                             text = if (isInLockedRoomSession && isRoomHost) "Lock" else "Go",
-                                            color = WhiteText,
+                                            color = OnAccentText,
                                             fontSize = 12.sp,
                                             fontWeight = FontWeight.ExtraBold
                                         )
@@ -1567,7 +1631,7 @@ class GoogleFormsWebActivity : AppCompatActivity() {
                                                     horizontalArrangement = Arrangement.spacedBy(3.dp),
                                                     modifier = Modifier
                                                         .clip(RoundedCornerShape(5.dp))
-                                                        .background(Color(0xFF231114))
+                                                        .background(SurfaceAccentSoft)
                                                         .padding(horizontal = 5.dp, vertical = 2.dp)
                                                 ) {
                                                     Icon(
@@ -1686,7 +1750,7 @@ class GoogleFormsWebActivity : AppCompatActivity() {
                                 modifier = Modifier
                                     .size(48.dp)
                                     .clip(CircleShape)
-                                    .background(Color(0xFF1A1B20))
+                                    .background(SurfacePill)
                                     .border(1.dp, BorderDark, CircleShape)
                                     .clickable(role = Role.Button) { webViewInstance?.reload() }
                                     .testTag("btn_forms_web_reload")
@@ -1723,7 +1787,7 @@ class GoogleFormsWebActivity : AppCompatActivity() {
                                     modifier = Modifier
                                         .heightIn(min = 34.dp)
                                         .clip(CircleShape)
-                                        .background(if (showQuickSitesBar) CrimsonAccent.copy(alpha = 0.22f) else Color(0xFF1A1B20))
+                                        .background(if (showQuickSitesBar) CrimsonAccent.copy(alpha = 0.16f) else SurfacePill)
                                         .border(1.dp, if (showQuickSitesBar) CrimsonAccent else BorderDark, CircleShape)
                                         .clickable(role = Role.Button) { showQuickSitesBar = !showQuickSitesBar }
                                         .padding(horizontal = 12.dp, vertical = 6.dp)
@@ -1751,8 +1815,8 @@ class GoogleFormsWebActivity : AppCompatActivity() {
                                     .heightIn(min = 34.dp)
                                     .clip(CircleShape)
                                     .background(
-                                        if (showExtensionsDialog || isCopyUnlocked || isDarkReaderOn) CrimsonAccent.copy(alpha = 0.22f)
-                                        else Color(0xFF1A1B20)
+                                        if (showExtensionsDialog || isCopyUnlocked || isDarkReaderOn) CrimsonAccent.copy(alpha = 0.16f)
+                                        else SurfacePill
                                     )
                                     .border(
                                         1.dp,
@@ -1783,7 +1847,7 @@ class GoogleFormsWebActivity : AppCompatActivity() {
                                 modifier = Modifier
                                     .heightIn(min = 34.dp)
                                     .clip(CircleShape)
-                                    .background(if (isFocusMode) CrimsonAccent.copy(alpha = 0.22f) else Color(0xFF1A1B20))
+                                    .background(if (isFocusMode) CrimsonAccent.copy(alpha = 0.16f) else SurfacePill)
                                     .border(1.dp, if (isFocusMode) CrimsonAccent else BorderDark, CircleShape)
                                     .clickable(role = Role.Button) { isFocusMode = !isFocusMode }
                                     .padding(horizontal = 12.dp, vertical = 6.dp)
@@ -1809,7 +1873,7 @@ class GoogleFormsWebActivity : AppCompatActivity() {
                                 modifier = Modifier
                                     .heightIn(min = 34.dp)
                                     .clip(CircleShape)
-                                    .background(if (showFindBar) CrimsonAccent.copy(alpha = 0.22f) else Color(0xFF1A1B20))
+                                    .background(if (showFindBar) CrimsonAccent.copy(alpha = 0.16f) else SurfacePill)
                                     .border(1.dp, if (showFindBar) CrimsonAccent else BorderDark, CircleShape)
                                     .clickable(role = Role.Button) { showFindBar = !showFindBar }
                                     .padding(horizontal = 12.dp, vertical = 6.dp)
@@ -1827,6 +1891,43 @@ class GoogleFormsWebActivity : AppCompatActivity() {
                                     fontSize = 11.5.sp,
                                     fontWeight = FontWeight.SemiBold
                                 )
+                            }
+
+                            if (!isUrlLockedForMember && currentUrl.startsWith("http", ignoreCase = true)) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                                    modifier = Modifier
+                                        .heightIn(min = 34.dp)
+                                        .clip(CircleShape)
+                                        .background(SurfacePill)
+                                        .border(1.dp, BorderDark, CircleShape)
+                                        .clickable(role = Role.Button) {
+                                            runCatching {
+                                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                                    type = "text/plain"
+                                                    putExtra(Intent.EXTRA_SUBJECT, pageTitle)
+                                                    putExtra(Intent.EXTRA_TEXT, currentUrl)
+                                                }
+                                                startActivity(Intent.createChooser(shareIntent, "Share page link"))
+                                            }
+                                        }
+                                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                                        .testTag("btn_forms_web_share_url")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Share,
+                                        contentDescription = "Share current page link",
+                                        tint = WhiteText,
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                    Text(
+                                        text = "Share",
+                                        color = WhiteText,
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
                             }
                         }
                     }
@@ -1904,7 +2005,7 @@ class GoogleFormsWebActivity : AppCompatActivity() {
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .widthIn(max = 600.dp)
-                                .background(Color(0xFF0E1512))
+                                .background(SurfaceLiveStrip)
                                 .horizontalScroll(rememberScrollState())
                                 .padding(horizontal = 10.dp, vertical = 7.dp)
                                 .testTag("live_room_top_answer_strip"),
@@ -1945,9 +2046,9 @@ class GoogleFormsWebActivity : AppCompatActivity() {
                                         .clip(RoundedCornerShape(10.dp))
                                         .background(
                                             when {
-                                                isSelectedChip -> Color(0xFF193C2B)
-                                                localFound != null -> Color(0xFF103123)
-                                                else -> Color(0xFF181C22)
+                                                isSelectedChip -> SurfaceEmeraldSelected
+                                                localFound != null -> SurfaceEmeraldChip
+                                                else -> SurfaceCard
                                             }
                                         )
                                         .border(
@@ -1992,7 +2093,7 @@ class GoogleFormsWebActivity : AppCompatActivity() {
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .widthIn(max = 600.dp)
-                                        .background(Color(0xFF111815))
+                                        .background(SurfaceLiveDetail)
                                         .border(1.dp, EmeraldOk.copy(alpha = 0.45f))
                                         .padding(horizontal = 12.dp, vertical = 8.dp)
                                         .testTag("live_room_top_answer_detail_banner"),
@@ -2040,7 +2141,7 @@ class GoogleFormsWebActivity : AppCompatActivity() {
                                     ) {
                                         Text(
                                             text = "Find",
-                                            color = Color(0xFF0A0A0C),
+                                            color = OnEmeraldText,
                                             fontSize = 11.sp,
                                             fontWeight = FontWeight.ExtraBold
                                         )
@@ -2050,7 +2151,7 @@ class GoogleFormsWebActivity : AppCompatActivity() {
                                         modifier = Modifier
                                             .size(34.dp)
                                             .clip(CircleShape)
-                                            .background(Color(0xFF1B2220))
+                                            .background(SurfacePill)
                                             .clickable(role = Role.Button) { selectedLiveBannerAnswer = null }
                                     ) {
                                         Icon(
@@ -2085,7 +2186,7 @@ class GoogleFormsWebActivity : AppCompatActivity() {
                                 horizontalArrangement = Arrangement.spacedBy(4.dp),
                                 modifier = Modifier
                                     .clip(CircleShape)
-                                    .background(if (isDesktopMode) CrimsonAccent.copy(alpha = 0.24f) else Color(0xFF1B1C22))
+                                    .background(if (isDesktopMode) CrimsonAccent.copy(alpha = 0.16f) else SurfaceChip)
                                     .border(1.dp, if (isDesktopMode) CrimsonAccent else BorderDark, CircleShape)
                                     .clickable(role = Role.Button) {
                                         isDesktopMode = !isDesktopMode
@@ -2129,7 +2230,7 @@ class GoogleFormsWebActivity : AppCompatActivity() {
                                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                                     modifier = Modifier
                                         .clip(CircleShape)
-                                        .background(Color(0xFF1B1C22))
+                                        .background(SurfaceChip)
                                         .border(1.dp, BorderDark, CircleShape)
                                         .clickable(role = Role.Button) {
                                             navigateToRawAddress(site.url)
@@ -2195,7 +2296,7 @@ class GoogleFormsWebActivity : AppCompatActivity() {
                                 .fillMaxWidth()
                                 .heightIn(min = 48.dp)
                                 .clip(RoundedCornerShape(10.dp))
-                                .background(Color(0xFF0E261C))
+                                .background(SurfaceEmeraldSoft)
                                 .border(1.dp, EmeraldOk.copy(alpha = 0.7f), RoundedCornerShape(10.dp))
                                 .clickable(role = Role.Button) {
                                     extractAndSolveCurrentPage(appendMode = true, autoFillOnSuccess = true)
@@ -2301,7 +2402,7 @@ class GoogleFormsWebActivity : AppCompatActivity() {
                                             modifier = Modifier
                                                 .heightIn(min = 40.dp)
                                                 .clip(RoundedCornerShape(8.dp))
-                                                .background(Color(0xFF1F1618))
+                                                .background(SurfaceAccentSoft)
                                                 .border(1.dp, CrimsonAccent.copy(alpha = 0.6f), RoundedCornerShape(8.dp))
                                                 .clickable(enabled = reSolvingQuestionNumber == null && !isSolvingPage, role = Role.Button) {
                                                     reSolveSingleQuestionInBrowser(item.number)
@@ -2374,7 +2475,7 @@ class GoogleFormsWebActivity : AppCompatActivity() {
                                             horizontalArrangement = Arrangement.spacedBy(3.dp),
                                             modifier = Modifier
                                                 .clip(RoundedCornerShape(6.dp))
-                                                .background(Color(0xFF0E261C))
+                                                .background(SurfaceEmeraldSoft)
                                                 .border(1.dp, EmeraldOk.copy(alpha = 0.55f), RoundedCornerShape(6.dp))
                                                 .padding(horizontal = 5.dp, vertical = 2.dp)
                                                 .testTag("badge_web_class_cache")
@@ -2424,7 +2525,7 @@ class GoogleFormsWebActivity : AppCompatActivity() {
                                     modifier = Modifier
                                         .size(width = 48.dp, height = 48.dp)
                                         .clip(RoundedCornerShape(9.dp))
-                                        .background(Color(0xFF1E2026))
+                                        .background(SurfaceButtonNeutral)
                                         .clickable(role = Role.Button) {
                                             val cm = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
                                             cm?.setPrimaryClip(ClipData.newPlainText("Answers", active.compactNotificationOutput))
@@ -2443,7 +2544,7 @@ class GoogleFormsWebActivity : AppCompatActivity() {
                                     modifier = Modifier
                                         .size(width = 48.dp, height = 48.dp)
                                         .clip(RoundedCornerShape(9.dp))
-                                        .background(Color(0xFF1E2026))
+                                        .background(SurfaceButtonNeutral)
                                         .clickable(role = Role.Button) {
                                             val shareBody = buildString {
                                                 appendLine(active.formTitle.ifBlank { "Form Answers" })
@@ -2497,15 +2598,16 @@ class GoogleFormsWebActivity : AppCompatActivity() {
                                         .padding(horizontal = 12.dp, vertical = 10.dp)
                                 ) {
                                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                                        val pinContentColor = if (isPinned) OnEmeraldText else OnAccentText
                                         Icon(
                                             imageVector = Icons.Filled.PushPin,
                                             contentDescription = "Pin notification",
-                                            tint = WhiteText,
+                                            tint = pinContentColor,
                                             modifier = Modifier.size(14.dp)
                                         )
                                         Text(
                                             text = if (isPinned) "Pinned" else "Pin",
-                                            color = WhiteText,
+                                            color = pinContentColor,
                                             fontSize = 11.5.sp,
                                             fontWeight = FontWeight.Bold,
                                             maxLines = 1
@@ -2553,7 +2655,7 @@ class GoogleFormsWebActivity : AppCompatActivity() {
                                         modifier = Modifier
                                             .heightIn(min = 48.dp)
                                             .clip(RoundedCornerShape(12.dp))
-                                            .background(Color(0xFF103123))
+                                            .background(SurfaceEmeraldChip)
                                             .border(1.dp, EmeraldOk, RoundedCornerShape(12.dp))
                                             .clickable(role = Role.Button) {
                                                 highlightAllRoomAnswersOnMyScreen()
@@ -2591,13 +2693,13 @@ class GoogleFormsWebActivity : AppCompatActivity() {
                                         Icon(
                                             imageVector = Icons.Filled.Search,
                                             contentDescription = "Locate answer on page",
-                                            tint = Color(0xFF0A0A0C),
+                                            tint = OnEmeraldText,
                                             modifier = Modifier.size(16.dp)
                                         )
                                         Spacer(Modifier.width(4.dp))
                                         Text(
                                             text = "Q${latestAns.questionNumber}",
-                                            color = Color(0xFF0A0A0C),
+                                            color = OnEmeraldText,
                                             fontSize = 12.sp,
                                             fontWeight = FontWeight.ExtraBold
                                         )
@@ -2627,7 +2729,7 @@ class GoogleFormsWebActivity : AppCompatActivity() {
                                 horizontalArrangement = Arrangement.spacedBy(4.dp),
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(9.dp))
-                                    .background(if (selectedMode) CrimsonAccent.copy(alpha = 0.22f) else Color(0xFF181A22))
+                                    .background(if (selectedMode) CrimsonAccent.copy(alpha = 0.16f) else SurfaceChip)
                                     .border(
                                         1.dp,
                                         if (selectedMode) CrimsonAccent else BorderDark,
@@ -2683,7 +2785,7 @@ class GoogleFormsWebActivity : AppCompatActivity() {
                         ) {
                             if (isSolvingPage) {
                                 CircularProgressIndicator(
-                                    color = WhiteText,
+                                    color = OnAccentText,
                                     strokeWidth = 2.dp,
                                     modifier = Modifier.size(16.dp)
                                 )
@@ -2691,14 +2793,14 @@ class GoogleFormsWebActivity : AppCompatActivity() {
                                 Icon(
                                     imageVector = Icons.Filled.Description,
                                     contentDescription = null,
-                                    tint = WhiteText,
+                                    tint = OnAccentText,
                                     modifier = Modifier.size(16.dp)
                                 )
                             }
                             Spacer(Modifier.width(6.dp))
                             Text(
                                 text = solveBtnLabel,
-                                color = WhiteText,
+                                color = OnAccentText,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
                                 maxLines = 1
@@ -2710,7 +2812,7 @@ class GoogleFormsWebActivity : AppCompatActivity() {
                                 modifier = Modifier
                                     .heightIn(min = 48.dp)
                                     .clip(RoundedCornerShape(12.dp))
-                                    .background(Color(0xFF1E2026))
+                                    .background(SurfaceButtonNeutral)
                                     .border(1.dp, BorderDark, RoundedCornerShape(12.dp))
                                     .clickable(role = Role.Button) {
                                         activeSolveJob?.cancel()
@@ -2740,7 +2842,7 @@ class GoogleFormsWebActivity : AppCompatActivity() {
                                     .weight(1f)
                                     .heightIn(min = 48.dp)
                                     .clip(RoundedCornerShape(12.dp))
-                                    .background(Color(0xFF261215))
+                                    .background(SurfaceAccentSoft)
                                     .border(1.dp, CrimsonAccent.copy(alpha = 0.6f), RoundedCornerShape(12.dp))
                                     .clickable(enabled = !isSolvingPage, role = Role.Button) {
                                         extractAndSolveCurrentPage(appendMode = true)
@@ -2773,7 +2875,7 @@ class GoogleFormsWebActivity : AppCompatActivity() {
                                 .weight(1f)
                                 .heightIn(min = 48.dp)
                                 .clip(RoundedCornerShape(12.dp))
-                                .background(if (active != null) Color(0xFF0E261C) else Color(0xFF1A1B20))
+                                .background(if (active != null) SurfaceEmeraldSoft else SurfacePill)
                                 .border(
                                     1.dp,
                                     if (active != null) EmeraldOk.copy(alpha = 0.65f) else BorderDark,
@@ -2924,7 +3026,7 @@ class GoogleFormsWebActivity : AppCompatActivity() {
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(12.dp))
-                .background(if (active) Color(0xFF103123) else Color(0xFF191D28))
+                .background(if (active) SurfaceEmeraldChip else SurfaceCard)
                 .border(1.dp, if (active) EmeraldOk.copy(alpha = 0.7f) else BorderDark, RoundedCornerShape(12.dp))
                 .clickable(role = Role.Button, onClick = onClick)
                 .padding(horizontal = 11.dp, vertical = 9.dp),

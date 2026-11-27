@@ -18,8 +18,8 @@ android {
     applicationId = "com.aistudio.ocrmcqsolver.vrsbsx"
     minSdk = 26
     targetSdk = 36
-    versionCode = 10
-    versionName = "3.8.4"
+    versionCode = 11
+    versionName = "3.8.5"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     ndk {
@@ -157,6 +157,7 @@ dependencies {
   implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
   implementation("com.google.android.play:app-update-ktx:2.1.0")
   implementation("com.google.android.play:review-ktx:2.0.2")
+  implementation("com.google.android.gms:play-services-ads:23.6.0")
 
   testImplementation(libs.androidx.compose.ui.test.junit4)
   testImplementation(libs.androidx.core)

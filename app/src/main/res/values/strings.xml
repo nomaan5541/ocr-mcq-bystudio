@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Prism Solver</string>
+    <string name="app_name">Prism AI</string>
 
     <!-- Header & Navigation -->
     <string name="header_subtitle">Screen &amp; Quiz Study Helper</string>

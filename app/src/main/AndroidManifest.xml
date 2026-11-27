@@ -12,6 +12,7 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="com.google.android.gms.permission.AD_ID" />
 
     <!-- Scoped package visibility for external HTTPS browser fallback (Android 11+) -->
     <queries>
@@ -37,6 +38,11 @@
         android:largeHeap="true"
         android:enableOnBackInvokedCallback="true"
         tools:targetApi="36">
+
+        <!-- Google AdMob Application ID -->
+        <meta-data
+            android:name="com.google.android.gms.ads.APPLICATION_ID"
+            android:value="ca-app-pub-3665831670411159~8704985821" />
 
         <!-- Main Launcher Activity -->
         <activity

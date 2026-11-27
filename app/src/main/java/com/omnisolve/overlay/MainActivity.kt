@@ -343,6 +343,7 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch {
             delay(900L)
             com.omnisolve.overlay.api.PrismNetworkClient.prewarmCriticalHosts()
+            AdManager.initialize(this@MainActivity)
         }
 
         enableEdgeToEdge(

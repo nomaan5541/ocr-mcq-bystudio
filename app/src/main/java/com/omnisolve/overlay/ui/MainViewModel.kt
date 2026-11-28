@@ -548,8 +548,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             launch {
                 UserUsageLimitManager.snapshotFlow.collect { snap ->
                     val currentMethod = _uiState.value.solverMethod
+                    val effectiveOverlayLimit = snap.effectiveLimitFor(com.omnisolve.overlay.data.UsageLimitFeature.OVERLAY_MCQ)
                     val shouldSwitch = currentMethod.usesCloudServerQuota &&
-                        UserUsageLimitManager.shouldAutoSwitchToPhoneGemini(snap.overlayMcqUsed) &&
+                        UserUsageLimitManager.shouldAutoSwitchToPhoneGemini(snap.overlayMcqUsed, effectiveOverlayLimit) &&
                         !DeviceAbuseGuard.isDeviceBanned(getApplication())
                     if (shouldSwitch) {
                         prefs.edit().putString(MainActivity.PREF_KEY_SOLVER_METHOD, SolverMethod.OVERLAPPING_GOOGLE.id).apply()
@@ -559,7 +560,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             dailyUsage = snap,
                             solverMethod = if (shouldSwitch) SolverMethod.OVERLAPPING_GOOGLE else cur.solverMethod,
                             statusBannerMessage = if (shouldSwitch) {
-                                "Server limit (${snap.overlayMcqUsed}/${com.omnisolve.overlay.data.UsageLimitFeature.OVERLAY_MCQ.dailyLimit}) reached — Auto-switched to OCR + Phone Gemini (Unlimited • No Server)."
+                                "Server limit (${snap.overlayMcqUsed}/$effectiveOverlayLimit) reached — Auto-switched to OCR + Phone Gemini (Unlimited • No Server)."
                             } else {
                                 cur.statusBannerMessage
                             }
@@ -1080,6 +1081,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             solvedCount = prefs.getInt("PREF_SOLVED_COUNT", 12),
             historyEntries = loadPersistedOverlayHistory()
         )
+    }
+
+    fun claimRewardedAdBonus() {
+        val ctx = getApplication<Application>()
+        val uid = try {
+            if (FirebaseApp.getApps(ctx).isNotEmpty()) Firebase.auth.currentUser?.uid.orEmpty() else ""
+        } catch (_: Exception) {
+            ""
+        }
+        viewModelScope.launch {
+            val updated = UserUsageLimitManager.claimRewardedAdBonus(ctx, uid)
+            _uiState.update { cur ->
+                cur.copy(
+                    dailyUsage = updated,
+                    statusBannerMessage = "Reward unlocked! +5 Cloud Solves, +2 Photo Keys, +1 PDF Key & +2 Forms added for today."
+                )
+            }
+        }
     }
 
     fun refreshSystemStatuses() {

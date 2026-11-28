@@ -862,6 +862,9 @@ fun ExportQuestionsScreen(
                                 val savedFile = saveExportPayloadToDisk(context, formattedPayload, selectedFormat)
                                 if (savedFile != null) {
                                     onShowBannerMessage("Saved ${savedFile.name} (${filteredEntries.size} Q&A)")
+                                    (context as? android.app.Activity)?.let { act ->
+                                        com.omnisolve.overlay.ads.AdManager.showInterstitial(act)
+                                    }
                                 } else {
                                     onShowBannerMessage("Could not save export file")
                                 }

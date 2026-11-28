@@ -9,6 +9,7 @@ import com.omnisolve.overlay.BuildConfig
  * - Banner Ad Unit (Prism_Banner): ca-app-pub-3665831670411159/4574169125
  * - Interstitial Ad Unit (Prism_Interstitial): ca-app-pub-3665831670411159/7008760774
  * - App Open Ad Unit (Prism_App_Open): ca-app-pub-3665831670411159/6406125542
+ * - Rewarded Ad Unit (Prism_Rewarded): ca-app-pub-3665831670411159/9927703620
  * - app-ads.txt: google.com, pub-3665831670411159, DIRECT, f08c47fec0942fa0
  */
 object AdConfig {
@@ -17,10 +18,12 @@ object AdConfig {
     private const val TEST_BANNER_ID = "ca-app-pub-3940256099942544/6300978111"
     private const val TEST_INTERSTITIAL_ID = "ca-app-pub-3940256099942544/1033173712"
     private const val TEST_APP_OPEN_ID = "ca-app-pub-3940256099942544/9257395921"
+    private const val TEST_REWARDED_ID = "ca-app-pub-3940256099942544/5224354917"
 
     private const val PROD_BANNER_ID = "ca-app-pub-3665831670411159/4574169125"
     private const val PROD_INTERSTITIAL_ID = "ca-app-pub-3665831670411159/7008760774"
     private const val PROD_APP_OPEN_ID = "ca-app-pub-3665831670411159/6406125542"
+    private const val PROD_REWARDED_ID = "ca-app-pub-3665831670411159/9927703620"
 
     val BANNER_AD_UNIT_ID: String
         get() = if (BuildConfig.DEBUG) TEST_BANNER_ID else PROD_BANNER_ID
@@ -31,9 +34,15 @@ object AdConfig {
     val APP_OPEN_ENABLED: Boolean
         get() = ADS_ENABLED && (BuildConfig.DEBUG || PROD_APP_OPEN_ID.isNotBlank())
 
+    val REWARDED_ENABLED: Boolean
+        get() = ADS_ENABLED && (BuildConfig.DEBUG || PROD_REWARDED_ID.isNotBlank())
+
     val INTERSTITIAL_AD_UNIT_ID: String
         get() = if (BuildConfig.DEBUG) TEST_INTERSTITIAL_ID else PROD_INTERSTITIAL_ID
 
     val APP_OPEN_AD_UNIT_ID: String
         get() = if (BuildConfig.DEBUG) TEST_APP_OPEN_ID else PROD_APP_OPEN_ID
+
+    val REWARDED_AD_UNIT_ID: String
+        get() = if (BuildConfig.DEBUG) TEST_REWARDED_ID else PROD_REWARDED_ID
 }

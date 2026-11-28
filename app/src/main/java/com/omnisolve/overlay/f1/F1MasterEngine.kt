@@ -730,8 +730,8 @@ object F1MasterEngine {
                 }.getOrNull()
                 if (updatedSnap != null && boundRequest.autoSwitchToPhoneGeminiOnLimit) {
                     val usedNow = updatedSnap.usedFor(UsageLimitFeature.OVERLAY_MCQ)
-                    val limitNow = UsageLimitFeature.OVERLAY_MCQ.dailyLimit
-                    if (UserUsageLimitManager.shouldAutoSwitchToPhoneGemini(usedNow)) {
+                    val limitNow = updatedSnap.effectiveLimitFor(UsageLimitFeature.OVERLAY_MCQ)
+                    if (UserUsageLimitManager.shouldAutoSwitchToPhoneGemini(usedNow, limitNow)) {
                         runCatching {
                             context.applicationContext
                                 .getSharedPreferences("OmniSolvePrefs", Context.MODE_PRIVATE)
@@ -742,7 +742,7 @@ object F1MasterEngine {
                         autoSwitchedToPhoneGemini = true
                         autoSwitchNotice =
                             "Server limit ($usedNow/$limitNow) reached — Auto-switched to OCR + Phone Gemini (Unlimited • No Server)."
-                    } else if (UserUsageLimitManager.isApproachingAutoSwitch(usedNow)) {
+                    } else if (UserUsageLimitManager.isApproachingAutoSwitch(usedNow, limitNow)) {
                         autoSwitchNotice =
                             "$usedNow/$limitNow cloud server solves used — Auto-switches to OCR + Phone Gemini (Unlimited) at $limitNow."
                     }

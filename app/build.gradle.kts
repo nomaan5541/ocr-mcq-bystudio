@@ -18,8 +18,8 @@ android {
     applicationId = "com.aistudio.ocrmcqsolver.vrsbsx"
     minSdk = 26
     targetSdk = 36
-    versionCode = 11
-    versionName = "3.8.5"
+    versionCode = 12
+    versionName = "3.8.6"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     ndk {

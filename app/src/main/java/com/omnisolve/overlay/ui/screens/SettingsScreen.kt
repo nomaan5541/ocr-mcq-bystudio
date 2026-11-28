@@ -91,6 +91,7 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -210,6 +211,7 @@ fun SettingsScreen(
     playUpdateState: PlayUpdateUiState = PlayUpdateUiState.Idle,
     onCheckForPlayUpdates: () -> Unit = {},
     onInstallReadyUpdate: () -> Unit = {},
+    onWatchRewardedAd: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val palette = LocalWhiteGlassPalette.current
@@ -434,7 +436,10 @@ fun SettingsScreen(
                         )
                     }
 
-                    DailyAllowanceCompactCard(snapshot = state.dailyUsage)
+                    DailyAllowanceCompactCard(
+                        snapshot = state.dailyUsage,
+                        onWatchRewardedAd = onWatchRewardedAd
+                    )
 
                     ServerMonitoringDashboardCard(state = state)
 
@@ -1611,9 +1616,13 @@ private fun SystemReadinessHeroCard(
 
 @Composable
 private fun DailyAllowanceCompactCard(
-    snapshot: DailyUsageSnapshot
+    snapshot: DailyUsageSnapshot,
+    onWatchRewardedAd: () -> Unit = {}
 ) {
     val palette = LocalWhiteGlassPalette.current
+    val isRewardReady by com.omnisolve.overlay.ads.AdManager.isRewardedAdReady.collectAsState()
+    val isRewardLoading by com.omnisolve.overlay.ads.AdManager.isRewardedAdLoading.collectAsState()
+    val haptics = LocalHapticFeedback.current
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -1686,8 +1695,73 @@ private fun DailyAllowanceCompactCard(
                 }
             }
         }
+        // Rewarded Ad Bonus Pack Card
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(10.dp))
+                .background(palette.accentEmerald.copy(alpha = 0.08f))
+                .border(1.dp, palette.accentEmerald.copy(alpha = 0.30f), RoundedCornerShape(10.dp))
+                .padding(horizontal = 10.dp, vertical = 9.dp)
+                .testTag("card_rewarded_ad_boost"),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    text = if (snapshot.canClaimReward) {
+                        "Earn Bonus Credits (${snapshot.rewardClaimsToday}/${com.omnisolve.overlay.data.UserUsageLimitManager.MAX_DAILY_REWARD_CLAIMS} today)"
+                    } else {
+                        "Daily Reward Maxed (5/5 today)"
+                    },
+                    style = MaterialTheme.typography.labelLarge.copy(
+                        color = palette.inkPrimary,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 11.5.sp
+                    )
+                )
+                Text(
+                    text = "+5 Cloud Solves • +2 Photo • +1 PDF • +2 Forms",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        color = palette.inkSecondary,
+                        fontSize = 10.sp
+                    )
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(
+                        if (snapshot.canClaimReward) palette.accentEmerald else palette.cardHairlineBorder
+                    )
+                    .clickable(enabled = snapshot.canClaimReward, role = Role.Button) {
+                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onWatchRewardedAd()
+                    }
+                    .padding(horizontal = 10.dp, vertical = 7.dp)
+                    .testTag("btn_watch_rewarded_ad"),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = when {
+                        !snapshot.canClaimReward -> "Maxed"
+                        isRewardReady -> "Watch Ad"
+                        isRewardLoading -> "Loading…"
+                        else -> "Watch Ad"
+                    },
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        color = if (snapshot.canClaimReward) Color.White else palette.inkMuted,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 11.sp
+                    )
+                )
+            }
+        }
+
+        val effectiveOverlayLimit = snapshot.effectiveLimitFor(UsageLimitFeature.OVERLAY_MCQ)
         Text(
-            text = "Per-email & device limits reset 00:00 UTC. At ${UsageLimitFeature.OVERLAY_MCQ.dailyLimit} cloud solves, Prism auto-switches to OCR + Phone Gemini (Unlimited • No Server). Cached answers & personal keys never use quota.",
+            text = "Per-email & device limits reset 00:00 UTC. At $effectiveOverlayLimit cloud solves, Prism auto-switches to OCR + Phone Gemini (Unlimited • No Server). Cached answers & personal keys never use quota.",
             style = MaterialTheme.typography.labelSmall.copy(
                 color = palette.inkMuted,
                 fontSize = 10.5.sp,

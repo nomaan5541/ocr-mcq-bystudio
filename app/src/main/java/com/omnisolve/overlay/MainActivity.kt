@@ -483,6 +483,7 @@ class MainActivity : AppCompatActivity() {
                                 loginLauncher.launch(Intent(this@MainActivity, LoginActivity::class.java))
                             },
                             onTestVibration = ::testPocketHapticPulse,
+                            onWatchRewardedAd = ::launchRewardedAdForBonus,
                             onSyncRunningService = ::notifyServiceConfigChanged
                         )
 
@@ -590,6 +591,44 @@ class MainActivity : AppCompatActivity() {
     }
 
     private var foregroundResumeAtMs: Long = 0L
+    private var wasInBackground: Boolean = false
+
+    override fun onStart() {
+        super.onStart()
+        if (wasInBackground) {
+            wasInBackground = false
+            val st = viewModel.uiState.value
+            if (st.userConsentAccepted && !st.isOverlayRunning && !st.showOnboardingGuide) {
+                AdManager.showAppOpenIfReady(this)
+            }
+        }
+    }
+
+    override fun onStop() {
+        wasInBackground = true
+        super.onStop()
+    }
+
+    private fun launchRewardedAdForBonus() {
+        val currentClaims = viewModel.uiState.value.dailyUsage.rewardClaimsToday
+        if (currentClaims >= com.omnisolve.overlay.data.UserUsageLimitManager.MAX_DAILY_REWARD_CLAIMS) {
+            viewModel.showBannerMessage("Daily reward limit reached (5/5). Resets at midnight UTC.")
+            return
+        }
+        AdManager.showRewardedAd(
+            activity = this,
+            onRewardEarned = { _, _ ->
+                viewModel.claimRewardedAdBonus()
+                notifyServiceConfigChanged()
+            },
+            onClosedWithoutReward = {
+                viewModel.showBannerMessage("Watch the full ad to unlock +5 Cloud Solves & Bonus Keys.")
+            },
+            onUnavailable = {
+                viewModel.showBannerMessage("Loading next reward video… Please try again in a few seconds.")
+            }
+        )
+    }
 
     override fun onResume() {
         super.onResume()
@@ -950,7 +989,8 @@ private fun MainInstantApp(
     onStartPlayUpdate: () -> Unit = {},
     onInstallReadyUpdate: () -> Unit = {},
     onDismissPlayUpdateBanner: () -> Unit = {},
-    onCheckForPlayUpdates: () -> Unit = {}
+    onCheckForPlayUpdates: () -> Unit = {},
+    onWatchRewardedAd: () -> Unit = {}
 ) {
     val palette = LocalWhiteGlassPalette.current
     val homeListState = rememberLazyListState()
@@ -1499,6 +1539,7 @@ private fun MainInstantApp(
                                 }
                             },
                             onInstallReadyUpdate = onInstallReadyUpdate,
+                            onWatchRewardedAd = onWatchRewardedAd,
                             modifier = contentMod
                         )
                     }

@@ -1142,8 +1142,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         ).coerceIn(20, 100)
         val overlayRunning = OverlayService.isServiceRunning()
         val captureActive = OverlayService.hasScreenCapture()
+        val latestDailyUsage = UserUsageLimitManager.getSnapshot(ctx, currentUser?.uid.orEmpty())
         _uiState.update {
             it.copy(
+                dailyUsage = latestDailyUsage,
                 isOverlayRunning = overlayRunning,
                 isCaptureAuthorized = if (overlayRunning) captureActive else false,
                 hasOverlayPermission = canDraw,

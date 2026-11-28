@@ -624,8 +624,8 @@ class MainActivity : AppCompatActivity() {
             onClosedWithoutReward = {
                 viewModel.showBannerMessage("Watch the full ad to unlock +5 Cloud Solves & Bonus Keys.")
             },
-            onUnavailable = {
-                viewModel.showBannerMessage("Loading next reward video… Please try again in a few seconds.")
+            onUnavailable = { reason ->
+                viewModel.showBannerMessage(reason)
             }
         )
     }
@@ -1362,6 +1362,7 @@ private fun MainInstantApp(
                             onVoteLiveRoomConfirm = { answerId -> viewModel.voteLiveRoomAnswer(answerId, confirm = true) },
                             onVoteLiveRoomDispute = { answerId -> viewModel.voteLiveRoomAnswer(answerId, confirm = false) },
                             onVerifyLiveRoomAnswerWithAi = viewModel::verifyLiveRoomAnswerWithAi,
+                            onWatchRewardedAd = onWatchRewardedAd,
                             modifier = contentMod
                         )
 

@@ -1,19 +1,13 @@
 package com.omnisolve.overlay.ads
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
+import android.util.Log
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
@@ -33,7 +27,7 @@ enum class AdBannerStyle {
 
 /**
  * Renders an inline Anchored Adaptive Google AdMob banner inside main app screens.
- * Collapses cleanly when no ad is filled so there are never blank gaps, and never blocks floating controls.
+ * Always keeps [AdView] mounted in the Android view hierarchy so AdMob SDK visibility & fill checks succeed.
  */
 @Composable
 fun InAppAdMobBanner(
@@ -47,7 +41,6 @@ fun InAppAdMobBanner(
     val context = LocalContext.current
     val configuration = LocalConfiguration.current
     val adWidthDp = (configuration.screenWidthDp - 32).coerceAtLeast(300)
-    var isAdLoaded by remember(adUnitId, placementTag) { mutableStateOf(false) }
 
     val adView = remember(adUnitId, placementTag, adWidthDp) {
         val adaptiveSize = AdSize.getCurrentOrientationAnchoredAdaptiveBannerAdSize(context, adWidthDp)
@@ -56,11 +49,13 @@ fun InAppAdMobBanner(
             this.adUnitId = adUnitId
             adListener = object : AdListener() {
                 override fun onAdLoaded() {
-                    isAdLoaded = true
+                    Log.d("PrismAdBanner", "Banner loaded ($placementTag)")
+                    AdManager.updateBannerStatus(null)
                 }
 
                 override fun onAdFailedToLoad(error: LoadAdError) {
-                    isAdLoaded = false
+                    Log.w("PrismAdBanner", "Banner load failed ($placementTag): code=${error.code} ${error.message}")
+                    AdManager.updateBannerStatus("Banner: ${error.message} (code ${error.code})")
                 }
             }
             loadAd(AdRequest.Builder().build())
@@ -77,18 +72,16 @@ fun InAppAdMobBanner(
     }
 
     val verticalPadding = if (style == AdBannerStyle.COMPACT_HEADER) 4.dp else 8.dp
-    AnimatedVisibility(
-        visible = isAdLoaded,
-        enter = fadeIn() + expandVertically(),
-        exit = fadeOut() + shrinkVertically()
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .defaultMinSize(minHeight = 52.dp)
+            .padding(vertical = verticalPadding),
+        contentAlignment = Alignment.Center
     ) {
-        Box(
-            modifier = modifier
-                .fillMaxWidth()
-                .padding(vertical = verticalPadding),
-            contentAlignment = Alignment.Center
-        ) {
-            AndroidView(factory = { adView })
-        }
+        AndroidView(
+            factory = { adView },
+            modifier = Modifier.fillMaxWidth()
+        )
     }
 }

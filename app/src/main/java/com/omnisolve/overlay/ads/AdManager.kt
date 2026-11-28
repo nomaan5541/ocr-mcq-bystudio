@@ -22,8 +22,8 @@ import kotlinx.coroutines.flow.asStateFlow
 /**
  * Non-intrusive Google AdMob manager supporting Banner, Interstitial, App Open, and Rewarded Ads.
  *
- * Ads are preloaded asynchronously and displayed ONLY after completed actions or explicit user reward requests
- * (never during active OCR/AI solving or floating overlay interactions).
+ * Ads are preloaded asynchronously and support on-demand fetching for Rewarded Ads so tapping
+ * "Watch Ad" always attempts a fresh load even if the initial preload failed or had no fill yet.
  */
 object AdManager {
     private const val TAG = "PrismAdManager"
@@ -63,7 +63,17 @@ object AdManager {
     private val _isRewardedAdLoading = MutableStateFlow(false)
     val isRewardedAdLoading: StateFlow<Boolean> = _isRewardedAdLoading.asStateFlow()
 
+    private val _lastRewardedError = MutableStateFlow<String?>(null)
+    val lastRewardedError: StateFlow<String?> = _lastRewardedError.asStateFlow()
+
+    private val _lastBannerStatus = MutableStateFlow<String?>(null)
+    val lastBannerStatus: StateFlow<String?> = _lastBannerStatus.asStateFlow()
+
     private val mainHandler = Handler(Looper.getMainLooper())
+
+    internal fun updateBannerStatus(status: String?) {
+        _lastBannerStatus.value = status
+    }
 
     fun initialize(context: Context, onComplete: (() -> Unit)? = null) {
         if (!AdConfig.ADS_ENABLED) {
@@ -71,6 +81,8 @@ object AdManager {
             return
         }
         if (isInitialized) {
+            preloadInterstitial(context)
+            preloadAppOpen(context)
             preloadRewarded(context)
             onComplete?.invoke()
             return
@@ -113,7 +125,7 @@ object AdManager {
                         override fun onAdFailedToLoad(error: LoadAdError) {
                             interstitialAd = null
                             isInterstitialLoading = false
-                            Log.d(TAG, "Interstitial load skipped: ${error.message}")
+                            Log.d(TAG, "Interstitial load skipped (${error.code}): ${error.message}")
                         }
                     }
                 )
@@ -143,7 +155,7 @@ object AdManager {
                         override fun onAdFailedToLoad(error: LoadAdError) {
                             appOpenAd = null
                             isAppOpenLoading = false
-                            Log.d(TAG, "AppOpen load skipped: ${error.message}")
+                            Log.d(TAG, "AppOpen load skipped (${error.code}): ${error.message}")
                         }
                     }
                 )
@@ -171,6 +183,7 @@ object AdManager {
                             isRewardedLoading = false
                             _isRewardedAdLoading.value = false
                             _isRewardedAdReady.value = true
+                            _lastRewardedError.value = null
                         }
 
                         override fun onAdFailedToLoad(error: LoadAdError) {
@@ -178,7 +191,8 @@ object AdManager {
                             isRewardedLoading = false
                             _isRewardedAdLoading.value = false
                             _isRewardedAdReady.value = false
-                            Log.d(TAG, "Rewarded load skipped: ${error.message}")
+                            _lastRewardedError.value = formatAdError(error)
+                            Log.w(TAG, "Rewarded load failed (${error.code}): ${error.message}")
                         }
                     }
                 )
@@ -186,14 +200,27 @@ object AdManager {
                 isRewardedLoading = false
                 _isRewardedAdLoading.value = false
                 _isRewardedAdReady.value = false
+                _lastRewardedError.value = t.message ?: "Rewarded load error"
                 Log.w(TAG, "Rewarded load error: ${t.message}")
             }
         }
     }
 
+    private fun formatAdError(error: LoadAdError): String {
+        return when (error.code) {
+            AdRequest.ERROR_CODE_NO_FILL ->
+                "AdMob has no ad fill yet (Code 3). New ad units or pending Play Store apps take a little time to fill — tap Retry soon."
+            AdRequest.ERROR_CODE_NETWORK_ERROR ->
+                "Network error loading ad (Code 2). Check internet connection."
+            AdRequest.ERROR_CODE_INTERNAL_ERROR ->
+                "AdMob temporary error (Code 0). Tap Retry."
+            else ->
+                "${error.message} (Code ${error.code})"
+        }
+    }
+
     /**
      * Shows an interstitial only after a user function is completed and cooldown has elapsed.
-     * Immediately invokes [onDismiss] if no ad is ready or cooldown is active.
      */
     fun showInterstitial(activity: Activity, respectCooldown: Boolean = true, onDismiss: () -> Unit = {}) {
         if (!AdConfig.INTERSTITIAL_ENABLED || activity.isFinishing || activity.isDestroyed) {
@@ -232,27 +259,88 @@ object AdManager {
     }
 
     /**
-     * Shows a Rewarded Video Ad on explicit user tap to unlock bonus cloud solves & AI credits.
+     * Shows a Rewarded Video Ad immediately if cached, or fetches one on-demand and opens it
+     * as soon as it finishes loading.
      */
     fun showRewardedAd(
         activity: Activity,
         onRewardEarned: (amount: Int, type: String) -> Unit,
         onClosedWithoutReward: () -> Unit = {},
-        onUnavailable: () -> Unit = {}
+        onUnavailable: (reason: String) -> Unit = {}
     ) {
         if (!AdConfig.REWARDED_ENABLED || activity.isFinishing || activity.isDestroyed) {
-            onUnavailable()
+            onUnavailable("Ads disabled or screen unavailable.")
             return
         }
-        val ad = rewardedAd
-        if (ad == null) {
-            preloadRewarded(activity)
-            onUnavailable()
+        val cached = rewardedAd
+        if (cached != null) {
+            presentRewardedAd(activity, cached, onRewardEarned, onClosedWithoutReward, onUnavailable)
             return
         }
+
+        // Load on-demand and auto-present once ready
+        _isRewardedAdLoading.value = true
+        isRewardedLoading = true
+        _lastRewardedError.value = null
+
+        val startLoad = {
+            mainHandler.post {
+                try {
+                    RewardedAd.load(
+                        activity.applicationContext,
+                        AdConfig.REWARDED_AD_UNIT_ID,
+                        AdRequest.Builder().build(),
+                        object : RewardedAdLoadCallback() {
+                            override fun onAdLoaded(ad: RewardedAd) {
+                                isRewardedLoading = false
+                                _isRewardedAdLoading.value = false
+                                _isRewardedAdReady.value = true
+                                _lastRewardedError.value = null
+                                if (!activity.isFinishing && !activity.isDestroyed) {
+                                    presentRewardedAd(activity, ad, onRewardEarned, onClosedWithoutReward, onUnavailable)
+                                } else {
+                                    rewardedAd = ad
+                                }
+                            }
+
+                            override fun onAdFailedToLoad(error: LoadAdError) {
+                                rewardedAd = null
+                                isRewardedLoading = false
+                                _isRewardedAdLoading.value = false
+                                _isRewardedAdReady.value = false
+                                val reason = formatAdError(error)
+                                _lastRewardedError.value = reason
+                                onUnavailable(reason)
+                            }
+                        }
+                    )
+                } catch (t: Throwable) {
+                    isRewardedLoading = false
+                    _isRewardedAdLoading.value = false
+                    _isRewardedAdReady.value = false
+                    val reason = t.message ?: "Failed to load rewarded ad."
+                    _lastRewardedError.value = reason
+                    onUnavailable(reason)
+                }
+            }
+        }
+
+        if (!isInitialized) {
+            initialize(activity) { startLoad() }
+        } else {
+            startLoad()
+        }
+    }
+
+    private fun presentRewardedAd(
+        activity: Activity,
+        ad: RewardedAd,
+        onRewardEarned: (amount: Int, type: String) -> Unit,
+        onClosedWithoutReward: () -> Unit,
+        onUnavailable: (reason: String) -> Unit
+    ) {
         rewardedAd = null
         _isRewardedAdReady.value = false
-
         var rewardGranted = false
         ad.fullScreenContentCallback = object : FullScreenContentCallback() {
             override fun onAdDismissedFullScreenContent() {
@@ -264,7 +352,7 @@ object AdManager {
 
             override fun onAdFailedToShowFullScreenContent(error: AdError) {
                 preloadRewarded(activity)
-                onUnavailable()
+                onUnavailable("Ad failed to display: ${error.message} (Code ${error.code})")
             }
         }
         try {
@@ -272,9 +360,9 @@ object AdManager {
                 rewardGranted = true
                 onRewardEarned(rewardItem.amount, rewardItem.type)
             }
-        } catch (_: Throwable) {
+        } catch (t: Throwable) {
             preloadRewarded(activity)
-            onUnavailable()
+            onUnavailable(t.message ?: "Unable to show ad.")
         }
     }
 

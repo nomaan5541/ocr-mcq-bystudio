@@ -375,6 +375,14 @@ fun SettingsScreen(
             )
         }
 
+        // ── 0C. REWARDS & DAILY CREDITS (ALWAYS VISIBLE IN SETTINGS) ───────
+        item(key = "settings_rewards_boost_hub") {
+            com.omnisolve.overlay.ads.RewardBonusCreditsCard(
+                snapshot = state.dailyUsage,
+                onWatchRewardedAd = onWatchRewardedAd
+            )
+        }
+
         // ── 1. ACCOUNT & FORM BROWSER LOGIN ────────────────────────────────
         item(key = "local_api_keys_section") {
             SettingsAccordionCard(

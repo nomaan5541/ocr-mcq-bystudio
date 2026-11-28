@@ -69,6 +69,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.omnisolve.overlay.ads.AdBannerStyle
+import com.omnisolve.overlay.ads.InAppAdMobBanner
+import com.omnisolve.overlay.ads.RewardBonusCreditsCard
 import com.omnisolve.overlay.ui.HomeSubScreen
 import com.omnisolve.overlay.ui.MainUiState
 import com.omnisolve.overlay.ui.components.FloatingHelperActionButton
@@ -164,6 +167,7 @@ fun PrismStudioHomeScreen(
     onOpenRoomsTab: () -> Unit,
     onSignInServer: () -> Unit,
     onSolvePhotoUri: (Uri) -> Unit,
+    onWatchRewardedAd: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -462,6 +466,14 @@ fun PrismStudioHomeScreen(
             }
         }
 
+        // ── 3B. REWARDS & DAILY CREDITS HUB (ALWAYS VISIBLE) ────────────────
+        item(key = "prism_rewards_hub") {
+            RewardBonusCreditsCard(
+                snapshot = state.dailyUsage,
+                onWatchRewardedAd = onWatchRewardedAd
+            )
+        }
+
         // ── 4. DUAL FEATURE TILES: QUIZ BROWSER & LIVE ROOMS ─────────────────
         item(key = "prism_feature_tiles") {
             ScrollRevealSection(index = 3) {
@@ -567,6 +579,10 @@ fun PrismStudioHomeScreen(
                     )
                 }
             }
+        }
+
+        item(key = "prism_ad_banner") {
+            InAppAdMobBanner(placementTag = "prism_home", style = AdBannerStyle.INLINE_CARD)
         }
 
         item(key = "prism_home_bottom_spacer") {

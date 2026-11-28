@@ -120,6 +120,7 @@ fun HomeScreen(
     onVoteLiveRoomConfirm: (String) -> Unit = {},
     onVoteLiveRoomDispute: (String) -> Unit = {},
     onVerifyLiveRoomAnswerWithAi: (LiveRoomAnswer) -> Unit = {},
+    onWatchRewardedAd: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val themeSpec = LocalPrismThemeSpec.current
@@ -300,6 +301,7 @@ fun HomeScreen(
                                 onOpenRoomsTab = onOpenRoomsTab,
                                 onSolvePhotoUri = onSolveGoogleFormImageUri,
                                 onShowBannerMessage = onShowBannerMessage,
+                                onWatchRewardedAd = onWatchRewardedAd,
                                 modifier = modifier
                             )
                         }
@@ -314,6 +316,7 @@ fun HomeScreen(
                                 onOpenRoomsTab = onOpenRoomsTab,
                                 onSignInServer = onSignInServer,
                                 onSolvePhotoUri = onSolveGoogleFormImageUri,
+                                onWatchRewardedAd = onWatchRewardedAd,
                                 modifier = modifier
                             )
                         }

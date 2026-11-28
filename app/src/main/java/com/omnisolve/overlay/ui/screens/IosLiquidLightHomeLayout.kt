@@ -108,6 +108,9 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withStyle
+import com.omnisolve.overlay.ads.AdBannerStyle
+import com.omnisolve.overlay.ads.InAppAdMobBanner
+import com.omnisolve.overlay.ads.RewardBonusCreditsCard
 import com.omnisolve.overlay.ui.HomeSubScreen
 import com.omnisolve.overlay.ui.MainUiState
 import com.omnisolve.overlay.ui.components.LiveInteractiveDemoCard
@@ -141,6 +144,7 @@ fun IosLiquidLightHomeLayout(
     onOpenRoomsTab: () -> Unit = {},
     onSolvePhotoUri: (Uri) -> Unit = {},
     onShowBannerMessage: (String) -> Unit = {},
+    onWatchRewardedAd: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val palette = LocalWhiteGlassPalette.current
@@ -460,6 +464,14 @@ fun IosLiquidLightHomeLayout(
             }
         }
 
+        // ── 4A. REWARDS & DAILY CREDITS HUB (ALWAYS VISIBLE) ───────────────
+        item(key = "ios_rewards_hub") {
+            RewardBonusCreditsCard(
+                snapshot = state.dailyUsage,
+                onWatchRewardedAd = onWatchRewardedAd
+            )
+        }
+
         // ── 4. 3-TAB INTERACTIVE LIVE DEMO (Math ½·Σ | MCQ | Match) ─────────
         item(key = "ios_live_demo") {
             ScrollRevealSection(index = 3) {
@@ -604,6 +616,10 @@ fun IosLiquidLightHomeLayout(
                     }
                 }
             }
+        }
+
+        item(key = "ios_ad_banner") {
+            InAppAdMobBanner(placementTag = "ios_home", style = AdBannerStyle.INLINE_CARD)
         }
     }
 }
